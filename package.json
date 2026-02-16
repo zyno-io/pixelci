@@ -13,7 +13,7 @@
         "test:api:unit": "yarn workspace @zyno-io/pixelci-api test",
         "test:api:int": "yarn workspace @zyno-io/pixelci-api test:int",
         "test:cli": "yarn workspace @zyno-io/pixelci-cli test",
-        "test:ui:types": "yarn workspace @zyno-io/pixelci-ui type-check",
+        "test:ui:types": "yarn workspace @zyno-io/pixelci-ui typecheck",
         "test:e2e": "./scripts/test-e2e.sh",
         "format": "yarn workspace @zyno-io/pixelci-api format && yarn workspace @zyno-io/pixelci-cli format && yarn workspace @zyno-io/pixelci-ui format",
         "docs:dev": "vitepress dev docs",

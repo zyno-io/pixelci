@@ -5,13 +5,13 @@
     "private": true,
     "scripts": {
         "dev": "rimraf node_modules/.vite && vite",
-        "build": "run-p type-check build-only",
+        "build": "run-p typecheck build-only",
         "preview": "vite preview",
         "test:unit": "vitest",
         "test:e2e": "playwright test",
         "test:types": "vue-tsc --noEmit -p tsconfig.vitest.json --composite false",
         "build-only": "vite build",
-        "type-check": "vue-tsc --noEmit -p tsconfig.vitest.json --composite false",
+        "typecheck": "vue-tsc --noEmit -p tsconfig.vitest.json --composite false",
         "format": "npx oxlint --fix --fix-suggestions --fix-dangerously && prettier --ignore-path ../../.prettierignore --write ."
     },
     "dependencies": {

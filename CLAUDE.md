@@ -11,6 +11,7 @@ PixelCI is a visual regression testing platform that compares screenshots across
 - **cli**: Command-line tool for CI/CD integration
 
 The system works by:
+
 1. CLI uploads screenshots from CI jobs
 2. API compares screenshots using pixel-matching against reference builds
 3. UI displays results and allows approving/rejecting visual changes
@@ -18,6 +19,7 @@ The system works by:
 ## Development Commands
 
 ### Installation & Setup
+
 ```bash
 # Install dependencies (from root)
 yarn --immutable
@@ -27,6 +29,7 @@ yarn --immutable
 ```
 
 ### API Development
+
 ```bash
 cd packages/api
 
@@ -47,6 +50,7 @@ yarn start:dist:debug
 ```
 
 ### UI Development
+
 ```bash
 cd packages/ui
 
@@ -63,10 +67,11 @@ yarn build
 yarn test:e2e
 
 # Type checking
-yarn type-check
+yarn typecheck
 ```
 
 ### CLI Development
+
 ```bash
 cd packages/cli
 
@@ -78,6 +83,7 @@ node dist/index.js <screenshots-path>
 ```
 
 ### Root-level Commands
+
 ```bash
 # Format all code
 yarn format
@@ -88,6 +94,7 @@ yarn format
 ### Database Schema (Deepkit ORM)
 
 Core entities in `packages/api/src/entities/`:
+
 - **AppEntity**: Visual testing application/project
 - **BranchEntity**: Git branches being tracked
 - **BuildEntity**: Individual CI builds with status (draft, processing, no changes, needs review, changes approved)
@@ -113,6 +120,7 @@ The algorithm uses UUID7 time-ordering to temporally compare builds and screens 
 ### API Structure
 
 Controllers in `packages/api/src/controllers/`:
+
 - **SessionController**: Authentication
 - **AppsController**: App management
 - **BranchesController**: Branch tracking
@@ -121,6 +129,7 @@ Controllers in `packages/api/src/controllers/`:
 - **CiController**: CI token-based app resolution
 
 Services in `packages/api/src/services/`:
+
 - **PixelMatchService**: Pixel-by-pixel image comparison using pixelmatch library
 - **S3Service**: Screenshot and diff image storage
 - **VcsService**: Git integration abstraction
@@ -129,6 +138,7 @@ Services in `packages/api/src/services/`:
 ### Frontend Structure
 
 Vue 3 application with:
+
 - **Screens**: `apps.vue`, `builds.vue`, `screens.vue`, `login.vue`
 - **OpenAPI Client**: Auto-generated from API schema in `src/openapi-client-generated/`
 - **State Management**: Pinia store in `src/store.ts`
@@ -137,6 +147,7 @@ Vue 3 application with:
 ### CLI Workflow
 
 The CLI (cli/src/index.ts):
+
 1. Detects CI environment (GitLab supported via `ci-gitlab.ts`)
 2. Creates build via API
 3. Uploads PNG screenshots with screen names
@@ -147,6 +158,7 @@ The CLI (cli/src/index.ts):
 ## Testing
 
 ### Integration Tests (API)
+
 ```bash
 cd packages/api
 yarn test:int
@@ -155,6 +167,7 @@ yarn test:int
 Located in `packages/api/tests/integration/`. Requires MySQL, Redis, and S3 (SeaweedFS) services running.
 
 ### E2E Tests (UI)
+
 ```bash
 cd packages/ui
 yarn test:e2e
@@ -165,6 +178,7 @@ Playwright-based tests in `packages/ui/tests/e2e/`. Automatically starts dev ser
 ### CI Pipeline
 
 GitLab CI stages (`.gitlab-ci.yml`):
+
 1. **test**: Runs integration tests, builds, starts API, runs E2E tests
 2. **visual regression test**: Uses PixelCI itself to test UI screenshots
 3. **build**: Creates Docker images for API and CLI
@@ -173,13 +187,16 @@ GitLab CI stages (`.gitlab-ci.yml`):
 ## Important Patterns
 
 ### Deepkit Framework
+
 - Uses runtime type information via `@deepkit/type-compiler`
 - Dependency injection throughout
 - Database entities use decorators: `@entity.name()`, `& PrimaryKey`
 - Controllers use `@http.GET()`, `@http.POST()` decorators
 
 ### OpenAPI Client Generation
+
 The UI auto-generates type-safe API client:
+
 ```bash
 npx generate-openapi-client
 ```
@@ -187,12 +204,15 @@ npx generate-openapi-client
 Generated files in `packages/ui/src/openapi-client-generated/` should not be manually edited.
 
 ### Worker Jobs
+
 Background jobs in `packages/api/src/jobs/`:
+
 - Use `@WorkerJob()` decorator
 - Extend `BaseJob<TData>`
 - Automatically handled by framework's worker system
 
 ### Environment Configuration
+
 - Development: `packages/api/.env.development`, `packages/ui/.env`
 - Production: `packages/api/.env.production`, `packages/ui/.env.production`
 - Required services: MySQL, Redis, S3-compatible storage
