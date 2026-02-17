@@ -9,7 +9,7 @@
 }
 
 html {
-    @apply h-full;
+    @apply h-full bg-neutral-50 text-neutral-900;
 }
 
 body {
@@ -104,7 +104,7 @@ button {
 }
 
 .header {
-    @apply sticky top-0 z-10 flex items-center justify-between py-3 mb-2 bg-white;
+    @apply sticky top-0 z-10 flex items-center justify-between py-3 mb-2 bg-neutral-50;
 }
 
 .vf-modal {
@@ -136,13 +136,11 @@ button {
     }
 }
 
-@media (prefers-color-scheme: dark) {
-    html {
-        @apply bg-black text-white;
-    }
+html.dark {
+    @apply bg-neutral-950 text-neutral-100;
 
     .header {
-        @apply bg-black;
+        @apply bg-neutral-950;
     }
 
     input[type='checkbox']:after {
@@ -170,11 +168,11 @@ button {
     }
 
     .vf-modal {
-        @apply bg-neutral-950 border border-neutral-500/25;
+        @apply bg-neutral-900 border border-neutral-500/25;
     }
 
     .vf-tooltip {
-        @apply bg-black py-1 px-2 shadow-md border border-neutral-500/50 rounded-md;
+        @apply bg-neutral-950 py-1 px-2 shadow-md border border-neutral-500/50 rounded-md;
     }
 
     .vf-toast .content {

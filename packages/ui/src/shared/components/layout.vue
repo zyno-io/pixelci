@@ -5,6 +5,13 @@
                 <a class="title" @click="goHome">PixelCI</a>
             </div>
             <div class="nav-right">
+                <a
+                    class="nav-icon"
+                    @click="toggleTheme"
+                    :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
+                >
+                    <i :class="isDark ? 'fa fa-sun' : 'fa fa-moon'" />
+                </a>
                 <div v-if="store.isAdmin" class="admin-dropdown">
                     <i class="fa fa-gear" />
                     <div class="dropdown-menu">
@@ -23,11 +30,46 @@
 </template>
 
 <script lang="ts" setup>
+import { onMounted, onUnmounted, ref } from 'vue';
+
 import { LOCAL_STORAGE_AUTH_KEY } from '@/openapi-client';
 import router from '@/router';
 import { useStore } from '@/store';
 
 const store = useStore();
+
+const THEME_OVERRIDE_KEY = 'pixelci:theme';
+const isDark = ref(document.documentElement.classList.contains('dark'));
+
+const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+function getSystemPreference(): 'light' | 'dark' {
+    return mediaQuery.matches ? 'dark' : 'light';
+}
+
+function applyTheme(dark: boolean) {
+    isDark.value = dark;
+    document.documentElement.classList.toggle('dark', dark);
+}
+
+function toggleTheme() {
+    const nextDark = !isDark.value;
+    const nextTheme = nextDark ? 'dark' : 'light';
+
+    if (nextTheme === getSystemPreference()) {
+        localStorage.removeItem(THEME_OVERRIDE_KEY);
+    } else {
+        localStorage.setItem(THEME_OVERRIDE_KEY, nextTheme);
+    }
+
+    applyTheme(nextDark);
+}
+
+function onSystemThemeChange(e: MediaQueryListEvent) {
+    if (!localStorage.getItem(THEME_OVERRIDE_KEY)) {
+        applyTheme(e.matches);
+    }
+}
 
 function goHome() {
     router.push('/');
@@ -37,6 +79,14 @@ function logout() {
     store.sessionUser = null;
     localStorage.removeItem(LOCAL_STORAGE_AUTH_KEY);
 }
+
+onMounted(() => {
+    mediaQuery.addEventListener('change', onSystemThemeChange);
+});
+
+onUnmounted(() => {
+    mediaQuery.removeEventListener('change', onSystemThemeChange);
+});
 </script>
 
 <style lang="scss" scoped>
@@ -61,11 +111,15 @@ nav {
         @apply text-xl font-semibold select-none cursor-pointer;
     }
 
+    .nav-icon {
+        @apply cursor-pointer text-neutral-400 hover:text-neutral-600 transition-colors;
+    }
+
     .admin-dropdown {
         @apply relative cursor-pointer;
 
         > i {
-            @apply text-neutral-400 hover:text-neutral-200 transition-colors;
+            @apply text-neutral-400 hover:text-neutral-600 transition-colors;
         }
 
         .dropdown-menu {
@@ -84,5 +138,14 @@ nav {
     .logout {
         @apply cursor-pointer;
     }
+}
+</style>
+
+<style lang="scss">
+@reference "tailwindcss";
+
+html.dark nav .nav-icon,
+html.dark nav .admin-dropdown > i {
+    @apply text-neutral-400 hover:text-neutral-200;
 }
 </style>

@@ -44,6 +44,7 @@ onMounted(async () => {
 
 <style>
 @import 'tailwindcss';
+@custom-variant dark (&:where(.dark, .dark *));
 </style>
 
 <style lang="scss">

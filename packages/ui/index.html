@@ -8,18 +8,23 @@
     </head>
     <body>
         <div id="app"></div>
+        <script>
+            (function () {
+                var stored = localStorage.getItem('pixelci:theme');
+                var isDark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+                if (isDark) document.documentElement.classList.add('dark');
+            })();
+        </script>
         <script type="module" src="/src/main.ts"></script>
     </body>
 </html>
 
 <style>
     html {
-        background-color: white;
+        background-color: #fafafa;
     }
 
-    @media (prefers-color-scheme: dark) {
-        html {
-            background-color: oklch(14.5% 0 0);
-        }
+    html.dark {
+        background-color: #0a0a0a;
     }
 </style>
