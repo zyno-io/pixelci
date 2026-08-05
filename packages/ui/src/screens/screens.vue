@@ -628,7 +628,7 @@ function getStatusStyle(status?: NonNullable<IBuildScreenResponse['currentBuildS
             @apply flex items-center justify-between gap-4 text-sm text-neutral-400 cursor-pointer border-t border-neutral-500/25 pt-4;
 
             .comment-preview {
-                @apply truncate;
+                @apply whitespace-pre-line;
 
                 &.empty {
                     @apply italic text-neutral-500;
