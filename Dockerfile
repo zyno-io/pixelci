@@ -2,6 +2,10 @@ FROM node:24-bookworm-slim AS builder
 
 WORKDIR /app
 
+RUN apt-get update && \
+    apt-get install --no-install-recommends --yes ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN corepack enable
 
 COPY .yarn .yarn
