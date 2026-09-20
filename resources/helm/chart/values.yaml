@@ -6,9 +6,6 @@ image: ''
 # Typically passed at deploy time via `--set version=...`.
 version: ''
 
-imagePullSecrets:
-  - name: s24-gcr
-
 replicas: 1
 
 worker:
