@@ -35,6 +35,11 @@ spec:
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
+            {{- range $k, $v := .Values.envValueFrom }}
+            - name: {{ $k }}
+              valueFrom:
+                {{- toYaml $v | nindent 16 }}
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           livenessProbe:

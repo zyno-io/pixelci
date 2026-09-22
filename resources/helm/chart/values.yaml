@@ -32,13 +32,18 @@ env:
   REDIS_SENTINEL_NAME: redis
   REDIS_PREFIX: pixelci
 
-  MYSQL_HOST: mysql.s24-ova-core-k3s-0.clus.sgnl24.net
+  MYSQL_HOST: core-mysql.dns.svc.cluster.local
   MYSQL_USER: pixelci
   MYSQL_DATABASE: pixelci
 
   S3_ENDPOINT: https://s3.us-east-va.io.cloud.ovh.us
   S3_REGION: us-east-va
   S3_BUCKET: s24-pixelci
+
+# Environment variables sourced from Secret or ConfigMap keys, e.g.
+#   REDIS_PASSWORD_SECRET:
+#     secretKeyRef: { name: pixelci-redis-auth, key: password }
+envValueFrom: {}
 
 secret:
   # Name of the Kubernetes Secret to mount into the containers as env vars.
