@@ -1,6 +1,6 @@
 {
     "name": "@zyno-io/pixelci-cli",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "private": true,
     "description": "",
     "keywords": [],
@@ -19,11 +19,11 @@
         "dev:ttsc": "ttsc -w --preserveWatchOutput -p tsconfig.json"
     },
     "dependencies": {
-        "@zyno-io/ts-reflection": "^26.917.1736"
+        "@zyno-io/ts-reflection": "^26.1003.2308"
     },
     "devDependencies": {
         "@faker-js/faker": "^10.6.0",
-        "@types/node": "^26.6.2",
+        "@types/node": "^26.6.4",
         "dotenv-cli": "^11.0.0",
         "npm-run-all": "^4.1.5",
         "ttsc": "0.30.4",

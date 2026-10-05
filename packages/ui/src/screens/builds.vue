@@ -5,26 +5,32 @@
         <template v-else>
             <div v-if="app" class="header">
                 <div class="flex gap-4 items-center">
-                    <RouterLink :to="`/apps`">
-                        <button class="back">
-                            <i class="fa fa-arrow-left" />
-                        </button>
+                    <RouterLink :to="`/apps`" class="btn back" aria-label="Back to apps">
+                        <i class="fa fa-arrow-left" aria-hidden="true" />
                     </RouterLink>
                     <h1>{{ app.name }}</h1>
                 </div>
-                <select v-model="selectedBranchId">
+                <select class="select" v-model="selectedBranchId" aria-label="Branch">
                     <option value="">All Branches</option>
-                    <option v-for="branch in branches" :value="branch.id">{{ branch.name }}</option>
+                    <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
                 </select>
             </div>
 
-            <div class="build-list">
+            <div class="build-list card">
                 <LoaderModal v-if="isLoadingBuilds" />
                 <div v-else-if="!builds.length" class="empty">
                     <i class="fa fa-magnifying-glass" />
                     <h2>No builds found{{ selectedBranchId && ' for this branch' }}</h2>
                 </div>
-                <div v-for="build in builds" class="build" @click="viewBuild(build)">
+                <div
+                    v-for="build in builds"
+                    :key="build.id"
+                    class="build"
+                    role="link"
+                    tabindex="0"
+                    @click="viewBuild(build)"
+                    @keydown.enter.self="viewBuild(build)"
+                >
                     <div>
                         <label><i class="fa fa-code-branch fa-sm fa-fw" /></label>
                         <span>{{ build.branchName }}</span>
@@ -61,7 +67,7 @@
                         </div>
                     </div>
                     <div class="justify-end">
-                        <div class="status" :class="getStatusStyle(build.status)">
+                        <div class="status tag" :class="getStatusStyle(build.status)">
                             <div class="flex items-center gap-2">
                                 <!-- approved -->
                                 <i class="fa fa-check fa-sm fa-fw" v-if="build.status === 'changes approved'" />
@@ -122,7 +128,8 @@ watch(selectedBranchId, () => {
 
 async function loadBranches() {
     try {
-        branches.value = dataFrom(await BranchesApi.getBranchesIndex({ path: { appId: String(route.params.id) } }));
+        const branchesResponse = await BranchesApi.getBranchesIndex({ path: { appId: String(route.params.id) } });
+        branches.value = dataFrom(branchesResponse);
     } catch (err) {
         handleErrorAndAlert(err);
     } finally {
@@ -134,13 +141,13 @@ async function loadBuilds() {
     try {
         isLoadingBuilds.value = true;
 
-        app.value = dataFrom(await AppsApi.getAppsShow({ path: { id: String(route.params.id) } }));
-        builds.value = dataFrom(
-            await BuildsApi.getBuildsIndex({
-                path: { appId: String(route.params.id) },
-                query: { branchId: selectedBranchId.value || undefined }
-            })
-        );
+        const appResponse = await AppsApi.getAppsShow({ path: { id: String(route.params.id) } });
+        app.value = dataFrom(appResponse);
+        const buildsResponse = await BuildsApi.getBuildsIndex({
+            path: { appId: String(route.params.id) },
+            query: { branchId: selectedBranchId.value || undefined }
+        });
+        builds.value = dataFrom(buildsResponse);
     } catch (err) {
         handleErrorAndAlert(err);
     } finally {
@@ -155,18 +162,18 @@ function viewBuild(build: IBuildResponse) {
 function getStatusStyle(status: IBuildResponse['status']) {
     switch (status) {
         case 'changes approved':
-            return 'bg-green-500/10 border-green-500/50 text-green-500';
+            return 'success';
         case 'processing':
-            return 'bg-yellow-500/10 border-yellow-500/50 text-yellow-500';
+            return 'warning';
         case 'needs review':
-            return 'bg-red-500/10 border-red-500/50 text-red-500';
+            return 'warning';
         case 'draft':
-            return 'bg-neutral-500/10 border-neutral-500/50 text-neutral-500';
+            return '';
         case 'no changes':
-            return 'bg-blue-500/10 border-blue-500/50 text-blue-500';
+            return 'info';
         case 'failed':
         case 'changes rejected':
-            return 'bg-red-500/10 border-red-500/50 text-red-500';
+            return 'danger';
         default:
             return '';
     }
@@ -195,48 +202,69 @@ function getStatusText(status: IBuildResponse['status']) {
 </script>
 
 <style lang="scss" scoped>
-@reference "tailwindcss";
-
 #builds {
     .build-list {
-        @apply flex flex-col gap-4;
+        overflow: hidden;
     }
-
     .build {
-        @apply items-center p-4 border bg-neutral-500/10 border-neutral-500/25 rounded-md grid grid-cols-[150px_1.5fr_1fr_160px_150px] gap-4 duration-75 cursor-pointer;
-
-        &:hover {
-            @apply bg-neutral-500/15;
-        }
-
-        > div,
-        > a {
-            @apply flex items-center gap-2 overflow-hidden w-full;
-
-            span.truncate {
-                @apply text-nowrap text-ellipsis w-full;
-            }
-        }
-
-        label {
-            @apply text-neutral-500 cursor-pointer;
-        }
-
-        .commit-link {
-            @apply no-underline text-inherit hover:text-blue-400 transition-colors;
-        }
-
-        .status {
-            @apply flex items-center justify-center gap-1 border rounded-md text-xs p-1 w-[150px];
-        }
+        display: grid;
+        grid-template-columns: minmax(100px, 0.8fr) minmax(0, 1.8fr) minmax(100px, 1fr) 130px 110px;
+        align-items: center;
+        gap: 16px;
+        min-height: 72px;
+        padding: 14px 18px;
+        cursor: pointer;
+        transition: background-color 0.12s;
     }
-
-    .empty {
-        @apply flex flex-col items-center justify-center min-h-[300px] gap-6 p-4 rounded-md text-neutral-500/50 text-lg;
-
-        i {
-            @apply text-5xl;
-        }
+    .build + .build {
+        border-top: 1px solid var(--border);
+    }
+    .build:hover {
+        background: var(--surface-hover);
+    }
+    .build > div,
+    .build > a {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+    }
+    .build span.truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--text-2);
+        font-size: 12px;
+    }
+    .build label {
+        color: var(--text-3);
+    }
+    .commit-link {
+        color: inherit;
+        text-decoration: none;
+    }
+    .commit-link:hover {
+        color: var(--link);
+    }
+    .build-date {
+        color: var(--text-3);
+        font-size: 12px;
+    }
+    .status {
+        height: 24px;
+    }
+}
+@media (max-width: 900px) {
+    #builds .build {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+        gap: 12px;
+    }
+    #builds .build > :last-child {
+        grid-column: 2;
+        grid-row: 1;
+    }
+    #builds .build > :nth-child(2) {
+        grid-column: 1 / -1;
     }
 }
 </style>

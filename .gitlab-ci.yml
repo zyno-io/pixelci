@@ -220,7 +220,7 @@ mirror:
     if [ -n "$CI_COMMIT_TAG" ]; then
       git push github "$CI_COMMIT_TAG"
     else
-      git push -u github HEAD:refs/heads/main --force
+      git push -u github HEAD:refs/heads/main
     fi
 
 osv scan:

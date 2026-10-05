@@ -1,6 +1,6 @@
 {
     "name": "@zyno-io/pixelci-mcp",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "bin": "./dist/index.js",
     "files": [
         "dist"
@@ -14,10 +14,10 @@
         "format": "npx oxlint --fix --fix-suggestions --fix-dangerously && oxfmt"
     },
     "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.30.0"
+        "@modelcontextprotocol/sdk": "^1.32.0"
     },
     "devDependencies": {
-        "@types/node": "^26.6.2",
+        "@types/node": "^26.6.4",
         "ttsc": "0.30.4",
         "typescript": "~7.0.2"
     }

@@ -1,5 +1,5 @@
 <template>
-    <div id="app">
+    <div class="app-content">
         <div v-if="globalError" id="global-error" v-text="globalError" />
 
         <Onboarding v-else-if="isOnboarded === false" @complete="isOnboarded = true" />
@@ -34,7 +34,8 @@ setupStore();
 
 onMounted(async () => {
     try {
-        const { isOnboarded: status } = dataFrom(await SessionApi.getSessionGetOnboardingStatus());
+        const response = await SessionApi.getSessionGetOnboardingStatus();
+        const { isOnboarded: status } = dataFrom(response);
         isOnboarded.value = status;
     } catch {
         isOnboarded.value = true;
@@ -48,14 +49,23 @@ onMounted(async () => {
 </style>
 
 <style lang="scss">
-@use './shared/styles/base.scss' as *;
-@reference "tailwindcss";
+@use './shared/styles/base.scss';
+@use './shared/styles/pixelci.scss';
 
-#app {
-    @apply flex-1 flex;
+.app-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
 }
 
 #global-error {
-    @apply flex-1 flex justify-center items-center bg-gray-800 text-2xl text-red-300;
+    flex: 1;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: var(--danger-soft);
+    color: var(--danger);
+    font-size: 18px;
 }
 </style>

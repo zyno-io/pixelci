@@ -36,7 +36,7 @@ test.describe('Build Interactions', () => {
         const appUrl = page.url();
 
         // Navigate to build
-        await page.locator('.build').first().click();
+        await page.locator('.build').first().locator('span').first().click();
         await page.waitForSelector('.screen');
 
         // Navigate back (using browser back or back button)

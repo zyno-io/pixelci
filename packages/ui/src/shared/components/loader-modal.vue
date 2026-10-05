@@ -15,5 +15,9 @@ import Loader from './loader.vue';
     .vf-modal {
         min-width: auto;
     }
+
+    .vf-modal-content {
+        padding: 8px;
+    }
 }
 </style>

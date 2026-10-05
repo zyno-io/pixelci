@@ -1,11 +1,14 @@
 <template>
-    <div id="login">
-        <a class="title">PixelCI</a>
+    <div id="login" class="auth-page">
+        <div class="theme-corner"><ThemeMenu /></div>
+        <div class="card auth-card">
+            <span class="auth-mark" aria-hidden="true"><i class="fa-solid fa-border-all" /></span>
+            <h1>PixelCI</h1>
+            <p class="subtitle">Sign in to review your visual tests.</p>
 
-        <div class="card">
-            <h2>Login</h2>
-
-            <button v-for="provider in providers" class="primary" @click="login(provider)">Login via {{ provider.name }}</button>
+            <button v-for="provider in providers" :key="provider.id" class="btn primary" @click="login(provider)">
+                Login via {{ provider.name }}
+            </button>
         </div>
     </div>
 
@@ -21,6 +24,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { LOCAL_STORAGE_AUTH_KEY } from '@/openapi-client';
 import { type ISessionProvider, SessionApi } from '@/openapi-client-generated';
 import LoaderModal from '@/shared/components/loader-modal.vue';
+import ThemeMenu from '@/shared/components/theme-menu.vue';
 import { useStore } from '@/store';
 
 const store = useStore();
@@ -85,7 +89,8 @@ async function load() {
 
 async function loadSession() {
     try {
-        store.sessionUser = dataFrom(await SessionApi.getSessionGetIdentity());
+        const identityResponse = await SessionApi.getSessionGetIdentity();
+        store.sessionUser = dataFrom(identityResponse);
         if (route.path === '/login') {
             router.replace(targetPath.value ?? '/');
         }
@@ -114,23 +119,3 @@ onMounted(() => {
     router.isReady().then(load);
 });
 </script>
-
-<style lang="scss" scoped>
-@reference "tailwindcss";
-
-#login {
-    @apply flex-1 flex flex-col items-center justify-center;
-
-    .card {
-        @apply flex flex-col p-6 gap-1 border border-neutral-500/25 rounded-lg items-center w-96;
-    }
-
-    .title {
-        @apply text-lg cursor-pointer mb-4;
-    }
-
-    h2 {
-        @apply text-xl font-semibold mb-3;
-    }
-}
-</style>

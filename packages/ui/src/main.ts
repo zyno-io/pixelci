@@ -1,3 +1,7 @@
+import '@fontsource/inter/latin-400.css';
+import '@fontsource/inter/latin-500.css';
+import '@fontsource/inter/latin-600.css';
+import '@fontsource/inter/latin-700.css';
 import '@fortawesome/fontawesome-free/css/all.css';
 import '@zyno-io/vue-foundation/dist/vue-foundation.css';
 import './openapi-client';
@@ -26,4 +30,4 @@ const pinia = createPinia();
 app.use(pinia);
 app.use(router);
 
-app.mount(document.body);
+app.mount('#app');
