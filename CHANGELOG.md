@@ -1,12 +1,5 @@
 # Changelog
 
-## v0.4.1
-
-- Run TSF compiler setup during API installation, aligning the API and CLI with
-  TSF's supported compiler versions and native package settings.
-- Prepare the compiler during container builds, including TSF's Node 24 patch,
-  and keep compiler tooling out of the CLI runtime image.
-
 ## v0.4.0
 
 - Apply the CI Dashboard design system across the UI, including accessible menus,
@@ -15,6 +8,11 @@
 - Fix build-navigation checks to select the branch name independently of commit links.
 - Support Helm `envValueFrom` configuration.
 - Mirror release history without force-pushing.
+- Run TSF compiler setup during API installation, aligning the API and CLI with
+  TSF's supported compiler versions and native package settings.
+- Prepare the compiler during container builds, including TSF's Node 24 patch,
+  and keep compiler tooling out of the CLI runtime image.
+- Preserve the release version in container metadata when no build version override is supplied.
 
 ## v0.3.0
 

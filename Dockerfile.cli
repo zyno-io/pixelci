@@ -32,7 +32,7 @@ COPY LICENSE.md THIRD-PARTY-LICENSES.md ./
 RUN printf '#!/bin/sh\nexec node /app/dist/index.js "$@"\n' > /usr/bin/pixelci && \
     chmod +x /usr/bin/pixelci
 
-ARG BUILD_VERSION=0.0.0
-RUN npm version ${BUILD_VERSION} --allow-same-version
+ARG BUILD_VERSION
+RUN if [ -n "${BUILD_VERSION}" ]; then npm version "${BUILD_VERSION}" --allow-same-version; fi
 
 CMD ["pixelci"]

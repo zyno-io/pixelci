@@ -46,8 +46,8 @@ COPY --from=builder /app/packages/api .
 COPY --from=builder /app/node_modules node_modules
 COPY LICENSE.md THIRD-PARTY-LICENSES.md ./
 
-ARG BUILD_VERSION=0.0.0
-RUN npm version ${BUILD_VERSION} --allow-same-version
+ARG BUILD_VERSION
+RUN if [ -n "${BUILD_VERSION}" ]; then npm version "${BUILD_VERSION}" --allow-same-version; fi
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD [ "node", ".", "server:start" ]

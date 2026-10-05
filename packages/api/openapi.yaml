@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://spec.openapis.org/oas/3.1/dialect/base
 info:
   title: "@zyno-io/pixelci-api"
-  version: 0.3.0
+  version: 0.4.0
 paths:
   /api/session/me:
     get:
