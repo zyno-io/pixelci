@@ -58,7 +58,7 @@ colorSchemes.forEach(colorScheme => {
                 await route.continue();
             });
 
-            await page.locator('.build').first().click();
+            await page.locator('.build').first().locator('span').first().click();
             await page.waitForSelector('.screen');
             await takeScreenshot(page, 'Screen List - Loading');
             await page.waitForSelector('.image-wrapper.left img');

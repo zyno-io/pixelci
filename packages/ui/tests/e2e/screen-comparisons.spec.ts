@@ -15,7 +15,7 @@ test.describe('Screen Comparisons', () => {
         // Navigate to a build with screens
         await page.locator('.app').first().click();
         await page.waitForSelector('.build');
-        await page.locator('.build').first().click();
+        await page.locator('.build').first().locator('span').first().click();
         await page.waitForSelector('.screen');
     });
 

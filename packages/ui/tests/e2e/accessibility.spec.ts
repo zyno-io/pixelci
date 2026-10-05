@@ -28,7 +28,7 @@ test.describe('Accessibility', () => {
     test('images have alt text', async ({ page }) => {
         await page.locator('.app').first().click();
         await page.waitForSelector('.build');
-        await page.locator('.build').first().click();
+        await page.locator('.build').first().locator('span').first().click();
         await page.waitForSelector('.screen');
         await page.waitForSelector('.image-wrapper img');
 
@@ -48,7 +48,7 @@ test.describe('Accessibility', () => {
     test('interactive elements have appropriate roles', async ({ page }) => {
         await page.locator('.app').first().click();
         await page.waitForSelector('.build');
-        await page.locator('.build').first().click();
+        await page.locator('.build').first().locator('span').first().click();
         await page.waitForSelector('.screen');
 
         // Check checkboxes have correct role

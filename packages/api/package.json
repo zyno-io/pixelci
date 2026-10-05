@@ -21,23 +21,23 @@
         "format": "npx oxlint --fix --fix-suggestions --fix-dangerously && oxfmt"
     },
     "dependencies": {
-        "@aws-sdk/client-s3": "^3.1136.0",
-        "@aws-sdk/s3-request-presigner": "^3.1136.0",
+        "@aws-sdk/client-s3": "^3.1146.0",
+        "@aws-sdk/s3-request-presigner": "^3.1146.0",
         "@types/lodash": "^4.17.25",
-        "@zyno-io/ts-reflection": "^26.917.1736",
-        "@zyno-io/ts-server-foundation": "^26.917.1736",
+        "@zyno-io/ts-reflection": "^26.1003.2308",
+        "@zyno-io/ts-server-foundation": "^26.1003.2308",
         "axios": "^1.20.0",
         "date-fns": "^4.4.0",
         "date-fns-tz": "^3.2.0",
         "lodash": "^4.18.1",
-        "mysql2": "^3.24.4",
+        "mysql2": "^3.24.5",
         "pixelmatch": "^7.2.0",
         "pngjs": "^7.0.0"
     },
     "devDependencies": {
         "@faker-js/faker": "^10.6.0",
         "@types/mime-types": "^3.0.1",
-        "@types/node": "^26.6.2",
+        "@types/node": "^26.6.4",
         "@types/pngjs": "^6.0.5",
         "ttsc": "0.30.4",
         "typescript": "~7.0.2"
