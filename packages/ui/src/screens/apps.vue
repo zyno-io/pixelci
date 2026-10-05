@@ -5,15 +5,15 @@
         <template v-else>
             <div class="header">
                 <h1>Apps</h1>
-                <button v-if="store.isAdmin" class="primary" @click="showCreateForm">Add App</button>
+                <button v-if="store.isAdmin" class="btn primary" @click="showCreateForm">Add App</button>
             </div>
 
             <div v-if="apps?.length" class="search-bar">
                 <i class="fa fa-magnifying-glass" />
-                <input v-model="search" type="text" placeholder="Search apps..." />
+                <input class="input" v-model="search" type="text" placeholder="Search apps..." aria-label="Search apps" />
             </div>
 
-            <div class="app-list">
+            <div class="app-list card">
                 <div v-if="!apps?.length" class="empty">
                     <i class="fa fa-cube" />
                     <h2>No apps</h2>
@@ -22,11 +22,27 @@
                     <i class="fa fa-magnifying-glass" />
                     <h2>No matching apps</h2>
                 </div>
-                <div v-for="app in visibleApps" :key="app.id" class="app" @click="viewApp(app)">
-                    <span>{{ app.name }}</span>
+                <div
+                    v-for="app in visibleApps"
+                    :key="app.id"
+                    class="app"
+                    role="link"
+                    tabindex="0"
+                    @click="viewApp(app)"
+                    @keydown.enter.self="viewApp(app)"
+                >
+                    <span class="app-name">{{ app.name }}</span>
                     <div class="app-right">
                         <span>{{ app.buildCount || 'No' }} {{ app.buildCount === 1 ? 'build' : 'builds' }}</span>
-                        <i v-if="store.isAdmin" class="fa fa-gear app-settings" @click.stop="openEditModal(app)" />
+                        <button
+                            v-if="store.isAdmin"
+                            type="button"
+                            class="btn ghost icon sm app-settings"
+                            :aria-label="`Settings for ${app.name}`"
+                            @click.stop="openEditModal(app)"
+                        >
+                            <i class="fa fa-gear" aria-hidden="true" />
+                        </button>
                     </div>
                 </div>
             </div>
@@ -41,12 +57,12 @@
 
                 <div class="ci-snippet-header">
                     <span />
-                    <button type="button" @click="copyCiSnippet"><i class="fa fa-copy" /> Copy</button>
+                    <button class="btn" type="button" @click="copyCiSnippet"><i class="fa fa-copy" /> Copy</button>
                 </div>
                 <pre><code>{{ ciSnippet }}</code></pre>
 
                 <div class="ci-actions">
-                    <button type="button" class="primary" @click="closeCreateModal">Done</button>
+                    <button type="button" class="btn primary" @click="closeCreateModal">Done</button>
                 </div>
             </div>
 
@@ -57,7 +73,7 @@
                 <form @submit.prevent="submitCreate">
                     <label>
                         VCS Integration
-                        <select v-model="createForm.vcsId" required>
+                        <select class="select" v-model="createForm.vcsId" required>
                             <option value="" disabled>Select integration...</option>
                             <option v-for="vcs in vcsIntegrations" :key="vcs.id" :value="vcs.id">
                                 {{ vcs.name }}
@@ -68,6 +84,7 @@
                     <label>
                         Project
                         <input
+                            class="input"
                             v-model="projectSearch"
                             type="text"
                             placeholder="Search by name or paste a GitLab URL..."
@@ -82,7 +99,7 @@
                         </div>
                         <div v-if="selectedProject" class="selected-project">
                             <span>{{ selectedProject.projectPath }}</span>
-                            <button type="button" class="clear-btn" @click="clearProject">
+                            <button type="button" class="btn ghost icon sm clear-btn" @click="clearProject">
                                 <i class="fa fa-times" />
                             </button>
                         </div>
@@ -90,17 +107,17 @@
 
                     <label>
                         App Name
-                        <input v-model="createForm.name" type="text" required />
+                        <input class="input" v-model="createForm.name" type="text" required />
                     </label>
 
                     <label>
                         Default Branch Name
-                        <input v-model="createForm.defaultBranchName" type="text" placeholder="e.g. main" />
+                        <input class="input" v-model="createForm.defaultBranchName" type="text" placeholder="e.g. main" />
                     </label>
 
                     <div class="form-actions">
-                        <button type="button" @click="closeCreateModal">Cancel</button>
-                        <button type="submit" class="primary" :disabled="isSubmitting || !selectedProject">
+                        <button class="btn" type="button" @click="closeCreateModal">Cancel</button>
+                        <button type="submit" class="btn primary" :disabled="isSubmitting || !selectedProject">
                             {{ isSubmitting ? 'Creating...' : 'Create App' }}
                         </button>
                     </div>
@@ -117,8 +134,8 @@
                     <label>
                         App ID
                         <div class="input-with-button">
-                            <input :value="editApp.id" type="text" readonly />
-                            <button type="button" class="input-button" @click="copyAppId">
+                            <input class="input" :value="editApp.id" type="text" readonly />
+                            <button type="button" class="btn input-button" @click="copyAppId">
                                 <i class="fa fa-copy" />
                             </button>
                         </div>
@@ -126,12 +143,12 @@
 
                     <label>
                         App Name
-                        <input v-model="editForm.name" type="text" required />
+                        <input class="input" v-model="editForm.name" type="text" required />
                     </label>
 
                     <label>
                         Default Branch
-                        <select v-model="editForm.defaultBranchId">
+                        <select class="select" v-model="editForm.defaultBranchId">
                             <option value="" disabled>Select branch...</option>
                             <option v-for="branch in editBranches" :key="branch.id" :value="branch.id">
                                 {{ branch.name }}
@@ -140,10 +157,10 @@
                     </label>
 
                     <div class="form-actions">
-                        <button type="button" class="danger" @click="deleteApp">Delete</button>
+                        <button type="button" class="btn danger" @click="deleteApp">Delete</button>
                         <div class="form-actions-right">
-                            <button type="button" @click="closeEditModal">Cancel</button>
-                            <button type="submit" class="primary" :disabled="isSubmitting">
+                            <button class="btn" type="button" @click="closeEditModal">Cancel</button>
+                            <button type="submit" class="btn primary" :disabled="isSubmitting">
                                 {{ isSubmitting ? 'Saving...' : 'Save' }}
                             </button>
                         </div>
@@ -155,7 +172,7 @@
                 <div class="ci-snippet">
                     <div class="ci-snippet-header">
                         <span class="ci-snippet-label">.gitlab-ci.yml</span>
-                        <button type="button" @click="copyEditCiSnippet"><i class="fa fa-copy" /> Copy</button>
+                        <button class="btn" type="button" @click="copyEditCiSnippet"><i class="fa fa-copy" /> Copy</button>
                     </div>
                     <pre><code>{{ editCiSnippet }}</code></pre>
                 </div>
@@ -441,176 +458,118 @@ async function deleteApp() {
 </script>
 
 <style lang="scss" scoped>
-@reference "tailwindcss";
-
 #apps {
     .search-bar {
-        @apply flex items-center gap-3 mb-4 px-4 py-2.5 bg-neutral-500/10 border border-neutral-500/25 rounded-md text-neutral-400 focus-within:border-neutral-500/50 transition-colors;
-
-        i {
-            @apply text-sm;
-        }
-
-        input {
-            @apply flex-1 bg-transparent border-0 p-0 outline-none text-base text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-500;
-        }
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        max-width: 360px;
+        margin-bottom: 16px;
+        padding: 0 10px;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius);
+        background: var(--surface);
+        color: var(--text-3);
+        box-shadow: var(--shadow-sm);
     }
-
+    .search-bar:focus-within {
+        border-color: var(--focus);
+        box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .search-bar .input {
+        flex: 1;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+    }
     .app-list {
-        @apply flex flex-col gap-4;
+        overflow: hidden;
     }
-
-    .empty {
-        @apply flex flex-col items-center justify-center min-h-[300px] gap-6 p-4 rounded-md text-neutral-500/50 text-lg;
-
-        i {
-            @apply text-5xl;
-        }
-    }
-
     .app {
-        @apply p-4 bg-neutral-500/10 border border-neutral-500/25 rounded-md duration-75 flex justify-between items-center;
-
-        &:hover {
-            @apply bg-neutral-500/15 cursor-pointer;
-        }
-
-        .app-right {
-            @apply flex items-center gap-4;
-        }
-
-        .app-settings {
-            @apply text-neutral-400 hover:text-neutral-200 transition-colors;
-        }
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 60px;
+        padding: 14px 18px;
+        color: var(--text);
+        cursor: pointer;
+        text-decoration: none;
+        transition: background-color 0.12s;
+    }
+    .app + .app {
+        border-top: 1px solid var(--border);
+    }
+    .app:hover {
+        background: var(--surface-hover);
+    }
+    .app-name {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        font-weight: 600;
+    }
+    .app-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: var(--text-3);
+        font-size: 12px;
+        white-space: nowrap;
     }
 }
-
-.form-modal {
-    @apply flex flex-col gap-4 p-6 w-[520px];
-
-    h2 {
-        @apply text-lg font-semibold;
-    }
-
-    hr {
-        @apply border-neutral-500/25;
-    }
-
-    form {
-        @apply flex flex-col gap-3;
-
-        label {
-            @apply flex flex-col gap-1 text-sm font-medium relative;
-        }
-
-        input,
-        select {
-            @apply border border-neutral-500/25 rounded px-3 py-2 bg-transparent text-sm;
-        }
-
-        .project-results {
-            @apply absolute top-full left-0 right-0 z-10 bg-white dark:bg-neutral-800 border border-neutral-500/25 rounded mt-1 max-h-60 overflow-y-auto shadow-lg;
-
-            .project-result {
-                @apply px-3 py-2 cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-500/15 flex flex-col;
-
-                .project-name {
-                    @apply text-sm text-neutral-900 dark:text-neutral-100;
-                }
-
-                .project-path {
-                    @apply text-xs text-neutral-500 dark:text-neutral-400;
-                }
-            }
-        }
-
-        .selected-project {
-            @apply flex items-center justify-between p-2 bg-neutral-500/10 border border-neutral-500/25 rounded text-sm;
-
-            .clear-btn {
-                @apply text-neutral-400 hover:text-neutral-200 p-0;
-            }
-        }
-
-        .input-with-button {
-            @apply flex;
-
-            input {
-                @apply flex-1 rounded-r-none;
-            }
-
-            .input-button {
-                @apply border border-l-0 border-neutral-500/25 !rounded-l-none rounded-r px-3 text-neutral-400 hover:text-neutral-200 transition-colors;
-            }
-        }
-    }
-
-    .form-actions {
-        @apply flex gap-2 items-center mt-2;
-
-        .form-actions-right {
-            @apply flex gap-2 ml-auto;
-        }
-    }
-
-    .ci-snippet {
-        @apply flex flex-col gap-1;
-
-        .ci-snippet-header {
-            @apply flex justify-between items-center;
-
-            .ci-snippet-label {
-                @apply text-sm font-medium;
-            }
-
-            button {
-                @apply text-xs;
-            }
-        }
-
-        pre {
-            @apply bg-neutral-500/15 rounded overflow-x-auto;
-
-            code {
-                @apply text-xs font-mono p-3 block;
-            }
-        }
-    }
+.project-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    max-height: 240px;
+    overflow-y: auto;
+    margin-top: 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--shadow-md);
 }
-
-.ci-setup {
-    @apply flex flex-col gap-4 p-6 w-[520px];
-
-    h2 {
-        @apply text-lg font-semibold;
-    }
-
-    .subtitle {
-        @apply text-sm text-neutral-400;
-
-        code {
-            @apply text-xs font-mono bg-neutral-500/15 px-1.5 py-0.5 rounded;
-        }
-    }
-
-    .ci-snippet-header {
-        @apply flex justify-between items-center mb-[-12px];
-
-        button {
-            @apply text-xs;
-        }
-    }
-
-    pre {
-        @apply bg-neutral-500/15 rounded overflow-x-auto;
-
-        code {
-            @apply text-xs font-mono p-3 block;
-        }
-    }
-
-    .ci-actions {
-        @apply flex justify-end gap-2;
-    }
+.project-result {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    cursor: pointer;
+}
+.project-result:hover {
+    background: var(--surface-hover);
+}
+.project-path {
+    color: var(--text-3);
+    font-size: 12px;
+}
+.selected-project {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    overflow-wrap: anywhere;
+}
+.input-with-button {
+    display: flex;
+}
+.input-with-button .input {
+    flex: 1;
+    min-width: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+.input-button {
+    border-left: 0;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
 }
 </style>

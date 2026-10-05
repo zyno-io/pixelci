@@ -1,147 +1,182 @@
 <template>
-    <div id="page-wrapper">
-        <nav>
-            <div class="nav-left">
-                <a class="title" @click="goHome">PixelCI</a>
-            </div>
-            <div class="nav-right">
-                <a class="nav-icon" @click="toggleTheme" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
-                    <i :class="isDark ? 'fa fa-sun' : 'fa fa-moon'" />
-                </a>
-                <div v-if="store.isAdmin" class="admin-dropdown">
-                    <i class="fa fa-gear" />
-                    <div class="dropdown-menu">
-                        <RouterLink to="/admin/vcs-integrations" class="dropdown-item">VCS Integrations</RouterLink>
-                        <RouterLink to="/admin/users" class="dropdown-item">Users</RouterLink>
-                    </div>
+    <div class="shell">
+        <a class="skip-link" href="#main">Skip to content</a>
+        <header class="topbar">
+            <div class="topbar-inner">
+                <RouterLink to="/" class="brand" aria-label="PixelCI home">
+                    <span class="brand-mark" aria-hidden="true"><i class="fa-solid fa-border-all" /></span>
+                    <span class="brand-name">PixelCI</span>
+                </RouterLink>
+                <nav class="nav" aria-label="Primary">
+                    <RouterLink to="/apps" class="nav-link" active-class="active">Apps</RouterLink>
+                </nav>
+                <div class="topbar-right">
+                    <ThemeMenu />
+                    <DropdownMenu v-if="store.isAdmin" label="Administration" trigger-class="icon-trigger">
+                        <template #trigger><i class="fa-solid fa-gear" aria-hidden="true" /></template>
+                        <div class="menu-label">Administration</div>
+                        <RouterLink to="/admin/vcs-integrations" class="menu-item" role="menuitem">
+                            <i class="fa-solid fa-plug" aria-hidden="true" /> VCS Integrations
+                        </RouterLink>
+                        <RouterLink to="/admin/users" class="menu-item" role="menuitem">
+                            <i class="fa-solid fa-users" aria-hidden="true" /> Users
+                        </RouterLink>
+                    </DropdownMenu>
+                    <button type="button" class="btn ghost logout" @click="logout">
+                        <i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true" /> Logout
+                    </button>
                 </div>
-                <a class="logout" @click="logout">Logout</a>
             </div>
-        </nav>
-
-        <main>
-            <slot />
-        </main>
+        </header>
+        <main id="main" tabindex="-1"><slot /></main>
     </div>
 </template>
 
 <script lang="ts" setup>
-import { onMounted, onUnmounted, ref } from 'vue';
-
 import { LOCAL_STORAGE_AUTH_KEY } from '@/openapi-client';
-import router from '@/router';
 import { useStore } from '@/store';
 
+import DropdownMenu from './dropdown-menu.vue';
+import ThemeMenu from './theme-menu.vue';
+
 const store = useStore();
-
-const THEME_OVERRIDE_KEY = 'pixelci:theme';
-const isDark = ref(document.documentElement.classList.contains('dark'));
-
-const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-
-function getSystemPreference(): 'light' | 'dark' {
-    return mediaQuery.matches ? 'dark' : 'light';
-}
-
-function applyTheme(dark: boolean) {
-    isDark.value = dark;
-    document.documentElement.classList.toggle('dark', dark);
-}
-
-function toggleTheme() {
-    const nextDark = !isDark.value;
-    const nextTheme = nextDark ? 'dark' : 'light';
-
-    if (nextTheme === getSystemPreference()) {
-        localStorage.removeItem(THEME_OVERRIDE_KEY);
-    } else {
-        localStorage.setItem(THEME_OVERRIDE_KEY, nextTheme);
-    }
-
-    applyTheme(nextDark);
-}
-
-function onSystemThemeChange(e: MediaQueryListEvent) {
-    if (!localStorage.getItem(THEME_OVERRIDE_KEY)) {
-        applyTheme(e.matches);
-    }
-}
-
-function goHome() {
-    router.push('/');
-}
 
 function logout() {
     store.sessionUser = null;
     localStorage.removeItem(LOCAL_STORAGE_AUTH_KEY);
 }
-
-onMounted(() => {
-    mediaQuery.addEventListener('change', onSystemThemeChange);
-});
-
-onUnmounted(() => {
-    mediaQuery.removeEventListener('change', onSystemThemeChange);
-});
 </script>
 
 <style lang="scss" scoped>
-@reference "tailwindcss";
-
-#page-wrapper {
-    @apply flex-1 flex flex-col;
+.shell {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
 }
 
-nav {
-    @apply p-6 border-b border-neutral-500/25 flex justify-between items-center;
+.skip-link {
+    position: absolute;
+    left: 12px;
+    top: -40px;
+    z-index: 100;
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    background: var(--accent);
+    color: var(--accent-text);
 
-    .nav-left {
-        @apply flex items-center gap-6;
-    }
-
-    .nav-right {
-        @apply flex items-center gap-6;
-    }
-
-    .title {
-        @apply text-xl font-semibold select-none cursor-pointer;
-    }
-
-    .nav-icon {
-        @apply cursor-pointer text-neutral-400 hover:text-neutral-600 transition-colors;
-    }
-
-    .admin-dropdown {
-        @apply relative cursor-pointer;
-
-        > i {
-            @apply text-neutral-400 hover:text-neutral-600 transition-colors;
-        }
-
-        .dropdown-menu {
-            @apply absolute right-0 top-full z-50 mt-2 py-1 bg-neutral-800 border border-neutral-500/25 rounded-md shadow-lg min-w-[180px] opacity-0 invisible transition-all duration-100;
-        }
-
-        &:hover .dropdown-menu {
-            @apply opacity-100 visible;
-        }
-
-        .dropdown-item {
-            @apply block px-4 py-2 text-sm text-neutral-300 hover:bg-neutral-500/15 hover:text-white transition-colors;
-        }
-    }
-
-    .logout {
-        @apply cursor-pointer;
+    &:focus {
+        top: 10px;
     }
 }
-</style>
 
-<style lang="scss">
-@reference "tailwindcss";
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    height: var(--header-h);
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(10px);
+}
 
-html.dark nav .nav-icon,
-html.dark nav .admin-dropdown > i {
-    @apply text-neutral-400 hover:text-neutral-200;
+.topbar-inner {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    height: 100%;
+    padding: 0 16px;
+}
+
+.brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--text);
+    font-weight: 650;
+    font-size: 14px;
+    letter-spacing: -0.01em;
+    text-decoration: none !important;
+}
+
+.brand-mark {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: var(--text);
+    color: var(--bg);
+    font-size: 11px;
+}
+
+.nav {
+    display: flex;
+    gap: 2px;
+}
+
+.nav-link {
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    color: var(--text-2);
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none !important;
+
+    &:hover {
+        background: var(--surface-2);
+        color: var(--text);
+    }
+
+    &.active {
+        background: var(--surface-3);
+        color: var(--text);
+    }
+}
+
+.topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+
+    :deep(.icon-trigger) {
+        justify-content: center;
+        width: 32px;
+        padding: 0;
+    }
+}
+
+main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+
+    &:focus {
+        outline: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .topbar-inner {
+        gap: 10px;
+        padding: 0 12px;
+    }
+
+    .brand-name {
+        display: none;
+    }
+
+    .nav-link {
+        padding: 6px 8px;
+    }
+}
+
+@media (max-width: 360px) {
+    .topbar-inner {
+        gap: 8px;
+        padding: 0 8px;
+    }
 }
 </style>

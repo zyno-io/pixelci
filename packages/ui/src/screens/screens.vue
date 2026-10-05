@@ -1,21 +1,19 @@
 <template>
-    <div id="screens" class="full" :class="{ 'max-w-screen-xl mx-auto': !showChanges }">
+    <div id="screens" class="full" :class="{ 'single-view': !showChanges }">
         <LoaderModal v-if="isLoading" />
 
         <template v-else>
             <div class="header">
                 <div class="flex gap-4 items-center">
-                    <RouterLink :to="`/apps/${route.params.id}`">
-                        <button class="back">
-                            <i class="fa fa-arrow-left" />
-                        </button>
+                    <RouterLink :to="`/apps/${route.params.id}`" class="btn back" aria-label="Back to builds">
+                        <i class="fa fa-arrow-left" aria-hidden="true" />
                     </RouterLink>
 
                     <h1>Screens</h1>
                 </div>
 
                 <div class="header-center">
-                    <span class="screen-count">{{ totalScreens }} {{ totalScreens === 1 ? 'screen' : 'screens' }}</span>
+                    <span class="screen-count tag">{{ totalScreens }} {{ totalScreens === 1 ? 'screen' : 'screens' }}</span>
 
                     <a v-if="build && commitUrl" class="commit-info" :href="commitUrl" target="_blank" v-tooltip="build.commitSubject">
                         <i class="fa fa-code-commit fa-sm" />
@@ -40,7 +38,7 @@
                         Show Changes
                     </label>
 
-                    <select v-model="zoomLevel" class="zoom-select" data-testid="zoom-select">
+                    <select v-model="zoomLevel" class="select zoom-select" data-testid="zoom-select" aria-label="Screenshot zoom">
                         <option v-for="opt in zoomOptions" :key="opt" :value="opt">{{ opt }}%</option>
                     </select>
                 </div>
@@ -57,32 +55,30 @@
                         <div class="flex items-center gap-3 min-w-0">
                             <button
                                 v-if="needsReview(screen) && screen.currentBuildScreen?.reviewStatus"
-                                class="collapse-toggle"
+                                class="btn ghost collapse-toggle"
                                 v-tooltip="isCollapsed(screen) ? 'Expand' : 'Collapse'"
+                                :aria-label="`${isCollapsed(screen) ? 'Expand' : 'Collapse'} ${screen.name}`"
+                                :aria-expanded="!isCollapsed(screen)"
                                 @click="toggleExpanded(screen)"
                             >
                                 <i class="fa" :class="isCollapsed(screen) ? 'fa-chevron-right' : 'fa-chevron-down'" />
                             </button>
 
-                            <span class="screen-number">{{ index + 1 }}</span>
+                            <span class="screen-number tag">{{ index + 1 }}</span>
 
                             <span class="screen-name">{{ screen.name }}</span>
 
                             <span
                                 v-if="screen.currentBuildScreen?.reviewStatus"
-                                class="review-badge"
-                                :class="
-                                    screen.currentBuildScreen.reviewStatus === 'approved'
-                                        ? 'bg-green-500/10 border-green-500/50 text-green-500'
-                                        : 'bg-red-500/10 border-red-500/50 text-red-500'
-                                "
+                                class="review-badge tag"
+                                :class="screen.currentBuildScreen.reviewStatus === 'approved' ? 'success' : 'danger'"
                             >
                                 <i class="fa" :class="screen.currentBuildScreen.reviewStatus === 'approved' ? 'fa-check' : 'fa-xmark'" />
                                 {{ screen.currentBuildScreen.reviewStatus === 'approved' ? 'Approved' : 'Rejected' }}
                             </span>
                         </div>
 
-                        <span v-if="showChanges" class="screen-status" :class="getStatusStyle(screen.currentBuildScreen?.status)">{{
+                        <span v-if="showChanges" class="screen-status tag" :class="getStatusStyle(screen.currentBuildScreen?.status)">{{
                             screen.currentBuildScreen ? getStatusText(screen.currentBuildScreen.status) : 'Removed'
                         }}</span>
                     </div>
@@ -162,7 +158,7 @@
                     <div v-if="!isCollapsed(screen) && showChanges && needsReview(screen)" class="review-bar">
                         <textarea
                             v-model="screen.reviewCommentDraft"
-                            class="review-comment"
+                            class="input review-comment"
                             rows="1"
                             placeholder="Leave a comment (optional)"
                             :disabled="screen.reviewSubmitting"
@@ -170,7 +166,7 @@
 
                         <div class="review-actions">
                             <button
-                                class="approve"
+                                class="btn approve"
                                 :class="{ active: screen.currentBuildScreen?.reviewStatus === 'approved' }"
                                 :disabled="screen.reviewSubmitting"
                                 @click="submitReview(screen, 'approved')"
@@ -178,7 +174,7 @@
                                 Approve
                             </button>
                             <button
-                                class="reject"
+                                class="btn reject"
                                 :class="{ active: screen.currentBuildScreen?.reviewStatus === 'rejected' }"
                                 :disabled="screen.reviewSubmitting"
                                 @click="submitReview(screen, 'rejected')"
@@ -204,7 +200,7 @@
             </div>
 
             <div v-if="hasPendingChanges" class="button-wrapper">
-                <button class="primary" @click="submitBuild">{{ submitLabel }}</button>
+                <button class="btn primary" @click="submitBuild">{{ submitLabel }}</button>
             </div>
         </template>
     </div>
@@ -514,11 +510,13 @@ function getStatusText(status: NonNullable<IBuildScreenResponse['currentBuildScr
 function getStatusStyle(status?: NonNullable<IBuildScreenResponse['currentBuildScreen']>['status']) {
     switch (status) {
         case 'changes approved':
-            return 'bg-green-500/10 border-green-500/50 text-green-500';
+            return 'success';
         case 'needs review':
-            return 'bg-red-500/10 border-red-500/50 text-red-500';
+            return 'warning';
         case 'no changes':
-            return 'bg-blue-500/10 border-blue-500/50 text-blue-500';
+            return 'info';
+        case 'new':
+            return 'release';
         default:
             return '';
     }
@@ -526,197 +524,272 @@ function getStatusStyle(status?: NonNullable<IBuildScreenResponse['currentBuildS
 </script>
 
 <style lang="scss" scoped>
-@reference "tailwindcss";
-
 #screens {
     .header-center {
-        @apply flex items-center gap-4 min-w-0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
     }
-
     .screen-count {
-        @apply shrink-0 px-2.5 py-1 rounded-md text-sm font-medium tabular-nums bg-neutral-500/15 border border-neutral-500/25 text-neutral-400 whitespace-nowrap;
+        height: 24px;
+        flex-shrink: 0;
     }
-
     .commit-info {
-        @apply flex items-center gap-2 text-neutral-400 text-sm max-w-[400px] no-underline;
-
-        .truncate {
-            @apply overflow-hidden text-ellipsis whitespace-nowrap;
-        }
-
-        &:is(a):hover {
-            @apply text-blue-400 transition-colors;
-        }
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        max-width: 400px;
+        color: var(--text-2);
+        font-size: 12px;
+        text-decoration: none;
     }
-
+    .commit-info .truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    a.commit-info:hover {
+        color: var(--link);
+    }
     .screen-list {
-        @apply flex flex-col gap-4;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
     }
-
     .screen {
-        @apply relative flex flex-col gap-4 p-4 bg-neutral-500/10 border border-neutral-500/25 rounded-md scroll-mt-20;
-
-        .screen-meta {
-            @apply flex justify-between gap-4;
-
-            .screen-status {
-                @apply px-2 py-1 border rounded-md text-sm whitespace-nowrap;
-            }
-        }
-
-        .screen-number {
-            @apply shrink-0 px-2 py-0.5 rounded-md text-sm font-mono font-medium tabular-nums bg-neutral-500/15 border border-neutral-500/25 text-neutral-400;
-        }
-
-        .collapse-toggle {
-            @apply w-5 shrink-0 p-0 border-0 bg-transparent text-neutral-400 transition-colors hover:text-neutral-200;
-
-            &:hover {
-                @apply bg-transparent;
-            }
-        }
-
-        .review-badge {
-            @apply flex items-center gap-1.5 px-2 py-1 border rounded-md text-sm whitespace-nowrap;
-        }
-
-        .review-bar {
-            @apply flex items-stretch gap-2 border-t border-neutral-500/25 pt-4;
-
-            .review-comment {
-                @apply flex-1 px-3 py-2 text-sm rounded-md bg-neutral-500/10 border border-neutral-500/25 outline-none;
-                resize: vertical;
-                min-height: 2.5rem;
-
-                &:focus {
-                    @apply border-neutral-500/50;
-                }
-            }
-
-            .review-actions {
-                @apply flex gap-2;
-
-                button {
-                    @apply px-5 rounded-md text-sm font-medium border transition-colors;
-
-                    &.approve {
-                        @apply bg-green-500/10 border-green-500/50 text-green-500;
-
-                        &:hover:not(:disabled),
-                        &.active {
-                            @apply bg-green-500 text-white;
-                        }
-                    }
-
-                    &.reject {
-                        @apply bg-red-500/10 border-red-500/50 text-red-500;
-
-                        &:hover:not(:disabled),
-                        &.active {
-                            @apply bg-red-500 text-white;
-                        }
-                    }
-
-                    &:disabled {
-                        @apply opacity-50 cursor-not-allowed;
-                    }
-                }
-            }
-        }
-
-        .collapsed-summary {
-            @apply flex items-center justify-between gap-4 text-sm text-neutral-400 cursor-pointer border-t border-neutral-500/25 pt-4;
-
-            .comment-preview {
-                @apply whitespace-pre-line;
-
-                &.empty {
-                    @apply italic text-neutral-500;
-                }
-            }
-
-            .expand-hint {
-                @apply text-neutral-500 whitespace-nowrap;
-            }
-        }
-
-        .image-wrapper-outer {
-            @apply flex flex-col border-t border-neutral-500/25 pt-4 gap-1 duration-500 ease-in-out;
-
-            .labels {
-                @apply grid grid-cols-2 gap-1;
-
-                span {
-                    @apply text-center font-bold uppercase text-neutral-500;
-                }
-            }
-
-            // Cap the comparison at one viewport so very tall screenshots scroll internally instead of
-            // stretching the page. Both columns live in this single scroller, so they stay pixel-synced.
-            // The offset reserves room for the sticky header + this card's meta/labels above and the
-            // review bar (comment + approve/reject) below, so those stay on-screen with the frame.
-            .scroll-frame {
-                @apply overflow-y-auto rounded-md;
-                max-height: calc(100vh - 23rem);
-
-                .images {
-                    @apply grid grid-cols-2 gap-1 items-stretch;
-                }
-            }
-
-            &.single .scroll-frame .images {
-                @apply grid-cols-1;
-            }
-
-            .image-wrapper {
-                @apply flex items-start justify-center bg-neutral-500/25 rounded-md relative;
-
-                .image-wrapper-inner {
-                    @apply w-full;
-
-                    &.diff {
-                        @apply absolute top-0 left-0 h-full;
-                    }
-                }
-
-                .diff-hint {
-                    @apply absolute top-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-md text-xs normal-case font-normal bg-neutral-900/70 text-neutral-200 opacity-0 pointer-events-none transition-opacity duration-150;
-                }
-
-                &.diff-toggleable:hover .diff-hint {
-                    @apply opacity-100;
-                }
-            }
-
-            img {
-                @apply h-auto rounded-md mx-auto;
-                width: min(var(--zoom), var(--natural-width, 100%));
-            }
-
-            .placeholder {
-                @apply flex items-center justify-center bg-neutral-500/25 h-full w-full rounded-md;
-
-                span {
-                    @apply text-2xl text-neutral-500 p-24;
-                }
-            }
-
-            .error {
-                @apply flex items-center justify-center bg-neutral-500/25 h-full w-full rounded-md;
-            }
-        }
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 16px 18px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        box-shadow: var(--shadow-sm);
+        scroll-margin-top: 160px;
     }
-
-    .zoom-select {
-        @apply text-sm py-1 px-2 cursor-pointer;
+    .screen-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
     }
-
+    .screen-name {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        font-weight: 600;
+    }
+    .screen-number {
+        flex-shrink: 0;
+        font-family: var(--font-mono);
+    }
+    .collapse-toggle {
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        flex-shrink: 0;
+    }
+    .review-bar {
+        display: flex;
+        align-items: stretch;
+        gap: 8px;
+        border-top: 1px solid var(--border);
+        padding-top: 14px;
+    }
+    .review-comment {
+        flex: 1;
+        min-width: 0;
+        min-height: 36px;
+        height: auto;
+        padding: 8px 10px;
+        resize: vertical;
+    }
+    .review-actions {
+        display: flex;
+        gap: 8px;
+    }
+    .review-actions button {
+        height: auto;
+        min-height: 36px;
+    }
+    .approve {
+        color: var(--success);
+        border-color: var(--success-border);
+        background: var(--success-soft);
+    }
+    .approve:hover:not(:disabled),
+    .approve.active {
+        color: var(--success);
+        border-color: var(--success);
+        background: var(--success-soft);
+        box-shadow: inset 0 0 0 1px var(--success);
+    }
+    .reject {
+        color: var(--danger);
+        border-color: var(--danger-border);
+        background: var(--danger-soft);
+    }
+    .reject:hover:not(:disabled),
+    .reject.active {
+        color: var(--danger);
+        border-color: var(--danger);
+        background: var(--danger-soft);
+        box-shadow: inset 0 0 0 1px var(--danger);
+    }
+    .collapsed-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+        color: var(--text-2);
+        font-size: 13px;
+        cursor: pointer;
+    }
+    .comment-preview {
+        white-space: pre-line;
+        overflow-wrap: anywhere;
+    }
+    .comment-preview.empty {
+        display: block;
+        min-height: 0;
+        padding: 0;
+        color: var(--text-3);
+        font-style: italic;
+    }
+    .expand-hint {
+        color: var(--text-3);
+        white-space: nowrap;
+    }
+    .image-wrapper-outer {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
+    }
+    .labels {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+    }
+    .labels span {
+        color: var(--text-3);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.045em;
+        text-transform: uppercase;
+        text-align: center;
+    }
+    // One shared scroll frame keeps reference and current screenshots in sync.
+    .scroll-frame {
+        overflow: auto;
+        border-radius: var(--radius-sm);
+        max-height: max(200px, calc(100vh - 23rem));
+    }
+    .images {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: stretch;
+        gap: 6px;
+    }
+    .single .images {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .image-wrapper {
+        position: relative;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        min-width: 0;
+        border-radius: var(--radius-sm);
+        background: var(--surface-3);
+    }
+    .image-wrapper-inner {
+        width: 100%;
+    }
+    .image-wrapper-inner.diff {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+    }
+    .diff-hint {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        max-width: calc(100% - 16px);
+        padding: 4px 8px;
+        border-radius: var(--radius-sm);
+        background: var(--text);
+        color: var(--bg);
+        opacity: 0;
+        pointer-events: none;
+        font-size: 11px;
+        transition: opacity 0.15s;
+    }
+    .diff-toggleable:hover .diff-hint {
+        opacity: 0.9;
+    }
+    img {
+        display: block;
+        height: auto;
+        width: min(var(--zoom), var(--natural-width, 100%));
+        margin: 0 auto;
+        border-radius: var(--radius-sm);
+    }
+    .placeholder,
+    .error {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 180px;
+        height: 100%;
+        padding: 24px;
+        border-radius: var(--radius-sm);
+        background: var(--surface-2);
+        color: var(--text-3);
+        text-align: center;
+    }
     .button-wrapper {
-        @apply py-4 flex gap-4 items-center justify-end;
-
-        button:disabled {
-            @apply opacity-50 cursor-not-allowed;
-        }
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 12px;
+        padding: 20px 0;
+    }
+}
+@media (max-width: 900px) {
+    #screens .header-center {
+        width: 100%;
+        order: 3;
+    }
+}
+@media (max-width: 640px) {
+    #screens .header > .flex {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    #screens .screen {
+        padding: 14px 12px;
+    }
+    #screens .screen-meta > div {
+        flex-wrap: wrap;
+    }
+    #screens .review-bar {
+        flex-direction: column;
+    }
+    #screens .review-actions {
+        justify-content: flex-end;
     }
 }
 </style>

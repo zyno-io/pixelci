@@ -1,5 +1,5 @@
 <template>
-    <div class="loader" :class="{ center: position !== 'left' }">
+    <div class="loader" :class="{ center: position !== 'left' }" role="status" aria-label="Loading">
         <div
             class="inner"
             :class="{
@@ -10,7 +10,7 @@
                 'text-xl': size === 'sm'
             }"
         >
-            <i class="fas fa-spinner fa-spin text-inherit" />
+            <i class="fa-solid fa-circle-notch fa-spin text-inherit" aria-hidden="true" />
         </div>
     </div>
 </template>
@@ -31,6 +31,7 @@ i {
 
 .loader {
     @apply p-4 flex;
+    color: var(--accent);
 
     &.center {
         @apply justify-center;

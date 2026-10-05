@@ -1,0 +1,313 @@
+// PixelCI layouts built on the CI Dashboard tokens and primitives in base.scss.
+main > div {
+    width: 100%;
+    max-width: 1120px;
+    min-width: 0;
+    margin: 0 auto;
+    padding: 28px 20px 48px;
+
+    &.full {
+        max-width: none;
+    }
+}
+
+.header {
+    position: sticky;
+    top: var(--header-h);
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding: 12px 0;
+    background: var(--bg);
+
+    h1 {
+        font-size: 19px;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+    }
+}
+
+.back {
+    width: 32px;
+    padding: 0;
+}
+.input-wrapper,
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.field .field-value {
+    flex: 1;
+}
+label:has(input[type='checkbox']) {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    user-select: none;
+    color: var(--text-2);
+    font-size: 13px;
+}
+
+.empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    min-height: 240px;
+    padding: 32px 20px;
+    color: var(--text-3);
+    text-align: center;
+
+    > i {
+        font-size: 26px;
+    }
+    h2 {
+        color: var(--text-2);
+        font-size: 15px;
+        font-weight: 600;
+    }
+}
+
+.form-modal,
+.ci-setup {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 520px;
+    max-width: calc(100vw - 32px);
+    padding: 24px;
+
+    h2 {
+        font-size: 17px;
+        font-weight: 600;
+    }
+    hr {
+        margin: 0;
+        border: 0;
+        border-top: 1px solid var(--border);
+    }
+    form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    label {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 500;
+    }
+    .input,
+    .select {
+        width: 100%;
+    }
+}
+
+.form-actions,
+.ci-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+}
+.form-actions-right {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+.ci-snippet {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.ci-snippet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.ci-snippet-label,
+.redirect-label {
+    font-size: 12px;
+    font-weight: 600;
+}
+.ci-setup .subtitle {
+    color: var(--text-2);
+    font-size: 13px;
+}
+pre {
+    margin: 0;
+    padding: 14px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+
+    code {
+        font-size: 12px;
+    }
+}
+.redirect-url {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+
+    code {
+        overflow-wrap: anywhere;
+        user-select: all;
+    }
+    .hint {
+        color: var(--text-3);
+        font-size: 12px;
+    }
+}
+
+.auth-page {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 24px;
+    padding: 64px 16px 32px;
+    isolation: isolate;
+
+    &::before {
+        position: absolute;
+        inset: 0;
+        z-index: -1;
+        content: '';
+        pointer-events: none;
+        background:
+            radial-gradient(circle at 50% -10%, var(--accent-soft), transparent 55%),
+            linear-gradient(var(--border) 1px, transparent 1px) 0 0 / 32px 32px,
+            linear-gradient(90deg, var(--border) 1px, transparent 1px) 0 0 / 32px 32px;
+        mask-image: radial-gradient(ellipse at 50% 35%, #000 20%, transparent 70%);
+        opacity: 0.7;
+    }
+
+    .theme-corner {
+        position: absolute;
+        top: 14px;
+        right: 16px;
+    }
+    .theme-corner .icon-trigger {
+        justify-content: center;
+        width: 32px;
+        padding: 0;
+    }
+    .auth-card {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        width: 100%;
+        max-width: 400px;
+        padding: 32px 30px 28px;
+        box-shadow: var(--shadow-lg);
+    }
+    .auth-mark {
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        margin: 0 auto;
+        border-radius: 12px;
+        background: var(--text);
+        color: var(--bg);
+        font-size: 19px;
+    }
+    h1 {
+        font-size: 20px;
+        font-weight: 650;
+        letter-spacing: -0.015em;
+        text-align: center;
+    }
+    .subtitle {
+        color: var(--text-2);
+        font-size: 13px;
+        text-align: center;
+    }
+    form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    label {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 500;
+    }
+    .copy-btn {
+        align-self: flex-start;
+    }
+}
+
+.admin-list {
+    overflow: hidden;
+
+    .item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 16px;
+        padding: 16px 18px;
+    }
+    .item + .item {
+        border-top: 1px solid var(--border);
+    }
+    .item-info,
+    .item-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .item-info {
+        flex-wrap: wrap;
+    }
+    .name {
+        font-weight: 600;
+    }
+    .meta {
+        color: var(--text-3);
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 640px) {
+    main > div {
+        padding: 16px 12px 32px;
+    }
+    .header {
+        margin-bottom: 12px;
+    }
+    .form-modal,
+    .ci-setup {
+        padding: 18px;
+    }
+    .auth-page .auth-card {
+        padding: 24px 20px;
+    }
+}
+
+main > #screens.single-view {
+    max-width: 1280px;
+}
