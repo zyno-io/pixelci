@@ -16,6 +16,7 @@
     --text: #15171c;
     --text-2: #4f5562;
     --text-3: #646a78;
+    --placeholder: #959aa6;
     --accent: #4f46e5;
     --accent-hover: #4338ca;
     --accent-text: #ffffff;
@@ -67,6 +68,7 @@ html.dark {
     --text: #ececf0;
     --text-2: #aeb2bd;
     --text-3: #8b909c;
+    --placeholder: #5f6470;
     --accent: #7c74ff;
     --accent-hover: #918aff;
     --accent-text: #0c0d10;
@@ -310,7 +312,7 @@ code,
         box-shadow 0.12s;
 
     &::placeholder {
-        color: var(--text-3);
+        color: var(--placeholder);
     }
 
     &:focus {
