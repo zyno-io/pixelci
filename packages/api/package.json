@@ -1,6 +1,6 @@
 {
     "name": "@zyno-io/pixelci-api",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "private": true,
     "description": "",
     "keywords": [],
@@ -18,14 +18,15 @@
         "test:int:auth": "APP_ENV=development ttsx tests/integration/ci-token-auth.test.ts",
         "test:int:onboarding": "APP_ENV=development ttsx tests/integration/onboarding.test.ts",
         "test:int:ext": "APP_ENV=development ttsx tests/integration/ext-read.test.ts",
-        "format": "npx oxlint --fix --fix-suggestions --fix-dangerously && oxfmt"
+        "format": "npx oxlint --fix --fix-suggestions --fix-dangerously && oxfmt",
+        "postinstall": "tsf-install"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.1146.0",
         "@aws-sdk/s3-request-presigner": "^3.1146.0",
         "@types/lodash": "^4.17.25",
         "@zyno-io/ts-reflection": "^26.1003.2308",
-        "@zyno-io/ts-server-foundation": "^26.1003.2308",
+        "@zyno-io/ts-server-foundation": "26.1003.2308",
         "axios": "^1.20.0",
         "date-fns": "^4.4.0",
         "date-fns-tz": "^3.2.0",
@@ -39,7 +40,39 @@
         "@types/mime-types": "^3.0.1",
         "@types/node": "^26.6.4",
         "@types/pngjs": "^6.0.5",
-        "ttsc": "0.30.4",
-        "typescript": "~7.0.2"
+        "ttsc": "0.30.1",
+        "typescript": "^7.0.2"
+    },
+    "dependenciesMeta": {
+        "@ttsc/darwin-arm64": {
+            "unplugged": true
+        },
+        "@ttsc/darwin-x64": {
+            "unplugged": true
+        },
+        "@ttsc/linux-arm": {
+            "unplugged": true
+        },
+        "@ttsc/linux-arm64": {
+            "unplugged": true
+        },
+        "@ttsc/linux-x64": {
+            "unplugged": true
+        },
+        "@ttsc/win32-arm64": {
+            "unplugged": true
+        },
+        "@ttsc/win32-x64": {
+            "unplugged": true
+        },
+        "protoc": {
+            "unplugged": true
+        },
+        "ts-proto": {
+            "unplugged": true
+        },
+        "ttsc": {
+            "unplugged": true
+        }
     }
 }

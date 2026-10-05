@@ -14,6 +14,8 @@ COPY packages/api/package.json packages/api/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/cli/package.json packages/cli/package.json
 COPY packages/mcp/package.json packages/mcp/package.json
+COPY packages/api/tsconfig*.json packages/api/
+COPY packages/cli/tsconfig.json packages/cli/tsconfig.json
 
 RUN yarn --immutable
 
