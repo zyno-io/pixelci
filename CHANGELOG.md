@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.0
+
+- Apply the CI Dashboard design system across the UI, including accessible menus,
+  light/dark/system themes, semantic status colors, and responsive review controls.
+- Update dependencies across all workspaces to the latest releases.
+- Fix build-navigation checks to select the branch name independently of commit links.
+- Support Helm `envValueFrom` configuration.
+- Mirror release history without force-pushing.
+
 ## v0.3.0
 
 - Per-screen build review, with bulk approve and explicit build rejection
