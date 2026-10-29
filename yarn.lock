@@ -3928,7 +3928,7 @@ __metadata:
     tsf-repl: dist/src/cli/tsf-repl.js
     tsf-test: dist/src/cli/tsf-test.js
     tsf-update: dist/src/cli/tsf-update.js
-  checksum: 10c0/023471990d08f482bb002b7e1b58a7e25e185e28ca5577eae1142e7a82c97da698e259f252fb9e83f172a8e10723dca61224903c89919073190ed7fce4248d75
+  checksum: 10c0/91770c7552b3765a2cbe6240a4c6fdbc98d4a6e07aa49739077c532cb76d330f5c165daed3a33e3c015527227e783a2e65ca520468a05cb6241dada6b7a2b43a
   languageName: node
   linkType: hard
 
