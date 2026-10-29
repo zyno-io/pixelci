@@ -3704,8 +3704,8 @@ __metadata:
     "@types/mime-types": "npm:^3.0.1"
     "@types/node": "npm:^26.6.4"
     "@types/pngjs": "npm:^6.0.5"
-    "@zyno-io/ts-reflection": "npm:26.1026.1655"
-    "@zyno-io/ts-server-foundation": "npm:26.1026.1655"
+    "@zyno-io/ts-reflection": "npm:^26.1029.216"
+    "@zyno-io/ts-server-foundation": "npm:26.1029.216"
     axios: "npm:^1.20.0"
     date-fns: "npm:^4.4.0"
     date-fns-tz: "npm:^3.2.0"
@@ -3745,7 +3745,7 @@ __metadata:
   dependencies:
     "@faker-js/faker": "npm:^10.6.0"
     "@types/node": "npm:^26.6.4"
-    "@zyno-io/ts-reflection": "npm:26.1026.1655"
+    "@zyno-io/ts-reflection": "npm:^26.1029.216"
     dotenv-cli: "npm:^11.0.0"
     npm-run-all: "npm:^4.1.5"
     ttsc: "npm:0.30.1"
@@ -3833,21 +3833,21 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@zyno-io/ts-reflection@npm:26.1026.1655":
-  version: 26.1026.1655
-  resolution: "@zyno-io/ts-reflection@npm:26.1026.1655"
+"@zyno-io/ts-reflection@npm:26.1029.216, @zyno-io/ts-reflection@npm:^26.1029.216":
+  version: 26.1029.216
+  resolution: "@zyno-io/ts-reflection@npm:26.1029.216"
   peerDependencies:
     ttsc: "*"
   peerDependenciesMeta:
     ttsc:
       optional: true
-  checksum: 10c0/56157f32616755cda78f1006f7fbb8e7d46ce0f9f13f869f89e045b8601d8bbe57c5cf0a24cd0f656a68802ee5ed5d42f814a1e3004f0f0329c1e3c4899126ed
+  checksum: 10c0/a4760d865e4ba8e723957d71eb709b4335f2553154bf2c16c3851e9e9a940a0075d755b571344c4a1322611b243c1b7fb2cb3131982e479a155a7692e4ec4dc7
   languageName: node
   linkType: hard
 
-"@zyno-io/ts-server-foundation@npm:26.1026.1655":
-  version: 26.1026.1655
-  resolution: "@zyno-io/ts-server-foundation@npm:26.1026.1655"
+"@zyno-io/ts-server-foundation@npm:26.1029.216":
+  version: 26.1029.216
+  resolution: "@zyno-io/ts-server-foundation@npm:26.1029.216"
   dependencies:
     "@bufbuild/protobuf": "npm:^2.15.0"
     "@opentelemetry/api": "npm:^1.9.1"
@@ -3871,7 +3871,7 @@ __metadata:
     "@ttsc/graph": "npm:^0.30.1"
     "@types/ws": "npm:^8.18.1"
     "@zyno-io/config": "npm:^1.14.0"
-    "@zyno-io/ts-reflection": "npm:26.1026.1655"
+    "@zyno-io/ts-reflection": "npm:26.1029.216"
     bcrypt: "npm:^6.0.0"
     bullmq: "npm:^6.3.4"
     busboy: "npm:^1.6.0"
@@ -3928,7 +3928,7 @@ __metadata:
     tsf-repl: dist/src/cli/tsf-repl.js
     tsf-test: dist/src/cli/tsf-test.js
     tsf-update: dist/src/cli/tsf-update.js
-  checksum: 10c0/4945cbbded3af440a2955f259df8f70c9833a3ab61fa36c2c4e1bfb7a8972aeaa6e7bafdc6332fad0fab8705ed4c1a33fce3dac4bbc717b21bd5961feaaa4b24
+  checksum: 10c0/023471990d08f482bb002b7e1b58a7e25e185e28ca5577eae1142e7a82c97da698e259f252fb9e83f172a8e10723dca61224903c89919073190ed7fce4248d75
   languageName: node
   linkType: hard
 
