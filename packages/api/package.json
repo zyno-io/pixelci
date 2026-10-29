@@ -24,15 +24,15 @@
     "dependencies": {
         "@aws-sdk/client-s3": "^3.1146.0",
         "@aws-sdk/s3-request-presigner": "^3.1146.0",
-        "@types/lodash": "^4.17.25",
-        "@zyno-io/ts-reflection": "^26.1029.216",
-        "@zyno-io/ts-server-foundation": "26.1029.216",
+        "@types/lodash": "^4.17.27",
+        "@zyno-io/ts-reflection": "^26.1029.1716",
+        "@zyno-io/ts-server-foundation": "26.1029.1716",
         "axios": "^1.20.0",
         "date-fns": "^4.4.0",
         "date-fns-tz": "^3.2.0",
         "lodash": "^4.18.1",
-        "mysql2": "^3.24.4",
-        "pixelmatch": "^7.2.0",
+        "mysql2": "^3.24.6",
+        "pixelmatch": "^8.0.0",
         "pngjs": "^7.0.0"
     },
     "devDependencies": {
@@ -40,7 +40,7 @@
         "@types/mime-types": "^3.0.1",
         "@types/node": "^26.6.4",
         "@types/pngjs": "^6.0.5",
-        "ttsc": "0.30.1",
+        "ttsc": "0.34.2",
         "typescript": "^7.0.2"
     },
     "dependenciesMeta": {
