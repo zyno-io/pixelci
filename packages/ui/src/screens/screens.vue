@@ -320,15 +320,19 @@ function setScreenRef(screenId: string, el: HTMLElement | null) {
     else screenRefs.delete(screenId);
 }
 
-// After a screen collapses on review, bring the next screen's header to the top of the viewport.
+// After a screen collapses on review, bring the next undecided screen's header to the top of the viewport,
+// searching forward first and then wrapping to screens above the current one.
 async function scrollToNextScreen(current: IScreen) {
     const list = displayScreens.value;
     if (!list) return;
 
     const idx = list.findIndex(s => s.screenId === current.screenId);
-    if (idx < 0 || idx >= list.length - 1) return;
+    if (idx < 0) return;
 
-    const next = list[idx + 1];
+    const isUndecided = (s: IScreen) => needsReview(s) && !s.currentBuildScreen?.reviewStatus;
+    const next = list.slice(idx + 1).find(isUndecided) ?? list.slice(0, idx).find(isUndecided);
+    if (!next) return;
+
     await nextTick();
     screenRefs.get(next.screenId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
