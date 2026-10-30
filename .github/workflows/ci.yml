@@ -13,10 +13,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-
-      - name: Enable Corepack
-        run: corepack enable
+          node-version: 26.x
+          check-latest: true
+      - name: Install Corepack
+        run: |-
+          npm install --global corepack --force
+          corepack enable
 
       - name: Install dependencies
         run: yarn --immutable
@@ -36,17 +38,13 @@ jobs:
           - 3306:3306
         options: >-
           --health-cmd "mysqladmin ping -h localhost -u root -psecret"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
+          --health-interval 5s --health-timeout 3s --health-retries 10
       redis:
         image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
@@ -55,10 +53,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-
-      - name: Enable Corepack
-        run: corepack enable
+          node-version: 26.x
+          check-latest: true
+      - name: Install Corepack
+        run: |-
+          npm install --global corepack --force
+          corepack enable
 
       - name: Install dependencies
         run: yarn --immutable
@@ -90,27 +90,25 @@ jobs:
           - 3306:3306
         options: >-
           --health-cmd "mysqladmin ping -h localhost -u root -psecret"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
+          --health-interval 5s --health-timeout 3s --health-retries 10
       redis:
         image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-
-      - name: Enable Corepack
-        run: corepack enable
+          node-version: 26.x
+          check-latest: true
+      - name: Install Corepack
+        run: |-
+          npm install --global corepack --force
+          corepack enable
 
       - name: Install dependencies
         run: yarn --immutable

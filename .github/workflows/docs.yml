@@ -22,10 +22,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-
-      - name: Enable Corepack
-        run: corepack enable
+          node-version: 26.x
+          check-latest: true
+      - name: Install Corepack
+        run: |-
+          npm install --global corepack --force
+          corepack enable
 
       - name: Install dependencies
         run: yarn --immutable

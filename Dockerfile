@@ -1,12 +1,10 @@
-FROM node:24-bookworm-slim AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
-RUN apt-get update && \
-    apt-get install --no-install-recommends --yes ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache ca-certificates
 
-RUN corepack enable
+RUN npm install --global corepack && corepack enable
 
 COPY .yarn .yarn
 COPY package.json yarn.lock .yarnrc.yml ./
@@ -33,14 +31,12 @@ RUN yarn workspaces focus @zyno-io/pixelci-api --production
 
 ###
 
-FROM node:24-bookworm-slim
+FROM node:26-alpine
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN apt-get update && \
-    apt-get install --no-install-recommends --yes tini && \
-    rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache tini
 
 COPY --from=builder /app/packages/api .
 COPY --from=builder /app/node_modules node_modules
@@ -49,5 +45,5 @@ COPY LICENSE.md THIRD-PARTY-LICENSES.md ./
 ARG BUILD_VERSION
 RUN if [ -n "${BUILD_VERSION}" ]; then npm version "${BUILD_VERSION}" --allow-same-version; fi
 
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD [ "node", ".", "server:start" ]
