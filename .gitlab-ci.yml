@@ -53,7 +53,7 @@ prepare build:
 
 .test-services:
   extends: .test-base
-  image: mcr.microsoft.com/playwright:v1.63.0-jammy
+  image: mcr.microsoft.com/playwright:v1.64.1-jammy
   services:
     - name: mysql:8
       variables:
