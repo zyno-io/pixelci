@@ -1,8 +1,9 @@
-FROM node:26-alpine AS builder
+# The UI typecheck uses a native TypeScript bridge that requires glibc.
+FROM node:26-bookworm-slim AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates
+RUN apt-get update && apt-get install --no-install-recommends --yes ca-certificates && rm -rf /var/lib/apt/lists/*
 
 RUN npm install --global corepack && corepack enable
 
@@ -31,12 +32,12 @@ RUN yarn workspaces focus @zyno-io/pixelci-api --production
 
 ###
 
-FROM node:26-alpine
+FROM node:26-bookworm-slim
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN apk add --no-cache tini
+RUN apt-get update && apt-get install --no-install-recommends --yes tini && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/packages/api .
 COPY --from=builder /app/node_modules node_modules
@@ -45,5 +46,5 @@ COPY LICENSE.md THIRD-PARTY-LICENSES.md ./
 ARG BUILD_VERSION
 RUN if [ -n "${BUILD_VERSION}" ]; then npm version "${BUILD_VERSION}" --allow-same-version; fi
 
-ENTRYPOINT ["/sbin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD [ "node", ".", "server:start" ]
