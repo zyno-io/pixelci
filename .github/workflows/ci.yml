@@ -37,15 +37,13 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd "mysqladmin ping -h localhost -u root -psecret"
-          --health-interval 5s --health-timeout 3s --health-retries 10
+          --health-cmd "mysqladmin ping -h localhost -u root -psecret" --health-interval 5s --health-timeout 3s --health-retries 10
       redis:
         image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
-          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s
-          --health-retries 10
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,15 +87,13 @@ jobs:
         ports:
           - 3306:3306
         options: >-
-          --health-cmd "mysqladmin ping -h localhost -u root -psecret"
-          --health-interval 5s --health-timeout 3s --health-retries 10
+          --health-cmd "mysqladmin ping -h localhost -u root -psecret" --health-interval 5s --health-timeout 3s --health-retries 10
       redis:
         image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
-          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s
-          --health-retries 10
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -169,6 +165,7 @@ jobs:
           tags: |
             ghcr.io/zyno-io/pixelci:latest
             ghcr.io/zyno-io/pixelci:${{ steps.version.outputs.version }}
+          pull: true
 
   build-cli:
     needs: [test-cli, test-api, test-e2e]
@@ -199,6 +196,7 @@ jobs:
           tags: |
             ghcr.io/zyno-io/pixelci/cli:latest
             ghcr.io/zyno-io/pixelci/cli:${{ steps.version.outputs.version }}
+          pull: true
 
   release:
     needs: [build-server, build-cli]
