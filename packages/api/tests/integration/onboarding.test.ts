@@ -72,6 +72,7 @@ async function run() {
     await testGitLabUpdateWithoutPlatform(facade, adminJwt);
     await testGitHubIntegrationLifecycle(facade, adminJwt);
     await testGitHubValidation(facade, adminJwt);
+    await testLegacyGitHubRowPartialUpdate(facade, adminJwt);
     await testSessionIncludesVcsId(facade, adminJwt);
     await testOnboardingGitHubOnFreshDb();
 }
@@ -220,6 +221,30 @@ async function testGitHubValidation(facade: Facade, jwt: string) {
     for (const input of bad) {
         assertStatus(await facade.request(adminReq(HttpRequest.POST('/api/admin/vcs-integrations'), jwt).json(input)), 400);
     }
+    console.log('  PASS');
+}
+
+async function testLegacyGitHubRowPartialUpdate(facade: Facade, jwt: string) {
+    console.log('\nTest: GitHub row without appId/privateKey accepts partial updates until app credentials are configured');
+    const id = '00000000-0000-0000-0000-0000000000b1';
+    await createPersistedEntity(VcsIntegrationEntity, {
+        id,
+        name: 'Legacy GitHub',
+        platform: 'github',
+        config: { clientId: 'cid', clientSecret: 'csecret', oidcAudience: 'https://old.example' }
+    });
+    const put = (config: Record<string, string>) =>
+        facade.request(adminReq(HttpRequest.PUT(`/api/admin/vcs-integrations/${id}`), jwt).json({ platform: 'github', config }));
+
+    assertStatus(await put({ oidcAudience: 'https://new.example' }), 200);
+    const stored = await VcsIntegrationEntity.query().filter({ id }).findOne();
+    if ((stored.config as { oidcAudience?: string }).oidcAudience !== 'https://new.example') {
+        throw new Error(`Expected oidcAudience to be updated, got ${JSON.stringify(stored.config)}`);
+    }
+    // Supplying appId without a privateKey is incomplete -> 400
+    assertStatus(await put({ appId: '123' }), 400);
+
+    assertStatus(await facade.request(adminReq(HttpRequest.DELETE(`/api/admin/vcs-integrations/${id}`), jwt)), 200);
     console.log('  PASS');
 }
 

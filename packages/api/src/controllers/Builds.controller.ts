@@ -250,7 +250,7 @@ export class BuildsController {
             return result.ok ? { vcsUrl: result.url } : { vcsUrl: false, vcsError: result.error };
         } catch (err) {
             this.logger.error('Failed to rerun CI job', err);
-            return { vcsUrl: false, vcsError: err instanceof Error ? err.message : String(err) };
+            return { vcsUrl: false, vcsError: 'Failed to re-run the CI job; please re-run it from your CI provider.' };
         }
     }
 }

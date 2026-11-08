@@ -112,8 +112,10 @@ export async function resolveUserFromVcsToken(
             logger.warn(`VCS token auth failed: no integration with id ${requestedVcsId}`);
             throw new HttpUnauthorizedError();
         }
-        if (integration.platform === 'gitlab' && inferredPlatform === 'github') {
-            logger.warn('VCS token auth failed: GitHub-style token supplied for a GitLab integration');
+        // Never forward a token to a provider it evidently wasn't issued by (GitHub tokens are prefixed,
+        // so anything unprefixed is treated as GitLab and is not sent to GitHub either).
+        if (integration.platform !== inferredPlatform) {
+            logger.warn(`VCS token auth failed: ${inferredPlatform}-style token supplied for a ${integration.platform} integration`);
             throw new HttpUnauthorizedError();
         }
     } else {
@@ -162,7 +164,11 @@ export class VcsTokenAuthMiddleware extends HttpMiddleware {
             throw new HttpUnauthorizedError();
         }
 
-        const token = authHeader.slice(7);
+        const token = authHeader.slice(7).trim();
+        if (!token || /\s/.test(token)) {
+            this.logger.warn('VCS token auth failed: empty or malformed bearer token');
+            throw new HttpUnauthorizedError();
+        }
         const requestedVcsId = (request.headers['x-pixelci-vcs-id'] as string | undefined)?.trim() || undefined;
 
         const { user, vcsId } = await resolveUserFromVcsToken(token, requestedVcsId, this.logger, this.vcsService);

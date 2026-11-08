@@ -42,17 +42,19 @@ function normalizeGitHubConfig(config: Partial<IGitHubConfigInput>): IGitHubConf
     return normalized;
 }
 
-function validateGitHubConfig(config: IGitHubConfig): void {
+function validateGitHubConfig(config: IGitHubConfig, requireAppCredentials = true): void {
     if (!config.clientId) throw new HttpBadRequestError('clientId is required');
     if (!config.clientSecret) throw new HttpBadRequestError('clientSecret is required');
     if (!config.oidcAudience) throw new HttpBadRequestError('oidcAudience is required');
-    if (!config.appId) throw new HttpBadRequestError('appId is required');
-    if (!/^\d+$/.test(config.appId)) throw new HttpBadRequestError('appId must be numeric');
-    if (!config.privateKey) throw new HttpBadRequestError('privateKey is required');
-    try {
-        createPrivateKey(config.privateKey);
-    } catch {
-        throw new HttpBadRequestError('privateKey is not a valid PEM private key');
+    if (requireAppCredentials && !config.appId) throw new HttpBadRequestError('appId is required');
+    if (config.appId && !/^\d+$/.test(config.appId)) throw new HttpBadRequestError('appId must be numeric');
+    if (requireAppCredentials && !config.privateKey) throw new HttpBadRequestError('privateKey is required');
+    if (config.privateKey) {
+        try {
+            createPrivateKey(config.privateKey);
+        } catch {
+            throw new HttpBadRequestError('privateKey is not a valid PEM private key');
+        }
     }
     if (config.url) {
         let parsed: URL;
@@ -102,7 +104,8 @@ export function mergeConfigUpdate(platform: IPlatform, stored: IVcsConfig, updat
     if (typeof patch.privateKey === 'string' && patch.privateKey.trim() !== '') merged.privateKey = patch.privateKey;
 
     const config = normalizeGitHubConfig(merged);
-    validateGitHubConfig(config);
+    // Rows created before appId/privateKey existed may lack them; only insist once either is configured.
+    validateGitHubConfig(config, !!(base.appId || base.privateKey || patch.appId || patch.privateKey));
     return config;
 }
 

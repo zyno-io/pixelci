@@ -103,7 +103,8 @@ export class VcsGitLabService implements IVcsServiceImpl {
             };
         } catch (err) {
             if (axios.isAxiosError(err)) {
-                throw new HttpBadRequestError(err.response?.data);
+                const data = err.response?.data as { error?: string; error_description?: string } | undefined;
+                throw new HttpBadRequestError(data?.error_description ?? data?.error ?? 'GitLab session expired; please sign in again');
             }
             throw err;
         }

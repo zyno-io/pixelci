@@ -159,7 +159,8 @@ async function createBaseEntities() {
         id: GITHUB_VCS_ID,
         name: 'Ext Test GitHub',
         platform: 'github',
-        config: { clientId: 'gh-client', clientSecret: 'gh-secret', oidcAudience: 'https://pixelci.example.com' }
+        // url points at a closed local port so tests never contact real GitHub
+        config: { url: 'http://127.0.0.1:9', clientId: 'gh-client', clientSecret: 'gh-secret', oidcAudience: 'https://pixelci.example.com' }
     });
 
     await createPersistedEntity(UserEntity, {
@@ -337,9 +338,17 @@ async function testGitHubTokenNeverReachesGitLab(facade: Facade) {
     const gitlabHint = await facade.request(authed(HttpRequest.GET('/api/ext/apps'), GITHUB_PAT).header('x-pixelci-vcs-id', VCS_ID));
     expectStatus(gitlabHint.statusCode, 401);
 
+    // Leading whitespace must not defeat prefix detection
+    const padded = await facade.request(HttpRequest.GET('/api/ext/apps').header('authorization', `Bearer  ${GITHUB_PAT}`));
+    expectStatus(padded.statusCode, 401);
+
     if (gitlabSeenCredentials.some(c => c.includes(GITHUB_PAT))) {
         throw new Error('GitHub-style token was sent to the GitLab mock');
     }
+
+    // Reverse direction: an unprefixed (GitLab-style) token pointed at the GitHub integration is refused
+    const reverse = await facade.request(authed(HttpRequest.GET('/api/ext/apps'), 'glpat-unprefixedStyle').header('x-pixelci-vcs-id', GITHUB_VCS_ID));
+    expectStatus(reverse.statusCode, 401);
     console.log('  PASS');
 }
 
