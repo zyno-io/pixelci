@@ -1,8 +1,10 @@
 import { HttpRequest } from '@zyno-io/ts-server-foundation';
 import { createPersistedEntity, JWT, TestingHelpers } from '@zyno-io/ts-server-foundation';
+import { generateKeyPairSync } from 'crypto';
 
 import { CoreAppOptions } from '../../src/app';
 import { UserEntity } from '../../src/entities/User.entity';
+import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 
 process.env.CI = 'true';
 process.env.REDIS_PREFIX = 'pixelci_test';
@@ -64,6 +66,190 @@ async function run() {
 
     // Phase 7: VCS integration CRUD
     await testVcsIntegrationCrud(facade, adminJwt);
+
+    // Phase 8: GitHub integrations, redaction, merge semantics
+    await testGitLabShowRedactsSecret(facade, adminJwt);
+    await testGitLabUpdateWithoutPlatform(facade, adminJwt);
+    await testGitHubIntegrationLifecycle(facade, adminJwt);
+    await testGitHubValidation(facade, adminJwt);
+    await testSessionIncludesVcsId(facade, adminJwt);
+    await testOnboardingGitHubOnFreshDb();
+}
+
+const GITHUB_KEY = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' }
+}).privateKey;
+
+type Facade = ReturnType<typeof TestingHelpers.createTestingFacade>;
+
+function githubInput(overrides: Record<string, unknown> = {}) {
+    return {
+        name: 'Test GitHub',
+        platform: 'github',
+        config: {
+            clientId: 'gh-client',
+            clientSecret: 'gh-secret',
+            appId: '12345',
+            privateKey: GITHUB_KEY,
+            oidcAudience: 'https://pixelci.example.com/',
+            ...overrides
+        }
+    };
+}
+
+function adminReq(request: HttpRequest, jwt: string) {
+    return request.header('authorization', `Bearer ${jwt}`);
+}
+
+async function testGitLabShowRedactsSecret(facade: Facade, jwt: string) {
+    console.log('\nTest: admin show does not expose the GitLab clientSecret');
+    const list = (await facade.request(adminReq(HttpRequest.GET('/api/admin/vcs-integrations'), jwt))).json as Array<{
+        id: string;
+        platform: string;
+    }>;
+    const gl = list.find(i => i.platform === 'gitlab')!;
+    const response = await facade.request(adminReq(HttpRequest.GET(`/api/admin/vcs-integrations/${gl.id}`), jwt));
+    assertStatus(response, 200);
+    if (String(response.body).includes('secret')) throw new Error(`show leaks a secret: ${response.body}`);
+    const body = response.json as { platform: string; config: { url: string; clientId: string } };
+    if (body.platform !== 'gitlab' || !body.config.url || !body.config.clientId) throw new Error(`Unexpected show body: ${response.body}`);
+    console.log('  PASS');
+}
+
+async function testGitLabUpdateWithoutPlatform(facade: Facade, jwt: string) {
+    console.log('\nTest: GitLab PUT without platform still works (and an empty clientSecret keeps the stored one)');
+    const list = (await facade.request(adminReq(HttpRequest.GET('/api/admin/vcs-integrations'), jwt))).json as Array<{
+        id: string;
+        platform: string;
+    }>;
+    const gl = list.find(i => i.platform === 'gitlab')!;
+    const response = await facade.request(
+        adminReq(HttpRequest.PUT(`/api/admin/vcs-integrations/${gl.id}`), jwt).json({
+            name: 'Renamed GitLab',
+            config: { url: 'https://gitlab.example.com', clientId: 'new-client-id', clientSecret: '' }
+        })
+    );
+    assertStatus(response, 200);
+    const stored = await VcsIntegrationEntity.query().filter({ id: gl.id }).findOne();
+    const cfg = stored.config as { clientId: string; clientSecret: string };
+    if (cfg.clientId !== 'new-client-id' || cfg.clientSecret !== 'test-client-secret') {
+        throw new Error(`Unexpected stored GitLab config: ${JSON.stringify(stored.config)}`);
+    }
+    console.log('  PASS');
+}
+
+async function testGitHubIntegrationLifecycle(facade: Facade, jwt: string) {
+    console.log('\nTest: GitHub integration create keeps appId/privateKey/oidcAudience; Enterprise url is not coerced');
+    const create = await facade.request(
+        adminReq(HttpRequest.POST('/api/admin/vcs-integrations'), jwt).json(githubInput({ url: 'https://ghe.example.com/' }))
+    );
+    assertStatus(create, 200);
+    const created = create.json as { id: string; platform: string };
+    if (created.platform !== 'github') throw new Error(`Expected github, got ${created.platform}`);
+
+    const stored = await VcsIntegrationEntity.query().filter({ id: created.id }).findOne();
+    const cfg = stored.config as unknown as Record<string, string>;
+    if (
+        cfg.appId !== '12345' ||
+        cfg.privateKey !== GITHUB_KEY.trim() ||
+        cfg.oidcAudience !== 'https://pixelci.example.com' ||
+        cfg.url !== 'https://ghe.example.com'
+    ) {
+        throw new Error(`Stored GitHub config mismatch: ${JSON.stringify(stored.config)}`);
+    }
+
+    const show = await facade.request(adminReq(HttpRequest.GET(`/api/admin/vcs-integrations/${created.id}`), jwt));
+    assertStatus(show, 200);
+    if (String(show.body).includes('gh-secret') || String(show.body).includes('PRIVATE KEY')) throw new Error(`show leaks secrets: ${show.body}`);
+    const detail = show.json as { platform: string; config: Record<string, unknown> };
+    if (
+        detail.platform !== 'github' ||
+        detail.config.hasPrivateKey !== true ||
+        detail.config.appId !== '12345' ||
+        detail.config.url !== 'https://ghe.example.com'
+    ) {
+        throw new Error(`Unexpected GitHub show body: ${show.body}`);
+    }
+
+    console.log('  merge: name-only, partial config, blank secrets keep stored, blank url removes it');
+    const nameOnly = await facade.request(adminReq(HttpRequest.PUT(`/api/admin/vcs-integrations/${created.id}`), jwt).json({ name: 'GH renamed' }));
+    assertStatus(nameOnly, 200);
+    const merge = await facade.request(
+        adminReq(HttpRequest.PUT(`/api/admin/vcs-integrations/${created.id}`), jwt).json({
+            platform: 'github',
+            config: { oidcAudience: 'https://other.example.com//', clientSecret: '', privateKey: '', url: '' }
+        })
+    );
+    assertStatus(merge, 200);
+    const after = (await VcsIntegrationEntity.query().filter({ id: created.id }).findOne()).config as unknown as Record<string, string>;
+    if (
+        after.oidcAudience !== 'https://other.example.com' ||
+        after.clientSecret !== 'gh-secret' ||
+        after.privateKey !== GITHUB_KEY.trim() ||
+        after.appId !== '12345' ||
+        'url' in after
+    ) {
+        throw new Error(`Unexpected merged GitHub config: ${JSON.stringify(after)}`);
+    }
+
+    console.log('  wrong-platform PUT -> 400');
+    assertStatus(
+        await facade.request(
+            adminReq(HttpRequest.PUT(`/api/admin/vcs-integrations/${created.id}`), jwt).json({
+                config: { url: 'https://x.example.com', clientId: 'x' }
+            })
+        ),
+        400
+    );
+
+    assertStatus(await facade.request(adminReq(HttpRequest.DELETE(`/api/admin/vcs-integrations/${created.id}`), jwt)), 200);
+    console.log('  PASS');
+}
+
+async function testGitHubValidation(facade: Facade, jwt: string) {
+    console.log('\nTest: invalid GitHub config -> 400');
+    const bad = [
+        githubInput({ privateKey: 'not a pem' }),
+        githubInput({ appId: 'abc' }),
+        githubInput({ appId: '' }),
+        githubInput({ url: 'ftp://ghe.example.com' }),
+        githubInput({ oidcAudience: '' })
+    ];
+    for (const input of bad) {
+        assertStatus(await facade.request(adminReq(HttpRequest.POST('/api/admin/vcs-integrations'), jwt).json(input)), 400);
+    }
+    console.log('  PASS');
+}
+
+async function testSessionIncludesVcsId(facade: Facade, jwt: string) {
+    console.log('\nTest: session response includes vcsId');
+    const response = await facade.request(HttpRequest.GET('/api/session/me').header('authorization', `Bearer ${jwt}`));
+    assertStatus(response, 200);
+    if ((response.json as { vcsId: string }).vcsId !== ZERO_ID) throw new Error(`Expected vcsId=${ZERO_ID}, got ${response.body}`);
+    console.log('  PASS');
+}
+
+async function testOnboardingGitHubOnFreshDb() {
+    console.log('\nTest: onboarding with a GitHub integration on a fresh DB');
+    const facade = TestingHelpers.createTestingFacade(CoreAppOptions, {
+        enableDatabase: true,
+        databasePrefix: 'pixelci_onboardgh'
+    });
+    await facade.start();
+    const response = await facade.request(HttpRequest.POST('/api/session/onboarding/vcs-integration').json(githubInput()));
+    assertStatus(response, 200);
+    const body = response.json as { id: string; platform: string };
+    if (body.platform !== 'github') throw new Error(`Expected github, got ${response.body}`);
+    const stored = await VcsIntegrationEntity.query().filter({ id: body.id }).findOne();
+    const cfg = stored.config as unknown as Record<string, string>;
+    if (cfg.appId !== '12345' || !cfg.privateKey || cfg.oidcAudience !== 'https://pixelci.example.com' || 'url' in cfg) {
+        throw new Error(`Stored onboarding GitHub config mismatch: ${JSON.stringify(stored.config)}`);
+    }
+    const providers = (await facade.request(HttpRequest.GET('/api/session/providers'))).json as Array<{ platform: string }>;
+    if (providers[0].platform !== 'github') throw new Error('providers should report platform=github');
+    console.log('  PASS');
 }
 
 async function testOnboardingStatusFresh(facade: ReturnType<typeof TestingHelpers.createTestingFacade>) {
@@ -102,15 +288,15 @@ async function testCreateOnboardingVcsIntegration(facade: ReturnType<typeof Test
 }
 
 async function testProvidersDoNotLeakConfig(facade: ReturnType<typeof TestingHelpers.createTestingFacade>) {
-    console.log('\nTest: unauthenticated providers list exposes only id/name (no config/secrets)');
+    console.log('\nTest: unauthenticated providers list exposes only id/name/platform (no config/secrets)');
     const response = await facade.request(HttpRequest.GET('/api/session/providers'));
     assertStatus(response, 200);
     if (String(response.body).includes('test-client-secret')) {
         throw new Error(`Providers response leaks the client secret: ${response.body}`);
     }
     const providers = response.json as Record<string, unknown>[];
-    if (!providers.length || providers.some(p => Object.keys(p).sort().join(',') !== 'id,name')) {
-        throw new Error(`Expected providers with exactly {id, name}, got ${response.body}`);
+    if (!providers.length || providers.some(p => Object.keys(p).sort().join(',') !== 'id,name,platform')) {
+        throw new Error(`Expected providers with exactly {id, name, platform}, got ${response.body}`);
     }
     console.log('  PASS');
 }

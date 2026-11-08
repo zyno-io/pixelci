@@ -6,30 +6,56 @@ import { AdminAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
 import { AppEntity } from '../entities/App.entity';
 import { IGitLabConfig, VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
+import { mergeConfigUpdate, normalizeCreateConfig, redactConfig } from '../services/VcsConfig';
 
 type IVcsIntegrationListResponse = Pick<VcsIntegrationEntity, 'id' | 'name' | 'platform'>;
-type IVcsIntegrationDetailResponse = Pick<VcsIntegrationEntity, 'id' | 'name' | 'platform' | 'config'>;
 
-interface IVcsIntegrationCreateInput {
+export interface IGitHubConfigInput {
+    url?: string;
+    clientId: string;
+    clientSecret: string;
+    appId: string;
+    privateKey: string;
+    oidcAudience: string;
+    oidcIssuer?: string;
+}
+export interface IGitLabIntegrationInput {
     name: string;
-    platform: 'gitlab' | 'github';
+    platform: 'gitlab';
     config: IGitLabConfig;
 }
+export interface IGitHubIntegrationInput {
+    name: string;
+    platform: 'github';
+    config: IGitHubConfigInput;
+}
+export type IVcsIntegrationCreateInput = IGitLabIntegrationInput | IGitHubIntegrationInput;
 
-interface IVcsIntegrationUpdateInput {
+export interface IGitLabIntegrationUpdateInput {
     name?: string;
-    config?: IGitLabConfig;
+    platform?: 'gitlab';
+    config?: { url?: string; clientId?: string; clientSecret?: string };
 }
+export interface IGitHubIntegrationUpdateInput {
+    name?: string;
+    platform: 'github';
+    config?: Partial<IGitHubConfigInput>;
+}
+export type IVcsIntegrationUpdateInput = IGitHubIntegrationUpdateInput | IGitLabIntegrationUpdateInput;
 
-/**
- * GitHub integrations can't be configured via the API yet: the input config is typed as IGitLabConfig, so
- * GitHub-only fields (oidcAudience, oidcIssuer) would be stripped. Lifted in slice 2 (see design/github-actions.md).
- */
-export function assertPlatformConfigurable(platform: VcsIntegrationEntity['platform']): void {
-    if (platform !== 'gitlab') {
-        throw new HttpBadRequestError(`Configuring ${platform} integrations is not supported yet`);
-    }
+export interface IGitLabIntegrationDetail {
+    id: string;
+    name: string;
+    platform: 'gitlab';
+    config: { url: string; clientId: string };
 }
+export interface IGitHubIntegrationDetail {
+    id: string;
+    name: string;
+    platform: 'github';
+    config: { url?: string; clientId: string; appId?: string; oidcAudience: string; hasPrivateKey: boolean };
+}
+export type IVcsIntegrationDetailResponse = IGitLabIntegrationDetail | IGitHubIntegrationDetail;
 
 @ApiController('/api/admin/vcs-integrations')
 @http.middleware(AdminAuthMiddleware)
@@ -51,23 +77,18 @@ export class VcsIntegrationsController {
         const integration = await VcsIntegrationEntity.query().filter({ id }).findOneOrUndefined();
         if (!integration) throw new HttpNotFoundError();
 
-        return {
-            id: integration.id,
-            name: integration.name,
-            platform: integration.platform,
-            config: integration.config
-        };
+        return redactConfig(integration.platform, integration.id, integration.name, integration.config);
     }
 
     @http.POST()
     async create(body: HttpBody<IVcsIntegrationCreateInput>): Promise<IVcsIntegrationListResponse> {
-        assertPlatformConfigurable(body.platform);
+        const { platform, config } = normalizeCreateConfig(body);
 
         const integration = createEntity(VcsIntegrationEntity, {
             id: uuid(),
             name: body.name,
-            platform: body.platform,
-            config: body.config
+            platform,
+            config
         });
         await integration.save();
 
@@ -85,9 +106,12 @@ export class VcsIntegrationsController {
 
         if (body.name !== undefined) integration.name = body.name;
         if (body.config !== undefined) {
-            // config is replaced wholesale and typed as IGitLabConfig; for GitHub that would drop oidcAudience.
-            assertPlatformConfigurable(integration.platform);
-            integration.config = body.config;
+            // A body without `platform` is treated as GitLab (keeps pre-GitHub clients working).
+            const bodyPlatform = body.platform ?? 'gitlab';
+            if (bodyPlatform !== integration.platform) {
+                throw new HttpBadRequestError(`Cannot apply ${bodyPlatform} config to a ${integration.platform} integration`);
+            }
+            integration.config = mergeConfigUpdate(integration.platform, integration.config, body.config);
         }
         await integration.save();
 

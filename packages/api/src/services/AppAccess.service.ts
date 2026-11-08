@@ -9,7 +9,7 @@ import { VcsService } from './Vcs.service';
 
 /**
  * Who is asking for access. UI requests act as a logged-in user (we use their stored VCS OAuth
- * token); programmatic requests act as a raw VCS token (the caller's GitLab PAT).
+ * token); programmatic requests act as a raw VCS token (the caller's personal access token).
  */
 export type IAppAccessPrincipal = { kind: 'user'; user: UserEntity } | { kind: 'token'; token: string; vcsId: string };
 
@@ -17,7 +17,7 @@ const ACCESS_CACHE_TTL_MS = 60_000;
 
 /**
  * Authorizes access to an app based on whether the caller can access the app's project in the VCS
- * provider (GitLab). "Can access" means GET /projects/:id returns 200 for the caller's token.
+ * provider. "Can access" means the provider reports the project as readable with the caller's token.
  * Decisions are cached briefly per principal+project to avoid a VCS round-trip on every request.
  */
 export class AppAccessService {

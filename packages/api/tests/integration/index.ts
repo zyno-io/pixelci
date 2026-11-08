@@ -62,6 +62,12 @@ function startMockGitLab(): Promise<number> {
                 return;
             }
 
+            if (req.method === 'POST' && /^\/api\/v4\/projects\/[^/]+\/jobs\/[^/]+\/retry$/.test(req.url ?? '')) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ id: 999, pipeline: { id: 7 } }));
+                return;
+            }
+
             if (req.url?.startsWith('/api/v4/projects/')) {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ id: 1, path_with_namespace: PROJECT_PATH }));
@@ -229,10 +235,13 @@ async function runScenario(facade: TestingFacade, scenarioId: string, scenario: 
         }
 
         console.log('Approving build...');
-        await makeRequest<{ vcsUrl: string }>(
+        const approval = await makeRequest<{ vcsUrl: string | false; vcsError?: string }>(
             facade,
             HttpRequest.POST(`/api/apps/${APP_ID}/builds/${buildId}/approve`).header('authorization', `Bearer ${jwt}`)
         );
+        if (typeof approval.vcsUrl !== 'string' || !approval.vcsUrl.endsWith(`/${PROJECT_PATH}/-/pipelines/7`)) {
+            throw new Error(`Expected vcsUrl ending in /${PROJECT_PATH}/-/pipelines/7, got ${JSON.stringify(approval)}`);
+        }
     }
 }
 

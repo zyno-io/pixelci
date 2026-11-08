@@ -6,7 +6,7 @@ import { AppEntity } from '../entities/App.entity';
 import { BranchEntity } from '../entities/Branch.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { UserEntity } from '../entities/User.entity';
-import { IGitLabConfig, VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
+import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { AppAccessService } from '../services/AppAccess.service';
 import { IVcsProject, VcsService } from '../services/Vcs.service';
 
@@ -57,13 +57,8 @@ export class AppsController {
         if (!app) throw new HttpNotFoundError();
         await this.appAccessSvc.assertCanAccess({ kind: 'user', user }, app);
 
-        let commitUrlBase: string | null = null;
         const vcs = await VcsIntegrationEntity.query().filterField('id', app.vcsId).findOneOrUndefined();
-        if (vcs?.platform === 'gitlab') {
-            commitUrlBase = `${(vcs.config as IGitLabConfig).url}/${app.projectPath}/-/commit`;
-        } else if (vcs?.platform === 'github') {
-            commitUrlBase = `https://github.com/${app.projectPath}/commit`;
-        }
+        const commitUrlBase = vcs ? this.vcsService.getCommitUrlBase(vcs, app.projectPath) : null;
 
         return { ...app, commitUrlBase };
     }
@@ -71,6 +66,12 @@ export class AppsController {
     @http.POST()
     @http.middleware(AdminAuthMiddleware)
     async create(body: HttpBody<IAppCreateInput>): Promise<IAppIndexResponse> {
+        const integration = await VcsIntegrationEntity.query().filterField('id', body.vcsId).findOneOrUndefined();
+        if (!integration) throw new HttpBadRequestError('Unknown vcsId');
+        if (integration.platform === 'github' && !(Number.isSafeInteger(body.vcsProjectId) && body.vcsProjectId! > 0)) {
+            throw new HttpBadRequestError('vcsProjectId (the GitHub repository id) is required for GitHub apps');
+        }
+
         const appId = uuid();
 
         let defaultBranchId: string | undefined;
@@ -133,14 +134,6 @@ export class AppsController {
     @http.GET('vcs-projects/resolve')
     @http.middleware(AdminAuthMiddleware)
     async resolveVcsProject(query: HttpQueries<{ vcsId: string; url: string }>, user: UserEntity): Promise<IVcsProject> {
-        const urlObj = new URL(query.url);
-        const projectPath = urlObj.pathname
-            .replace(/^\//, '')
-            .replace(/\/-\/.*$/, '')
-            .replace(/\.git$/, '');
-        if (!projectPath) {
-            throw new HttpBadRequestError('Could not extract project path from URL');
-        }
-        return this.vcsService.getProjectByPath(user, query.vcsId, projectPath);
+        return this.vcsService.resolveProjectUrl(user, query.vcsId, query.url);
     }
 }

@@ -1,8 +1,9 @@
 import { HttpBadRequestError, HttpUnauthorizedError, Logger, r, ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-import type { ICiJobData, IVcsLoginSessionResponse, IVcsProject, IVcsServiceImpl } from './Vcs.service';
+import type { ICiJobData, IVcsLoginSessionResponse, IVcsProject, IVcsRerunResult, IVcsServiceImpl, IVcsTokenUser } from './Vcs.service';
 
+import { AppEntity } from '../entities/App.entity';
 import { UserEntity } from '../entities/User.entity';
 import { IGitHubConfig } from '../entities/VcsIntegration.entity';
 
@@ -124,12 +125,21 @@ export class VcsGitHubService implements IVcsServiceImpl {
         return this.unsupported('login');
     }
 
-    async rerunCiJob(_user: UserEntity, _projectPath: string, _jobId: string): Promise<string> {
-        return this.unsupported('rerunning CI jobs');
+    async rerunCiJob(_user: UserEntity, _app: Pick<AppEntity, 'projectPath' | 'vcsProjectId'>, _ciJobId: string): Promise<IVcsRerunResult> {
+        return { ok: false, error: 'GitHub integration does not support rerunning CI jobs yet' };
     }
 
-    async getProjectPath(_user: UserEntity, _projectPath: string): Promise<string> {
-        return this.unsupported('project lookup');
+    parseProjectUrl(_url: URL): string | null {
+        return null;
+    }
+
+    getCommitUrlBase(projectPath: string): string {
+        const web = (this.config.url ?? DEFAULT_WEB_URL).replace(/\/+$/, '');
+        return `${web}/${projectPath}/commit`;
+    }
+
+    async getTokenUser(_token: string): Promise<IVcsTokenUser | null> {
+        return null;
     }
 
     async searchProjects(_user: UserEntity, _search: string): Promise<IVcsProject[]> {

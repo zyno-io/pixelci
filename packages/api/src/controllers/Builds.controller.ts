@@ -1,7 +1,6 @@
 import { http, HttpBadRequestError, HttpNotFoundError, HttpQueries, HttpRequest, HttpUnauthorizedError } from '@zyno-io/ts-server-foundation';
 import { ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { createPersistedEntity, OkResponse, uuid7, WorkerService } from '@zyno-io/ts-server-foundation';
-import axios from 'axios';
 import { keyBy, uniq } from 'lodash';
 
 import { BuildCiTokenMiddleware, hashCiToken, UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
@@ -20,8 +19,9 @@ type IBuildResponse = Pick<BuildEntity, 'id' | 'branchId' | 'commitHash' | 'comm
     branchName: string;
 };
 type IBuildBasicResponse = Pick<BuildEntity, 'status'>;
-interface IBuildApprovalResponse {
+export interface IBuildApprovalResponse {
     vcsUrl: string | false;
+    vcsError?: string;
 }
 
 /** Responses are serialized as-is, so strip the CI session credential hash before returning builds to users. */
@@ -136,6 +136,8 @@ export class BuildsController {
             if (existingBuild) {
                 // Update the token hash so subsequent calls use the current token
                 existingBuild.ciTokenHash = ciTokenHash;
+                // A re-run attempt gets a new job id; approval must target the latest one.
+                if (existingBuild.status === 'needs review') existingBuild.ciJobId = ciJobId;
                 txn.add(existingBuild);
                 return {
                     ...existingBuild,
@@ -242,32 +244,13 @@ export class BuildsController {
             return { vcsUrl: false };
         }
 
-        if (process.env.CI) {
-            return { vcsUrl: 'integration-test://' };
-        }
-
         try {
             const app = await AppEntity.query().filter({ id: appId }).findOne();
-            let vcsUrl: string;
-            try {
-                vcsUrl = await this.vcsSvc.rerunCiJob(user, app.vcsId, app.projectPath, build.ciJobId);
-            } catch (innerErr) {
-                if (!axios.isAxiosError(innerErr) || innerErr.response?.status !== 405) throw innerErr;
-
-                // Project may have moved — securely look up current path via GitLab API
-                const currentPath = await this.vcsSvc.getProjectPath(user, app.vcsId, app.projectPath);
-                if (currentPath === app.projectPath) throw innerErr; // not a move, rethrow
-
-                this.logger.info(`Project moved: "${app.projectPath}" → "${currentPath}"`);
-                app.projectPath = currentPath;
-                await app.save();
-
-                vcsUrl = await this.vcsSvc.rerunCiJob(user, app.vcsId, currentPath, build.ciJobId);
-            }
-            return { vcsUrl };
+            const result = await this.vcsSvc.rerunCiJob(user, app, build.ciJobId);
+            return result.ok ? { vcsUrl: result.url } : { vcsUrl: false, vcsError: result.error };
         } catch (err) {
             this.logger.error('Failed to rerun CI job', err);
-            return { vcsUrl: false };
+            return { vcsUrl: false, vcsError: err instanceof Error ? err.message : String(err) };
         }
     }
 }
