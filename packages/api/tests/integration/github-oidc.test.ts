@@ -80,6 +80,7 @@ async function mintToken(opts: ITokenOpts = {}): Promise<string> {
         head_ref: '',
         sha: 'a'.repeat(40),
         run_id: '987654',
+        check_run_id: '128602857139',
         run_attempt: '1',
         actor: 'octocat',
         event_name: 'push',
@@ -150,7 +151,7 @@ async function run() {
     const pushRes = await expectStatus(facade, 'valid push token', pushToken, 200);
     const pushBuild = await BuildEntity.query().filter({ id: pushRes.json.id }).findOne();
     const pushBranch = await BranchEntity.query().filter({ id: pushBuild.branchId }).findOne();
-    if (pushBranch.name !== 'main' || pushBuild.commitHash !== 'a'.repeat(40) || pushBuild.ciJobId !== '987654') {
+    if (pushBranch.name !== 'main' || pushBuild.commitHash !== 'a'.repeat(40) || pushBuild.ciJobId !== '987654:128602857139') {
         throw new Error(`Unexpected build data: branch=${pushBranch.name} commit=${pushBuild.commitHash} job=${pushBuild.ciJobId}`);
     }
 
@@ -160,6 +161,16 @@ async function run() {
     const prBuild = await BuildEntity.query().filter({ id: prRes.json.id }).findOne();
     const prBranch = await BranchEntity.query().filter({ id: prBuild.branchId }).findOne();
     if (prBranch.name !== 'feature/x') throw new Error(`Expected branch feature/x but got ${prBranch.name}`);
+
+    // Without check_run_id (older GitHub Enterprise) the job id is just the run id
+    const noCheckRes = await expectStatus(
+        facade,
+        'token without check_run_id → ciJobId is the run id',
+        await mintToken({ claims: { check_run_id: undefined, sha: 'c'.repeat(40), run_id: '987660' } }),
+        200
+    );
+    const noCheckBuild = await BuildEntity.query().filter({ id: noCheckRes.json.id }).findOne();
+    if (noCheckBuild.ciJobId !== '987660') throw new Error(`Expected ciJobId 987660 but got ${noCheckBuild.ciJobId}`);
 
     // Hash-based follow-up
     console.log('\nTest: follow-up status call with same token → 200');
