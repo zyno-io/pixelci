@@ -1,5 +1,9 @@
+import { HttpUnauthorizedError, ScopedLogger } from '@zyno-io/ts-server-foundation';
+
+import { AppEntity } from '../entities/App.entity';
 import { IUserVcsSession, UserEntity } from '../entities/User.entity';
-import { IGitLabConfig, VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
+import { IGitHubConfig, IGitLabConfig, VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
+import { VcsGitHubService } from './VcsGitHub.service';
 import { VcsGitLabService } from './VcsGitLab.service';
 
 export interface IVcsLoginSessionResponse extends IUserVcsSession {
@@ -16,7 +20,20 @@ export interface IVcsProject {
     defaultBranch?: string;
 }
 
+/**
+ * Data extracted from the CI provider during token validation.
+ */
+export interface ICiJobData {
+    jobId: string;
+    branch: string;
+    commitHash: string;
+    commitSubject: string;
+    commitAuthor: string;
+    vcsProjectId: number;
+}
+
 export interface IVcsServiceImpl {
+    validateCiToken(ciToken: string): Promise<ICiJobData>;
     getProviderLoginUrl(redirectUri: string, state?: string): Promise<string>;
     exchangeProviderCode(redirectUri: string, code: string): Promise<IVcsLoginSessionResponse>;
     rerunCiJob(user: UserEntity, projectPath: string, jobId: string): Promise<string>;
@@ -28,6 +45,32 @@ export interface IVcsServiceImpl {
 }
 
 export class VcsService {
+    constructor(private logger: ScopedLogger) {}
+
+    /**
+     * Validates a CI token against the app's VCS provider and enforces that the CI job
+     * belongs to the project the app is bound to.
+     */
+    async validateCiToken(app: AppEntity, ciToken: string): Promise<ICiJobData> {
+        const integration = await VcsIntegrationEntity.query().filterField('id', app.vcsId).findOneOrUndefined();
+        if (!integration || (integration.platform !== 'gitlab' && integration.platform !== 'github')) {
+            this.logger.warn(`CI token validation failed: VCS integration not found or unsupported (vcsId=${app.vcsId})`);
+            throw new HttpUnauthorizedError();
+        }
+
+        const provider = this.createProvider(integration);
+        const ciJobData = await provider.validateCiToken(ciToken);
+
+        // Legacy GitLab apps without a bound project are allowed; everything else must match.
+        const legacyUnbound = !app.vcsProjectId && integration.platform === 'gitlab';
+        if (!legacyUnbound && ciJobData.vcsProjectId !== app.vcsProjectId) {
+            this.logger.warn(`Build creation failed: vcsProjectId mismatch (expected=${app.vcsProjectId}, got=${ciJobData.vcsProjectId})`);
+            throw new HttpUnauthorizedError();
+        }
+
+        return ciJobData;
+    }
+
     async getProviderLoginUrl(providerId: string, redirectUri: string, state?: string): Promise<string> {
         return this.runWithProvider(providerId, provider => provider.getProviderLoginUrl(redirectUri, state));
     }
@@ -72,10 +115,17 @@ export class VcsService {
             throw new Error(`VCS provider with ID ${id} not found`);
         }
 
+        return this.createProvider(provider);
+    }
+
+    private createProvider(provider: VcsIntegrationEntity): IVcsServiceImpl {
         if (provider.platform === 'gitlab') {
-            return new VcsGitLabService(provider.config as IGitLabConfig);
+            return new VcsGitLabService(provider.config as IGitLabConfig, this.logger);
+        }
+        if (provider.platform === 'github') {
+            return new VcsGitHubService(provider.config as IGitHubConfig, this.logger);
         }
 
-        throw new Error(`VCS provider with ID ${id} is not supported`);
+        throw new Error(`VCS provider with ID ${provider.id} is not supported`);
     }
 }

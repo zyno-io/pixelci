@@ -21,6 +21,16 @@ interface IVcsIntegrationUpdateInput {
     config?: IGitLabConfig;
 }
 
+/**
+ * GitHub integrations can't be configured via the API yet: the input config is typed as IGitLabConfig, so
+ * GitHub-only fields (oidcAudience, oidcIssuer) would be stripped. Lifted in slice 2 (see design/github-actions.md).
+ */
+export function assertPlatformConfigurable(platform: VcsIntegrationEntity['platform']): void {
+    if (platform !== 'gitlab') {
+        throw new HttpBadRequestError(`Configuring ${platform} integrations is not supported yet`);
+    }
+}
+
 @ApiController('/api/admin/vcs-integrations')
 @http.middleware(AdminAuthMiddleware)
 export class VcsIntegrationsController {
@@ -51,6 +61,8 @@ export class VcsIntegrationsController {
 
     @http.POST()
     async create(body: HttpBody<IVcsIntegrationCreateInput>): Promise<IVcsIntegrationListResponse> {
+        assertPlatformConfigurable(body.platform);
+
         const integration = createEntity(VcsIntegrationEntity, {
             id: uuid(),
             name: body.name,
@@ -72,7 +84,11 @@ export class VcsIntegrationsController {
         if (!integration) throw new HttpNotFoundError();
 
         if (body.name !== undefined) integration.name = body.name;
-        if (body.config !== undefined) integration.config = body.config;
+        if (body.config !== undefined) {
+            // config is replaced wholesale and typed as IGitLabConfig; for GitHub that would drop oidcAudience.
+            assertPlatformConfigurable(integration.platform);
+            integration.config = body.config;
+        }
         await integration.save();
 
         return {

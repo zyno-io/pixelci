@@ -6,6 +6,7 @@ import { ApiController } from '../accessories/Controller.accessory';
 import { UserEntity } from '../entities/User.entity';
 import { IGitLabConfig, VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { VcsService } from '../services/Vcs.service';
+import { assertPlatformConfigurable } from './VcsIntegrations.controller';
 
 type ISessionResponse = Pick<UserEntity, 'id' | 'name' | 'isAdmin'>;
 
@@ -72,6 +73,7 @@ export class SessionController {
         if (existingCount > 0) {
             throw new HttpBadRequestError('Onboarding has already been completed');
         }
+        assertPlatformConfigurable(body.platform);
 
         const integration = createEntity(VcsIntegrationEntity, {
             id: uuid(),

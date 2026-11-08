@@ -1,18 +1,62 @@
 import { assert } from '@zyno-io/ts-reflection';
-import { HttpBadRequestError } from '@zyno-io/ts-server-foundation';
+import { HttpBadRequestError, HttpUnauthorizedError } from '@zyno-io/ts-server-foundation';
 import { Logger, ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { JWT, r } from '@zyno-io/ts-server-foundation';
 import axios from 'axios';
 
-import type { IVcsLoginSessionResponse, IVcsProject, IVcsServiceImpl } from './Vcs.service';
+import type { ICiJobData, IVcsLoginSessionResponse, IVcsProject, IVcsServiceImpl } from './Vcs.service';
 
 import { UserEntity } from '../entities/User.entity';
 import { IGitLabConfig } from '../entities/VcsIntegration.entity';
 
 export class VcsGitLabService implements IVcsServiceImpl {
-    private logger = r<ScopedLogger>(Logger);
+    private logger: ScopedLogger;
 
-    constructor(private config: IGitLabConfig) {}
+    constructor(
+        private config: IGitLabConfig,
+        logger?: ScopedLogger
+    ) {
+        this.logger = logger ?? r<ScopedLogger>(Logger);
+    }
+
+    async validateCiToken(ciToken: string): Promise<ICiJobData> {
+        let jobResponse: Response;
+        try {
+            jobResponse = await fetch(`${this.config.url}/api/v4/job`, {
+                headers: { 'JOB-TOKEN': ciToken }
+            });
+        } catch (err) {
+            this.logger.warn(`CI token validation failed: GitLab /api/v4/job request failed (${err})`);
+            throw new HttpUnauthorizedError();
+        }
+
+        if (!jobResponse.ok) {
+            this.logger.warn(`CI token validation failed: GitLab /api/v4/job returned ${jobResponse.status} ${jobResponse.statusText}`);
+            throw new HttpUnauthorizedError();
+        }
+
+        const jobData = (await jobResponse.json()) as {
+            id?: number;
+            ref?: string;
+            pipeline?: { project_id?: number; sha?: string };
+            commit?: { title?: string; author_name?: string };
+        };
+
+        const vcsProjectId = jobData.pipeline?.project_id;
+        if (!vcsProjectId) {
+            this.logger.warn('CI token validation failed: GitLab job response missing pipeline.project_id');
+            throw new HttpUnauthorizedError();
+        }
+
+        return {
+            jobId: String(jobData.id ?? ''),
+            branch: jobData.ref ?? '',
+            commitHash: jobData.pipeline?.sha ?? '',
+            commitSubject: jobData.commit?.title ?? '',
+            commitAuthor: jobData.commit?.author_name ?? '',
+            vcsProjectId
+        };
+    }
 
     async getProviderLoginUrl(redirectUri: string, state?: string): Promise<string> {
         return `${this.config.url}/oauth/authorize?client_id=${this.config.clientId}&redirect_uri=${redirectUri}&state=${state ?? ''}&response_type=code&scope=openid+api`;

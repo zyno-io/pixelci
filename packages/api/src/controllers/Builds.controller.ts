@@ -4,7 +4,7 @@ import { createPersistedEntity, OkResponse, uuid7, WorkerService } from '@zyno-i
 import axios from 'axios';
 import { keyBy, uniq } from 'lodash';
 
-import { BuildCiTokenMiddleware, hashCiToken, UserAuthMiddleware, validateCiToken } from '../accessories/AuthMiddleware.accessory';
+import { BuildCiTokenMiddleware, hashCiToken, UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
 import { Db } from '../database';
 import { AppEntity } from '../entities/App.entity';
@@ -112,13 +112,7 @@ export class BuildsController {
         const app = await AppEntity.query().filter({ id: appId, deletedAt: null }).findOneOrUndefined();
         if (!app) throw new HttpBadRequestError('invalid appId');
 
-        const ciJobData = await validateCiToken(ciToken, app.vcsId, this.logger);
-
-        // Validate that the CI job belongs to the correct project
-        if (app.vcsProjectId && ciJobData.vcsProjectId !== app.vcsProjectId) {
-            this.logger.warn(`Build creation failed: vcsProjectId mismatch (expected=${app.vcsProjectId}, got=${ciJobData.vcsProjectId})`);
-            throw new HttpUnauthorizedError();
-        }
+        const ciJobData = await this.vcsSvc.validateCiToken(app, ciToken);
 
         const ciTokenHash = hashCiToken(ciToken);
         const { branch: branchName, commitHash, commitSubject, commitAuthor, jobId: ciJobId } = ciJobData;
