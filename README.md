@@ -1,6 +1,6 @@
 # PixelCI
 
-A self-hosted visual regression testing platform for your GitLab CI/CD pipeline that automatically detects visual changes across branches and builds. (GitHub support and SaaS version coming soon.)
+A self-hosted visual regression testing platform for your GitLab CI/CD and GitHub Actions pipelines that automatically detects visual changes across branches and builds. (SaaS version coming soon.)
 
 ## What is PixelCI?
 
@@ -13,7 +13,7 @@ PixelCI helps teams catch unintended visual changes by comparing screenshots fro
 - **Cross-Branch Approval Tracking**: Changes approved on one branch are automatically recognized on others
 - **Visual Diff Viewer**: Side-by-side comparison with highlighted differences
 - **Self-Hosted**: Full control over your data and infrastructure
-- **CI/CD Integration**: Seamless integration with GitLab CI (more platforms coming soon)
+- **CI/CD Integration**: Seamless integration with GitLab CI and GitHub Actions
 - **One-Click Approval**: Approve changes and automatically restart the failed CI job
 
 ## How It Works
@@ -45,6 +45,29 @@ visual-regression:
 
 See the [GitLab Integration Guide](https://docs.pixelci.dev/gitlab-setup.html) for OAuth setup and detailed configuration.
 
+## GitHub Actions Integration
+
+Add visual regression testing to your workflow (requires `id-token: write`; no secrets needed):
+
+```yaml
+permissions:
+    contents: read
+    id-token: write
+
+jobs:
+    visual-regression:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: docker://ghcr.io/zyno-io/pixelci/cli:latest
+              env:
+                  PIXELCI_API_URL: https://pixelci.example.com
+                  PIXELCI_APP_ID: <your-app-id>
+                  PIXELCI_IMAGES_PATH: ./screenshots
+```
+
+See the [GitHub Integration Guide](https://docs.pixelci.dev/github-setup.html) for GitHub App setup and detailed configuration.
+
 ## Web UI
 
 PixelCI provides a web interface for reviewing builds, comparing screenshots, and approving changes. See the [Usage Guide](https://docs.pixelci.dev/usage.html) for a walkthrough with screenshots.
@@ -60,7 +83,7 @@ The single Docker image runs as either an API/UI server (`node . server:start`, 
 
 ## Roadmap
 
-- [ ] GitHub Actions integration
+- [x] GitHub Actions integration
 - [ ] Multi-user permissions and teams
 - [ ] Baseline management UI
 - [ ] Slack/Discord notifications

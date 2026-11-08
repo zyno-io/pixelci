@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema, type Tool } from '@modelcontextprotocol/sdk/types.js';
 
 const API_URL = process.env.PIXELCI_API_URL?.replace(/\/+$/, '');
-const TOKEN = process.env.PIXELCI_GITLAB_TOKEN;
+const TOKEN = process.env.PIXELCI_VCS_TOKEN ?? process.env.PIXELCI_GITHUB_TOKEN ?? process.env.PIXELCI_GITLAB_TOKEN;
 const VCS_ID = process.env.PIXELCI_VCS_ID;
 
 function authHeaders(): Record<string, string> {
@@ -15,7 +15,9 @@ function authHeaders(): Record<string, string> {
 }
 
 if (!API_URL || !TOKEN) {
-    console.error('PixelCI MCP: PIXELCI_API_URL and PIXELCI_GITLAB_TOKEN environment variables are required.');
+    console.error(
+        'PixelCI MCP: PIXELCI_API_URL and PIXELCI_VCS_TOKEN (or PIXELCI_GITHUB_TOKEN / PIXELCI_GITLAB_TOKEN) environment variables are required.'
+    );
     process.exit(1);
 }
 
@@ -33,7 +35,7 @@ async function api(path: string): Promise<unknown> {
 }
 
 async function apiBinary(path: string): Promise<{ base64: string; mimeType: string }> {
-    // Don't auto-follow the redirect: the image endpoint 302s to a signed storage URL, and the GitLab
+    // Don't auto-follow the redirect: the image endpoint 302s to a signed storage URL, and the VCS
     // token must NOT ride along to object storage. We fetch the Location separately, without auth.
     const response = await fetch(`${API_URL}${path}`, {
         headers: authHeaders(),

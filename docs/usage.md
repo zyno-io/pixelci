@@ -4,14 +4,14 @@ A walkthrough of the PixelCI web UI for reviewing visual regression test results
 
 ## Login
 
-Visit your PixelCI instance and log in via your configured OAuth provider (e.g. GitLab).
+Visit your PixelCI instance and log in via your configured OAuth provider (GitLab or GitHub).
 
 <img src="/images/login-light.png" alt="Login page" class="light-only">
 <img src="/images/login-dark.png" alt="Login page" class="dark-only">
 
 ## Apps List
 
-After logging in, you'll see your apps. PixelCI only shows apps whose VCS project your account can access — access mirrors what GitLab grants you. (Operators can disable this filtering; see [`ENFORCE_VCS_PROJECT_ACCESS`](/deployment#access-control).)
+After logging in, you'll see your apps. PixelCI only shows apps whose VCS project your account can access — access mirrors what GitLab or GitHub grants you. (Operators can disable this filtering; see [`ENFORCE_VCS_PROJECT_ACCESS`](/deployment#access-control).)
 
 <img src="/images/app-list-light.png" alt="App list" class="light-only">
 <img src="/images/app-list-dark.png" alt="App list" class="dark-only">
@@ -71,7 +71,7 @@ The **Approve** button at the bottom of the build is enabled only once **every c
 Once the build is approved:
 
 - The build status changes to **Changes Approved**
-- The failed CI job is automatically restarted via the GitLab API, and you're redirected to the pipeline page
+- The failed CI job is automatically re-run via the GitLab or GitHub API, and you're redirected to the pipeline or workflow run page. (On GitHub, PixelCI re-runs the specific failed job using your token, so you need write access; see [GitHub Setup](/github-setup#_8-approve-and-re-run).)
 - Future builds on the same branch will compare against this build
 - Other branches that produce the same visual changes will be automatically approved (cross-branch approval matching)
 

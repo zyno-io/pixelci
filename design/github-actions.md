@@ -1,6 +1,6 @@
 # GitHub Actions integration — design & plan
 
-Status: draft (2026-11-07). Branch `github-actions-integration`. Slice 1 is implemented on this branch; slices 2–4 are not started.
+Status: slice 1 implemented; remaining work (GitHub App login, per-job re-run, platform-typed config, docs, MCP) is specified in [`design/github-parity-plan.md`](./github-parity-plan.md), which supersedes this doc where they differ. Updated 2026-11-07. Branch `github-actions-integration`.
 
 **Recommendation:** extend the existing `IVcsServiceImpl` provider model with a `VcsGitHubService`. Use a **GitHub App** for user login, repo access and re-runs. Use **Actions OIDC ID tokens** for CLI auth: no secrets in workflows, the closest match to GitLab's `CI_JOB_TOKEN`. Keep the GitLab model (fail the job, then re-run it after approval) for parity. Add a PixelCI-owned check run later as an option.
 

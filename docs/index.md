@@ -3,7 +3,7 @@ layout: home
 
 hero:
     name: PixelCI
-    tagline: Self-hosted visual regression testing for your GitLab CI/CD pipeline. (GitHub support and SaaS version coming soon.)
+    tagline: Self-hosted visual regression testing for your GitLab CI/CD and GitHub Actions pipelines. (SaaS version coming soon.)
     actions:
         - theme: brand
           text: Get Started
