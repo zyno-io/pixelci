@@ -39,7 +39,11 @@ export interface IVcsTokenUser {
 }
 
 export interface IVcsServiceImpl {
-    validateCiToken(ciToken: string): Promise<ICiJobData>;
+    /**
+     * `expectedProjectId` is the app's bound project; providers that make further outbound calls after verifying
+     * the token (e.g. GitHub commit metadata) must reject a mismatch before doing so. VcsService re-checks binding.
+     */
+    validateCiToken(ciToken: string, expectedProjectId: number | null): Promise<ICiJobData>;
     getProviderLoginUrl(redirectUri: string, state?: string): Promise<string>;
     exchangeProviderCode(redirectUri: string, code: string): Promise<IVcsLoginSessionResponse>;
     rerunCiJob(user: UserEntity, app: Pick<AppEntity, 'projectPath' | 'vcsProjectId'>, ciJobId: string): Promise<IVcsRerunResult>;
@@ -69,7 +73,7 @@ export class VcsService {
         }
 
         const provider = this.createProvider(integration);
-        const ciJobData = await provider.validateCiToken(ciToken);
+        const ciJobData = await provider.validateCiToken(ciToken, app.vcsProjectId);
 
         // Legacy GitLab apps without a bound project are allowed; everything else must match.
         const legacyUnbound = !app.vcsProjectId && integration.platform === 'gitlab';

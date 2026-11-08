@@ -13,7 +13,8 @@ export interface IGitHubUrls {
 
 /** Resolves the web and REST API bases: github.com uses api.github.com; Enterprise Server uses `{url}/api/v3`. */
 export function githubUrls(config: { url?: string }): IGitHubUrls {
-    const web = (config.url?.trim() || GITHUB_DEFAULT_WEB_URL).replace(/\/+$/, '');
+    let web = (config.url?.trim() || GITHUB_DEFAULT_WEB_URL).replace(/\/+$/, '');
+    if (/^https:\/\/(www\.)?github\.com$/i.test(web)) web = GITHUB_DEFAULT_WEB_URL;
     const api = web === GITHUB_DEFAULT_WEB_URL ? 'https://api.github.com' : `${web}/api/v3`;
     return { web, api };
 }

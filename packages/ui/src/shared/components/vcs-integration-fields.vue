@@ -18,6 +18,7 @@
         <label>
             Client Secret
             <input
+                class="input"
                 v-model="config.clientSecret"
                 type="text"
                 :placeholder="isEdit ? 'Leave blank to keep the current secret' : ''"
@@ -42,8 +43,8 @@
             <code>{{ redirectUrl }}</code>
             <button type="button" class="btn copy-btn" @click="copyRedirectUrl"><i class="fa fa-copy" /> Copy</button>
             <p class="hint">
-                Use this as the callback URL of your GitHub App. Permissions: Metadata read, Contents read, Actions read &amp; write (for CI re-runs),
-                Pull requests read (optional). See
+                Use this as the callback URL of your GitHub App. Repository permissions: Metadata read, Contents read, Actions read &amp; write (for
+                CI re-runs), Pull requests read (optional). See
                 <a href="https://docs.pixelci.dev/github-setup" target="_blank" rel="noopener">the GitHub setup guide</a>.
             </p>
         </div>
@@ -63,6 +64,7 @@
         <label>
             Client Secret
             <input
+                class="input"
                 v-model="config.clientSecret"
                 type="text"
                 :placeholder="isEdit ? 'Leave blank to keep the current secret' : ''"

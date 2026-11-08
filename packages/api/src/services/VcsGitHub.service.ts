@@ -49,7 +49,8 @@ function getJwks(jwksUrl: string) {
 
 /** `run:check_run_id` when the OIDC token carries a numeric check_run_id (the Actions job id), else just the run id. */
 export function buildCiJobId(runId: string, checkRunId: unknown): string {
-    return typeof checkRunId === 'string' && /^\d+$/.test(checkRunId) ? `${runId}:${checkRunId}` : runId;
+    const id = typeof checkRunId === 'number' && Number.isSafeInteger(checkRunId) ? String(checkRunId) : checkRunId;
+    return typeof id === 'string' && /^\d+$/.test(id) ? `${runId}:${id}` : runId;
 }
 
 /** Parses a stored ciJobId (`run` or `run:job`). */
@@ -117,6 +118,7 @@ interface IGitHubRepo {
 
 type ISearchEntry = IVcsProject & { pushedAt: number };
 const searchCache = new Map<string, { expiresAt: number; items: ISearchEntry[] }>();
+const searchInFlight = new Map<string, Promise<ISearchEntry[]>>();
 
 function toProject(repo: IGitHubRepo): IVcsProject {
     return {
@@ -153,7 +155,7 @@ export class VcsGitHubService implements IVcsServiceImpl {
 
     // ---------------------------------------------------------------- CI auth
 
-    async validateCiToken(ciToken: string): Promise<ICiJobData> {
+    async validateCiToken(ciToken: string, expectedProjectId: number | null): Promise<ICiJobData> {
         // jose skips the aud check entirely when `audience` is undefined — never let that happen.
         const rawAudience = this.config.oidcAudience;
         if (typeof rawAudience !== 'string' || !rawAudience.trim()) {
@@ -200,9 +202,15 @@ export class VcsGitHubService implements IVcsServiceImpl {
         const branch = deriveBranch(eventName, ref, str(claims.head_ref));
         if (!branch) return this.fail(`GitHub OIDC token has unsupported ref "${ref}"`);
 
+        // Reject tokens from other repositories before any outbound GitHub call (commit metadata below), so a
+        // validly-signed token from an unrelated repo can't make PixelCI spend App credentials or rate budget.
+        if (expectedProjectId == null || vcsProjectId !== expectedProjectId) {
+            return this.fail(`Build creation failed: vcsProjectId mismatch (expected=${expectedProjectId}, got=${vcsProjectId})`);
+        }
+
         const actor = str(claims.actor);
         let commitSubject = '';
-        let commitAuthor = actor;
+        let commitAuthor = actor.slice(0, 255);
 
         // Best-effort: a failure here must never fail the build.
         if (this.config.appId && this.config.privateKey) {
@@ -218,7 +226,7 @@ export class VcsGitHubService implements IVcsServiceImpl {
                     controller.signal
                 );
                 commitSubject = meta.subject;
-                if (meta.author) commitAuthor = meta.author;
+                if (meta.author) commitAuthor = meta.author.slice(0, 255);
             } catch (err) {
                 this.logger.warn(`GitHub commit metadata lookup failed (build continues without it): ${describeGitHubError(err).message}`);
             } finally {
@@ -288,7 +296,8 @@ export class VcsGitHubService implements IVcsServiceImpl {
                 async token =>
                     (await createGitHubClient(this.urls, token).get<{ head?: { sha?: string } }>(`/repos/${repoPath}/pulls/${prNumber}`, { signal }))
                         .data,
-                signal
+                signal,
+                { pull_requests: 'read' }
             );
             if (!pr.head?.sha) throw new Error('pull request response has no head sha');
             commit = await getCommit(pr.head.sha);
@@ -420,12 +429,24 @@ export class VcsGitHubService implements IVcsServiceImpl {
         if (cached && cached.expiresAt > Date.now()) {
             entries = cached.items;
         } else {
+            // Coalesce concurrent listings (debounced keystrokes during a slow first listing) per user+integration.
+            let pending = searchInFlight.get(cacheKey);
+            if (!pending) {
+                pending = this.listInstallationRepos(client);
+                searchInFlight.set(cacheKey, pending);
+                const clear = () => {
+                    if (searchInFlight.get(cacheKey) === pending) searchInFlight.delete(cacheKey);
+                };
+                pending.then(items => {
+                    searchCache.set(cacheKey, { expiresAt: Date.now() + SEARCH_CACHE_TTL_MS, items });
+                    clear();
+                }, clear);
+            }
             try {
-                entries = await this.listInstallationRepos(client);
+                entries = await pending;
             } catch (err) {
                 return this.mapApiError(err);
             }
-            searchCache.set(cacheKey, { expiresAt: Date.now() + SEARCH_CACHE_TTL_MS, items: entries });
         }
 
         const needle = search.trim().toLowerCase();

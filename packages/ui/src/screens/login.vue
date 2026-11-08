@@ -112,7 +112,11 @@ async function processCode(code: string) {
         loadSession();
     } catch (err) {
         handleErrorAndAlert(err);
-        isLoading.value = false;
+        // Don't auto-redirect back to the provider (it would loop straight back into the same failure);
+        // show the provider buttons so the user can retry deliberately.
+        suppressAutoLogin.value = true;
+        errorMessage.value = 'Sign-in failed. Please try again.';
+        return loadSession();
     }
 }
 

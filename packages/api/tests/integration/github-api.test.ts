@@ -74,6 +74,8 @@ let appPublicKey: CryptoKey;
 let oidcPrivateKey: CryptoKey;
 
 let refreshCalls = 0;
+/** Every refresh_token grant request, including rejected duplicates (proves coalescing). */
+let refreshRequests = 0;
 let refreshCounter = 0;
 let validRefreshToken = 'ghr_initial';
 /** When a refresh request carries this token, run the hook (which rotates the token in the DB) and answer bad_refresh_token. */
@@ -179,6 +181,7 @@ async function handleOAuth(req: IncomingMessage, res: ServerResponse) {
         violations.push(`oauth token request bad client creds: ${raw}`);
 
     if (form.get('grant_type') === 'refresh_token') {
+        refreshRequests++;
         const token = form.get('refresh_token');
         if (adoptHook && token === adoptHook.token) {
             const hook = adoptHook;
@@ -268,7 +271,10 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
         const body = JSON.parse((await readBody(req)) || '{}');
         if (JSON.stringify(body.repository_ids) !== JSON.stringify([REPO_ID]))
             violations.push(`access_tokens bad repository_ids: ${JSON.stringify(body)}`);
-        if (body.permissions?.contents !== 'read') violations.push(`access_tokens bad permissions: ${JSON.stringify(body)}`);
+        // Only least-privilege scopes: contents:read (commits) or pull_requests:read (PR head fallback), never both/write.
+        const perms = JSON.stringify(body.permissions);
+        if (perms !== JSON.stringify({ contents: 'read' }) && perms !== JSON.stringify({ pull_requests: 'read' }))
+            violations.push(`access_tokens bad permissions: ${JSON.stringify(body)}`);
         accessTokensCalls++;
         return json(res, 201, { token: `${INSTALL_TOKEN_PREFIX}${accessTokensCalls}`, expires_at: new Date(Date.now() + 3_600_000).toISOString() });
     }
@@ -554,9 +560,11 @@ async function run() {
             redirectUri: 'https://pixelci.test/login'
         });
         const before = refreshCalls;
+        const requestsBefore = refreshRequests;
         const res = await get(facade, '/api/apps', userJwt);
         status(res, 200, 'apps index');
         assert(refreshCalls - before === 1, `expected exactly 1 refresh, got ${refreshCalls - before}`);
+        assert(refreshRequests - requestsBefore === 1, `expected exactly 1 refresh request (coalesced), got ${refreshRequests - requestsBefore}`);
         assert(res.json.length === 3, `expected 3 accessible apps, got ${res.body}`);
         const user = await UserEntity.query().filter({ id: userId }).findOne();
         assert(
@@ -772,6 +780,15 @@ async function run() {
         assert(installCalls() === before, 'no GitHub App calls expected without appId/privateKey');
         const build = await BuildEntity.query().filter({ id: res.json.id }).findOne();
         assert(build.commitSubject === '' && build.commitAuthor === 'octocat', 'metadata should be empty without an App');
+    }
+
+    test('CI create: token from another repository → 401 before any GitHub App call');
+    {
+        const installCalls = () => count('GET', /\/installation$/) + count('POST', /\/access_tokens$/) + count('GET', /\/commits\//);
+        const before = installCalls();
+        const res = await createBuild(facade, APP1, { repository: 'evil/other', repository_id: '424242', sha: '4'.repeat(40), run_id: '5006' });
+        status(res, 401, 'foreign-repo build');
+        assert(installCalls() === before, 'no GitHub App calls expected for a token bound to another repository');
     }
 
     // 9. approve

@@ -29,7 +29,7 @@ Under **Permissions**, set:
 | Actions       | Read and write | Re-run the failed job after approval                      |
 | Pull requests | Read           | Optional; fallback for commit info on pull request builds |
 
-Choose where the App can be installed, then create it.
+Under **Where can this GitHub App be installed?**, choose **Only on this account**, then create it. Anyone who can access an installation of the App can sign in to PixelCI, so allowing installs on any account would let any GitHub user create their own installation and log in.
 
 On the App's settings page:
 

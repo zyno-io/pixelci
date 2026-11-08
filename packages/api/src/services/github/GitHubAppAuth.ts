@@ -44,7 +44,7 @@ export async function appJwtGet<T = unknown>(config: IGitHubAppConfig, path: str
 }
 
 async function getInstallationId(config: IGitHubAppConfig, repository: string, repoId: number, signal?: AbortSignal): Promise<number> {
-    const key = `${githubUrls(config).api}|${repoId}`;
+    const key = `${githubUrls(config).api}|${config.appId}|${repoId}`;
     const cached = installationIdCache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.id;
 
@@ -54,10 +54,26 @@ async function getInstallationId(config: IGitHubAppConfig, repository: string, r
 }
 
 /** Contents:read installation token scoped to a single repository; cached until 5 minutes before it expires. */
-export async function getInstallationToken(config: IGitHubAppConfig, repository: string, repoId: number, signal?: AbortSignal): Promise<string> {
+export type IInstallationPermissions = Record<string, 'read' | 'write'>;
+const DEFAULT_PERMISSIONS: IInstallationPermissions = { contents: 'read' };
+
+function permissionsKey(permissions: IInstallationPermissions): string {
+    return Object.keys(permissions)
+        .sort()
+        .map(k => `${k}=${permissions[k]}`)
+        .join(',');
+}
+
+export async function getInstallationToken(
+    config: IGitHubAppConfig,
+    repository: string,
+    repoId: number,
+    signal?: AbortSignal,
+    permissions: IInstallationPermissions = DEFAULT_PERMISSIONS
+): Promise<string> {
     const urls = githubUrls(config);
-    const idKey = `${urls.api}|${repoId}`;
-    const key = `${urls.api}|${config.appId}|${repoId}`;
+    const idKey = `${urls.api}|${config.appId}|${repoId}`;
+    const key = `${urls.api}|${config.appId}|${repoId}|${permissionsKey(permissions)}`;
 
     const cached = installationTokenCache.get(key);
     if (cached) {
@@ -76,7 +92,7 @@ export async function getInstallationToken(config: IGitHubAppConfig, repository:
         try {
             const response = await createGitHubClient(urls, jwt).post<{ token: string; expires_at: string }>(
                 `/app/installations/${installationId}/access_tokens`,
-                { repository_ids: [repoId], permissions: { contents: 'read' } },
+                { repository_ids: [repoId], permissions },
                 { signal }
             );
             return { token: response.data.token, expiresAt: Date.parse(response.data.expires_at) || Date.now() + 55 * 60_000 };
@@ -92,8 +108,8 @@ export async function getInstallationToken(config: IGitHubAppConfig, repository:
     return (await pending).token;
 }
 
-export function dropInstallationToken(config: IGitHubAppConfig, repoId: number): void {
-    installationTokenCache.delete(`${githubUrls(config).api}|${config.appId}|${repoId}`);
+export function dropInstallationToken(config: IGitHubAppConfig, repoId: number, permissions: IInstallationPermissions = DEFAULT_PERMISSIONS): void {
+    installationTokenCache.delete(`${githubUrls(config).api}|${config.appId}|${repoId}|${permissionsKey(permissions)}`);
 }
 
 /** Runs `fn` with an installation token; on a 401 the cached token is dropped and `fn` is retried once. */
@@ -102,14 +118,15 @@ export async function withInstallationToken<T>(
     repository: string,
     repoId: number,
     fn: (token: string) => Promise<T>,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    permissions: IInstallationPermissions = DEFAULT_PERMISSIONS
 ): Promise<T> {
-    const token = await getInstallationToken(config, repository, repoId, signal);
+    const token = await getInstallationToken(config, repository, repoId, signal, permissions);
     try {
         return await fn(token);
     } catch (err) {
         if ((err as { response?: { status?: number } })?.response?.status !== 401) throw err;
-        dropInstallationToken(config, repoId);
-        return fn(await getInstallationToken(config, repository, repoId, signal));
+        dropInstallationToken(config, repoId, permissions);
+        return fn(await getInstallationToken(config, repository, repoId, signal, permissions));
     }
 }
