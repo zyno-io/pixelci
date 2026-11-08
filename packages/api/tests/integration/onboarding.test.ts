@@ -37,6 +37,7 @@ async function run() {
     await testOnboardingStatusFresh(facade);
     await testCreateOnboardingVcsIntegration(facade);
     await testOnboardingStatusAfterSetup(facade);
+    await testProvidersDoNotLeakConfig(facade);
     await testCreateOnboardingVcsIntegrationBlocked(facade);
 
     // Phase 2: admin endpoints require auth
@@ -96,6 +97,20 @@ async function testCreateOnboardingVcsIntegration(facade: ReturnType<typeof Test
     }
     if (body.platform !== 'gitlab') {
         throw new Error(`Expected platform='gitlab', got ${body.platform}`);
+    }
+    console.log('  PASS');
+}
+
+async function testProvidersDoNotLeakConfig(facade: ReturnType<typeof TestingHelpers.createTestingFacade>) {
+    console.log('\nTest: unauthenticated providers list exposes only id/name (no config/secrets)');
+    const response = await facade.request(HttpRequest.GET('/api/session/providers'));
+    assertStatus(response, 200);
+    if (String(response.body).includes('test-client-secret')) {
+        throw new Error(`Providers response leaks the client secret: ${response.body}`);
+    }
+    const providers = response.json as Record<string, unknown>[];
+    if (!providers.length || providers.some(p => Object.keys(p).sort().join(',') !== 'id,name')) {
+        throw new Error(`Expected providers with exactly {id, name}, got ${response.body}`);
     }
     console.log('  PASS');
 }

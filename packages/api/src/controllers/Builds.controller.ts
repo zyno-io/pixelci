@@ -24,6 +24,12 @@ interface IBuildApprovalResponse {
     vcsUrl: string | false;
 }
 
+/** Responses are serialized as-is, so strip the CI session credential hash before returning builds to users. */
+function omitCiTokenHash(build: BuildEntity) {
+    const { ciTokenHash: _ciTokenHash, ...rest } = build;
+    return rest;
+}
+
 @ApiController('/api/apps/:appId/builds')
 export class BuildsController {
     constructor(
@@ -58,7 +64,7 @@ export class BuildsController {
         const branchMap = keyBy(branches, 'id');
 
         return builds.map(build => ({
-            ...build,
+            ...omitCiTokenHash(build),
             branchName: branchMap[build.branchId]?.name ?? ''
         }));
     }
@@ -74,7 +80,7 @@ export class BuildsController {
         const branch = await BranchEntity.query().filter({ id: build.branchId }).select('name').findOneOrUndefined();
 
         return {
-            ...build,
+            ...omitCiTokenHash(build),
             branchName: branch?.name ?? ''
         };
     }
