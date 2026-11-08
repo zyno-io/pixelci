@@ -53,7 +53,10 @@
             <!-- Post-creation CI setup view -->
             <div v-if="createdApp" class="ci-setup">
                 <h2>App created!</h2>
-                <p class="subtitle">Add this to your <code>.gitlab-ci.yml</code>:</p>
+                <p class="subtitle">
+                    Add this to your <code>{{ createCiFileName }}</code
+                    >:
+                </p>
 
                 <div class="ci-snippet-header">
                     <span />
@@ -87,10 +90,11 @@
                             class="input"
                             v-model="projectSearch"
                             type="text"
-                            placeholder="Search by name or paste a GitLab URL..."
+                            placeholder="Search by name or paste a GitHub/GitLab URL…"
                             :disabled="!createForm.vcsId"
                             @input="onProjectSearchInput"
                         />
+                        <p v-if="searchError" class="search-error" role="alert">{{ searchError }}</p>
                         <div v-if="projectResults.length" class="project-results">
                             <div v-for="project in projectResults" :key="project.id" class="project-result" @click="selectProject(project)">
                                 <span class="project-name">{{ project.name }}</span>
@@ -171,7 +175,7 @@
 
                 <div class="ci-snippet">
                     <div class="ci-snippet-header">
-                        <span class="ci-snippet-label">.gitlab-ci.yml</span>
+                        <span class="ci-snippet-label">{{ editCiFileName }}</span>
                         <button class="btn" type="button" @click="copyEditCiSnippet"><i class="fa fa-copy" /> Copy</button>
                     </div>
                     <pre><code>{{ editCiSnippet }}</code></pre>
@@ -221,6 +225,7 @@ const showCreate = ref(false);
 const createdApp = ref<IAppIndexResponse | null>(null);
 const projectSearch = ref('');
 const projectResults = ref<IVcsProject[]>([]);
+const searchError = ref('');
 const selectedProject = ref<IVcsProject | null>(null);
 const createForm = reactive({
     vcsId: '',
@@ -230,7 +235,46 @@ const createForm = reactive({
 
 const apiUrl = computed(() => window.location.origin);
 
-function buildCiSnippet(appId: string) {
+const GITHUB_WORKFLOW_FILE = '.github/workflows/pixelci.yml';
+const GITLAB_CI_FILE = '.gitlab-ci.yml';
+
+function platformOf(vcsId: string | undefined) {
+    return vcsIntegrations.value?.find(v => v.id === vcsId)?.platform ?? 'gitlab';
+}
+
+// integration id -> OIDC audience (GitHub only); fetched from the admin-only show endpoint
+const oidcAudiences = reactive<Record<string, string>>({});
+
+async function ensureOidcAudience(vcsId: string | undefined) {
+    if (!vcsId || platformOf(vcsId) !== 'github' || oidcAudiences[vcsId]) return;
+    try {
+        const detail = dataFrom(await VcsIntegrationsApi.getVcsIntegrationsShow({ path: { id: vcsId } }));
+        if (detail.platform === 'github') oidcAudiences[vcsId] = detail.config.oidcAudience;
+    } catch (err) {
+        handleErrorAndAlert(err);
+    }
+}
+
+function buildCiSnippet(appId: string, vcsId: string | undefined) {
+    if (platformOf(vcsId) === 'github') {
+        return `name: Visual regression
+on: push
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  visual-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # ...generate screenshots...
+      - uses: docker://ghcr.io/zyno-io/pixelci/cli:latest
+        env:
+          PIXELCI_API_URL: ${(vcsId && oidcAudiences[vcsId]) || apiUrl.value}
+          PIXELCI_APP_ID: ${appId}
+          PIXELCI_IMAGES_PATH: ./path/to/screenshots`;
+    }
+
     return `visual-regression:
   stage: test
   image: ghcr.io/zyno-io/pixelci/cli:latest
@@ -242,8 +286,14 @@ function buildCiSnippet(appId: string) {
     - pixelci`;
 }
 
-const ciSnippet = computed(() => buildCiSnippet(createdApp.value?.id ?? '<app-id>'));
-const editCiSnippet = computed(() => buildCiSnippet(editApp.value?.id ?? '<app-id>'));
+function ciFileName(vcsId: string | undefined) {
+    return platformOf(vcsId) === 'github' ? GITHUB_WORKFLOW_FILE : GITLAB_CI_FILE;
+}
+
+const ciSnippet = computed(() => buildCiSnippet(createdApp.value?.id ?? '<app-id>', createForm.vcsId));
+const editCiSnippet = computed(() => buildCiSnippet(editApp.value?.id ?? '<app-id>', editAppDetail.value?.vcsId));
+const createCiFileName = computed(() => ciFileName(createForm.vcsId));
+const editCiFileName = computed(() => ciFileName(editAppDetail.value?.vcsId));
 
 // Edit form state
 const editApp = ref<IAppIndexResponse | null>(null);
@@ -279,11 +329,13 @@ function viewApp(app: IAppIndexResponse) {
 // --- Create App ---
 
 function showCreateForm() {
-    createForm.vcsId = vcsIntegrations.value?.[0]?.id ?? '';
+    const sessionVcsId = store.sessionUser?.vcsId;
+    createForm.vcsId = vcsIntegrations.value?.find(v => v.id === sessionVcsId)?.id ?? vcsIntegrations.value?.[0]?.id ?? '';
     createForm.name = '';
     createForm.defaultBranchName = '';
     projectSearch.value = '';
     projectResults.value = [];
+    searchError.value = '';
     selectedProject.value = null;
     createdApp.value = null;
     showCreate.value = true;
@@ -292,6 +344,7 @@ function showCreateForm() {
 const URL_REGEX = /^https?:\/\//;
 
 const debouncedSearch = debounce(async (search: string) => {
+    searchError.value = '';
     if (!createForm.vcsId || search.length < 2) {
         projectResults.value = [];
         return;
@@ -313,8 +366,10 @@ const debouncedSearch = debounce(async (search: string) => {
                 query: { vcsId: createForm.vcsId, search }
             })
         );
-    } catch {
+    } catch (err) {
         projectResults.value = [];
+        const bodyMessage = (err as { body?: { message?: unknown } })?.body?.message;
+        searchError.value = (typeof bodyMessage === 'string' && bodyMessage) || (err instanceof Error && err.message) || 'Project search failed.';
     }
 }, 300);
 
@@ -356,6 +411,7 @@ async function submitCreate() {
             })
         );
         createdApp.value = app;
+        await ensureOidcAudience(createForm.vcsId);
     } catch (err) {
         handleErrorAndAlert(err);
     } finally {
@@ -404,6 +460,7 @@ async function openEditModal(app: IAppIndexResponse) {
         ]);
         editAppDetail.value = detail;
         editBranches.value = branches;
+        await ensureOidcAudience(detail.vcsId);
     } catch (err) {
         handleErrorAndAlert(err);
     }
@@ -532,6 +589,11 @@ async function deleteApp() {
     border-radius: var(--radius);
     background: var(--surface);
     box-shadow: var(--shadow-md);
+}
+.search-error {
+    color: var(--danger);
+    font-size: 12px;
+    font-weight: 400;
 }
 .project-result {
     display: flex;

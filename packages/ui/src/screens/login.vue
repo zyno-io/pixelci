@@ -6,7 +6,13 @@
             <h1>PixelCI</h1>
             <p class="subtitle">Sign in to review your visual tests.</p>
 
+            <div v-if="errorMessage" class="notice danger" role="alert">
+                <i class="fa-solid fa-circle-exclamation" aria-hidden="true" />
+                <div class="notice-body">{{ errorMessage }}</div>
+            </div>
+
             <button v-for="provider in providers" :key="provider.id" class="btn primary" @click="login(provider)">
+                <i :class="providerIcon(provider)" aria-hidden="true" />
                 Login via {{ provider.name }}
             </button>
         </div>
@@ -33,6 +39,24 @@ const router = useRouter();
 const isLoading = ref(true);
 const providers = ref<ISessionProvider[]>();
 const targetPath = ref<string>();
+const errorMessage = ref<string>();
+// set when arriving with an error or a failed callback, so we show the picker instead of redirecting again
+const suppressAutoLogin = ref(false);
+
+function providerIcon(provider: ISessionProvider) {
+    return provider.platform === 'github' ? 'fa-brands fa-github' : 'fa-brands fa-gitlab';
+}
+
+function parseState(): { path?: string; providerId?: string } | undefined {
+    try {
+        const raw = route.query.state;
+        if (typeof raw !== 'string' || !raw) return undefined;
+        const state = JSON.parse(atob(raw));
+        return state && typeof state.providerId === 'string' ? state : undefined;
+    } catch {
+        return undefined;
+    }
+}
 
 async function login(provider: ISessionProvider) {
     try {
@@ -57,15 +81,28 @@ async function login(provider: ISessionProvider) {
 
 async function processCode(code: string) {
     try {
-        const state = JSON.parse(atob(route.query.state as string));
+        let state = parseState();
 
         router.replace({ path: '/login', query: {} });
+
+        if (!state) {
+            // GitHub install-time authorization can return a code without our state; fall back to the sole provider
+            const available = await dataFromAsync(SessionApi.getSessionGetProviders());
+            if (available.length !== 1) {
+                providers.value = available;
+                errorMessage.value = 'Please sign in again.';
+                suppressAutoLogin.value = true;
+                isLoading.value = false;
+                return;
+            }
+            state = { providerId: available[0].id, path: '/' };
+        }
 
         const { jwt } = await dataFromAsync(
             SessionApi.postSessionLogin({
                 body: {
                     code,
-                    providerId: state.providerId,
+                    providerId: state.providerId!,
                     redirectUri: `${window.location.origin}/login`
                 }
             })
@@ -80,6 +117,15 @@ async function processCode(code: string) {
 }
 
 async function load() {
+    const queryError = route.query.error;
+    if (queryError) {
+        const description = route.query.error_description;
+        errorMessage.value = (typeof description === 'string' && description) || (typeof queryError === 'string' ? queryError : 'Login failed.');
+        suppressAutoLogin.value = true;
+        router.replace({ path: '/login', query: {} });
+        return loadSession();
+    }
+
     if (route.query.code) {
         return processCode(route.query.code as string);
     }
@@ -108,7 +154,7 @@ async function loadSession() {
     }
 
     // with a single provider, skip the picker and go straight to it
-    if (providers.value.length === 1) {
+    if (providers.value.length === 1 && !suppressAutoLogin.value) {
         return login(providers.value[0]);
     }
 

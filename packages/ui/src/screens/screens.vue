@@ -472,7 +472,7 @@ async function submitBuild() {
 
     try {
         isLoading.value = true;
-        const { vcsUrl } = await dataFromAsync(
+        const { vcsUrl, vcsError } = await dataFromAsync(
             BuildsApi.postBuildsApprove({
                 path: { appId: String(route.params.id), id: String(route.params.buildId) }
             })
@@ -485,7 +485,7 @@ async function submitBuild() {
         }
 
         if (!vcsUrl) {
-            await showAlert('Your review was submitted, but the VCS CI job could not be re-run automatically.');
+            await showAlert(`Your review was submitted, but the VCS CI job could not be re-run automatically.${vcsError ? `\n\n${vcsError}` : ''}`);
             isLoading.value = false;
         } else {
             location.href = vcsUrl;

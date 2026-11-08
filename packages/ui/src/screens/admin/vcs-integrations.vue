@@ -33,36 +33,24 @@
                 <form @submit.prevent="submitForm">
                     <label>
                         Name
-                        <input class="input" v-model="form.name" type="text" required />
+                        <input
+                            class="input"
+                            v-model="form.name"
+                            type="text"
+                            :placeholder="form.platform === 'github' ? 'e.g. My GitHub' : 'e.g. My GitLab'"
+                            required
+                        />
                     </label>
 
                     <label v-if="!editingId">
                         Platform
                         <select class="select" v-model="form.platform" required>
                             <option value="gitlab">GitLab</option>
+                            <option value="github">GitHub</option>
                         </select>
                     </label>
 
-                    <label>
-                        GitLab URL
-                        <input class="input" v-model="form.url" type="url" placeholder="https://gitlab.example.com" required />
-                    </label>
-
-                    <label>
-                        Client ID
-                        <input class="input" v-model="form.clientId" type="text" required />
-                    </label>
-
-                    <label>
-                        Client Secret
-                        <input class="input" v-model="form.clientSecret" type="text" required />
-                    </label>
-
-                    <div class="redirect-url">
-                        <span class="redirect-label">OAuth Redirect URI</span>
-                        <code>{{ redirectUrl }}</code>
-                        <p class="hint">Configure this as the redirect URI in your GitLab OAuth application.</p>
-                    </div>
+                    <VcsIntegrationFields v-model="config" :platform="form.platform" :is-edit="!!editingId" :has-private-key="hasPrivateKey" />
 
                     <div class="form-actions">
                         <button class="btn" type="button" @click="closeForm">Cancel</button>
@@ -79,10 +67,11 @@
 <script lang="ts" setup>
 import { dataFrom, dataFromAsync } from '@zyno-io/openapi-client-codegen';
 import { handleErrorAndAlert, showConfirm, VfModal } from '@zyno-io/vue-foundation';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 
 import { VcsIntegrationsApi, type IVcsIntegrationListResponse } from '@/openapi-client-generated';
 import LoaderModal from '@/shared/components/loader-modal.vue';
+import VcsIntegrationFields, { buildVcsCreateBody, buildVcsUpdateBody, emptyVcsConfig } from '@/shared/components/vcs-integration-fields.vue';
 
 const integrations = ref<IVcsIntegrationListResponse[]>();
 const isLoading = ref(true);
@@ -92,13 +81,10 @@ const editingId = ref<string | null>(null);
 
 const form = reactive({
     name: '',
-    platform: 'gitlab' as 'gitlab' | 'github',
-    url: '',
-    clientId: '',
-    clientSecret: ''
+    platform: 'gitlab' as 'gitlab' | 'github'
 });
-
-const redirectUrl = computed(() => `${window.location.origin}/login`);
+const config = ref(emptyVcsConfig());
+const hasPrivateKey = ref(false);
 
 onMounted(load);
 
@@ -117,9 +103,8 @@ function showCreateForm() {
     editingId.value = null;
     form.name = '';
     form.platform = 'gitlab';
-    form.url = '';
-    form.clientId = '';
-    form.clientSecret = '';
+    config.value = emptyVcsConfig();
+    hasPrivateKey.value = false;
     showForm.value = true;
 }
 
@@ -130,10 +115,17 @@ async function editIntegration(integration: IVcsIntegrationListResponse) {
         editingId.value = integration.id;
         form.name = detail.name;
         form.platform = detail.platform;
-        const config = detail.config as { url: string; clientId: string; clientSecret: string };
-        form.url = config.url;
-        form.clientId = config.clientId;
-        form.clientSecret = config.clientSecret;
+        const next = emptyVcsConfig();
+        next.url = detail.config.url ?? '';
+        next.clientId = detail.config.clientId;
+        if (detail.platform === 'github') {
+            next.appId = detail.config.appId ?? '';
+            next.oidcAudience = detail.config.oidcAudience;
+            hasPrivateKey.value = detail.config.hasPrivateKey;
+        } else {
+            hasPrivateKey.value = false;
+        }
+        config.value = next;
         showForm.value = true;
     } catch (err) {
         handleErrorAndAlert(err);
@@ -159,23 +151,17 @@ function closeForm() {
 async function submitForm() {
     try {
         isSubmitting.value = true;
-        const config = {
-            url: form.url,
-            clientId: form.clientId,
-            clientSecret: form.clientSecret
-        };
-
         if (editingId.value) {
             await dataFromAsync(
                 VcsIntegrationsApi.putVcsIntegrationsUpdate({
                     path: { id: editingId.value },
-                    body: { name: form.name, config }
+                    body: buildVcsUpdateBody(form.name, form.platform, config.value)
                 })
             );
         } else {
             await dataFromAsync(
                 VcsIntegrationsApi.postVcsIntegrationsCreate({
-                    body: { name: form.name, platform: form.platform, config }
+                    body: buildVcsCreateBody(form.name, form.platform, config.value)
                 })
             );
         }
