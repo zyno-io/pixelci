@@ -6,9 +6,10 @@ Access is strictly read-only: an MCP client can never approve, reject, or commen
 
 ## Authentication
 
-Programmatic access authenticates with a **GitLab personal access token** (passthrough auth). PixelCI validates the token against your GitLab instance and maps it to your PixelCI user, so access is scoped to exactly what GitLab grants you — you only see apps whose project your account can access.
+Programmatic access authenticates with a **personal access token** from your VCS provider (passthrough auth). PixelCI validates the token against GitLab or GitHub and maps it to your PixelCI user, so access is scoped to exactly what the provider grants you — you only see apps whose project your account can access.
 
-Create a token at **GitLab → Settings → Access Tokens** with the `read_user` scope (plus read access to the projects you want to see).
+- **GitLab**: create a token at **Settings → Access Tokens** with the `read_user` scope (plus read access to the projects you want to see).
+- **GitHub**: create a **fine-grained personal access token** at **Settings → Developer settings → Personal access tokens**, with access to the selected repositories and read-only permissions (Metadata read is granted automatically). A classic token also works.
 
 ## MCP Server
 
@@ -28,18 +29,18 @@ Then point your MCP client at it (e.g. Claude Desktop's `claude_desktop_config.j
             "args": ["/absolute/path/to/pixelci/packages/mcp/dist/index.js"],
             "env": {
                 "PIXELCI_API_URL": "https://pixelci.example.com",
-                "PIXELCI_GITLAB_TOKEN": "glpat-xxxxxxxxxxxxxxxxxxxx"
+                "PIXELCI_VCS_TOKEN": "glpat-xxxxxxxxxxxxxxxxxxxx"
             }
         }
     }
 }
 ```
 
-| Variable               | Required | Description                                                                                                    |
-| ---------------------- | -------- | -------------------------------------------------------------------------------------------------------------- |
-| `PIXELCI_API_URL`      | Yes      | Base URL of your PixelCI instance                                                                              |
-| `PIXELCI_GITLAB_TOKEN` | Yes      | A GitLab personal access token (`read_user` scope)                                                             |
-| `PIXELCI_VCS_ID`       | No       | The VCS integration id to authenticate against. Required only if your instance has more than one VCS provider. |
+| Variable            | Required | Description                                                                                                                                                                |
+| ------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PIXELCI_API_URL`   | Yes      | Base URL of your PixelCI instance                                                                                                                                          |
+| `PIXELCI_VCS_TOKEN` | Yes      | A GitLab or GitHub personal access token. `PIXELCI_GITHUB_TOKEN` and `PIXELCI_GITLAB_TOKEN` are accepted aliases                                                           |
+| `PIXELCI_VCS_ID`    | No       | The VCS integration id to authenticate against (sent as the `X-PixelCI-Vcs-Id` header). Required only if your instance has more than one integration of the same platform. |
 
 ### Tools
 
@@ -54,7 +55,7 @@ Once connected, you can ask things like _"In PixelCI, which screens on the lates
 
 ## REST API
 
-The same data is available under `/api/ext` for non-MCP automations, using the same GitLab-token auth — send `Authorization: Bearer <token>` (and `X-PixelCI-Vcs-Id: <id>` when multiple providers are configured):
+The same data is available under `/api/ext` for non-MCP automations, using the same personal-access-token auth — send `Authorization: Bearer <token>` (and `X-PixelCI-Vcs-Id: <id>` when multiple providers are configured):
 
 | Endpoint                                                           | Description                                  |
 | ------------------------------------------------------------------ | -------------------------------------------- |
@@ -63,4 +64,4 @@ The same data is available under `/api/ext` for non-MCP automations, using the s
 | `GET /api/ext/apps/:appId/builds/:buildId`                         | Build detail with per-screen reviews         |
 | `GET /api/ext/apps/:appId/builds/:buildId/screens/:screenId/image` | Screen image (`?kind=diff` or `new`)         |
 
-Reads are gated per app by VCS project access; a token can only see projects it can access in GitLab (unless the operator has disabled [`ENFORCE_VCS_PROJECT_ACCESS`](/deployment#access-control)).
+Reads are gated per app by VCS project access; a token can only see projects it can access in GitLab or GitHub (unless the operator has disabled [`ENFORCE_VCS_PROJECT_ACCESS`](/deployment#access-control)).

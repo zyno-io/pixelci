@@ -134,6 +134,7 @@ Services in `packages/api/src/services/`:
 - **S3Service**: Screenshot and diff image storage
 - **VcsService**: Git integration abstraction
 - **VcsGitLabService**: GitLab-specific implementation
+- **VcsGitHubService**: GitHub App implementation (user login, repo search, per-job re-run, OIDC CI tokens)
 
 ### Frontend Structure
 
@@ -148,7 +149,7 @@ Vue 3 application with:
 
 The CLI (cli/src/index.ts):
 
-1. Detects CI environment (GitLab supported via `ci-gitlab.ts`)
+1. Detects CI environment (GitLab via `ci-gitlab.ts`, GitHub Actions via `ci-github.ts` using OIDC)
 2. Creates build via API
 3. Uploads PNG screenshots with screen names
 4. Triggers build processing

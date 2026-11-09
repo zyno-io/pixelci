@@ -1,18 +1,64 @@
 import { assert } from '@zyno-io/ts-reflection';
-import { HttpBadRequestError } from '@zyno-io/ts-server-foundation';
+import { HttpBadRequestError, HttpUnauthorizedError } from '@zyno-io/ts-server-foundation';
 import { Logger, ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { JWT, r } from '@zyno-io/ts-server-foundation';
 import axios from 'axios';
 
-import type { IVcsLoginSessionResponse, IVcsProject, IVcsServiceImpl } from './Vcs.service';
+import type { ICiJobData, IVcsLoginSessionResponse, IVcsProject, IVcsRerunResult, IVcsServiceImpl, IVcsTokenUser } from './Vcs.service';
 
+import { AppEntity } from '../entities/App.entity';
 import { UserEntity } from '../entities/User.entity';
 import { IGitLabConfig } from '../entities/VcsIntegration.entity';
+import { ensureFreshVcsSession } from './VcsSessionRefresh';
 
 export class VcsGitLabService implements IVcsServiceImpl {
-    private logger = r<ScopedLogger>(Logger);
+    private logger: ScopedLogger;
 
-    constructor(private config: IGitLabConfig) {}
+    constructor(
+        private config: IGitLabConfig,
+        logger?: ScopedLogger
+    ) {
+        this.logger = logger ?? r<ScopedLogger>(Logger);
+    }
+
+    async validateCiToken(ciToken: string): Promise<ICiJobData> {
+        let jobResponse: Response;
+        try {
+            jobResponse = await fetch(`${this.config.url}/api/v4/job`, {
+                headers: { 'JOB-TOKEN': ciToken }
+            });
+        } catch (err) {
+            this.logger.warn(`CI token validation failed: GitLab /api/v4/job request failed (${err})`);
+            throw new HttpUnauthorizedError();
+        }
+
+        if (!jobResponse.ok) {
+            this.logger.warn(`CI token validation failed: GitLab /api/v4/job returned ${jobResponse.status} ${jobResponse.statusText}`);
+            throw new HttpUnauthorizedError();
+        }
+
+        const jobData = (await jobResponse.json()) as {
+            id?: number;
+            ref?: string;
+            pipeline?: { project_id?: number; sha?: string };
+            commit?: { title?: string; author_name?: string };
+        };
+
+        const vcsProjectId = jobData.pipeline?.project_id;
+        if (!vcsProjectId) {
+            this.logger.warn('CI token validation failed: GitLab job response missing pipeline.project_id');
+            throw new HttpUnauthorizedError();
+        }
+
+        return {
+            jobId: String(jobData.id ?? ''),
+            branch: jobData.ref ?? '',
+            commitHash: jobData.pipeline?.sha ?? '',
+            commitSubject: jobData.commit?.title ?? '',
+            commitAuthor: jobData.commit?.author_name ?? '',
+            vcsProjectId
+        };
+    }
 
     async getProviderLoginUrl(redirectUri: string, state?: string): Promise<string> {
         return `${this.config.url}/oauth/authorize?client_id=${this.config.clientId}&redirect_uri=${redirectUri}&state=${state ?? ''}&response_type=code&scope=openid+api`;
@@ -57,13 +103,47 @@ export class VcsGitLabService implements IVcsServiceImpl {
             };
         } catch (err) {
             if (axios.isAxiosError(err)) {
-                throw new HttpBadRequestError(err.response?.data);
+                const data = err.response?.data as { error?: string; error_description?: string } | undefined;
+                throw new HttpBadRequestError(data?.error_description ?? data?.error ?? 'GitLab session expired; please sign in again');
             }
             throw err;
         }
     }
 
-    async rerunCiJob(user: UserEntity, projectPath: string, jobId: string): Promise<string> {
+    async rerunCiJob(user: UserEntity, app: Pick<AppEntity, 'projectPath' | 'vcsProjectId'>, ciJobId: string): Promise<IVcsRerunResult> {
+        try {
+            return { ok: true, url: await this.retryJob(user, app.projectPath, ciJobId) };
+        } catch (err) {
+            if (!axios.isAxiosError(err) || err.response?.status !== 405) return this.rerunFailure(err);
+
+            // Project may have moved: securely look up the current path via the GitLab API
+            let currentPath: string;
+            try {
+                currentPath = await this.getProjectPath(user, app.projectPath);
+            } catch (lookupErr) {
+                return this.rerunFailure(lookupErr);
+            }
+            if (currentPath === app.projectPath) return this.rerunFailure(err); // not a move
+
+            try {
+                return { ok: true, url: await this.retryJob(user, currentPath, ciJobId), movedProjectPath: currentPath };
+            } catch (retryErr) {
+                return { ...this.rerunFailure(retryErr), movedProjectPath: currentPath };
+            }
+        }
+    }
+
+    private rerunFailure(err: unknown): { ok: false; error: string } {
+        this.logger.error('Failed to rerun CI job', err);
+        if (axios.isAxiosError(err)) {
+            const data = err.response?.data;
+            const message = typeof data?.message === 'string' ? data.message : err.message;
+            return { ok: false, error: `GitLab refused to re-run the job${err.response ? ` (HTTP ${err.response.status})` : ''}: ${message}` };
+        }
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    private async retryJob(user: UserEntity, projectPath: string, jobId: string): Promise<string> {
         await this.renewToken(user);
 
         const response = await axios.post(
@@ -86,7 +166,7 @@ export class VcsGitLabService implements IVcsServiceImpl {
         return `${this.config.url}/${projectPath}/-/pipelines/${response.data.pipeline.id}`;
     }
 
-    async getProjectPath(user: UserEntity, projectPath: string): Promise<string> {
+    private async getProjectPath(user: UserEntity, projectPath: string): Promise<string> {
         await this.renewToken(user);
 
         const response = await axios.get(`${this.config.url}/api/v4/projects/${encodeURIComponent(projectPath)}`, {
@@ -96,6 +176,34 @@ export class VcsGitLabService implements IVcsServiceImpl {
         });
 
         return response.data.path_with_namespace;
+    }
+
+    parseProjectUrl(url: URL): string | null {
+        const projectPath = url.pathname
+            .replace(/^\//, '')
+            .replace(/\/-\/.*$/, '')
+            .replace(/\.git$/, '');
+        return projectPath || null;
+    }
+
+    getCommitUrlBase(projectPath: string): string {
+        return `${this.config.url}/${projectPath}/-/commit`;
+    }
+
+    async getTokenUser(token: string): Promise<IVcsTokenUser | null> {
+        let response: Response;
+        try {
+            response = await fetch(`${this.config.url}/api/v4/user`, {
+                headers: { 'PRIVATE-TOKEN': token }
+            });
+        } catch (err) {
+            this.logger.warn(`VCS token validation: request to ${this.config.url}/api/v4/user failed (${err})`);
+            return null;
+        }
+        if (!response.ok) return null;
+
+        const body = (await response.json()) as { id?: number };
+        return body.id ? { id: String(body.id) } : null;
     }
 
     async searchProjects(user: UserEntity, search: string): Promise<IVcsProject[]> {
@@ -183,40 +291,42 @@ export class VcsGitLabService implements IVcsServiceImpl {
     }
 
     private async renewToken(user: UserEntity): Promise<void> {
-        if (user.vcsSession!.expiresAt > Date.now() - 60_000) return;
-
-        await this.logger.info('Refreshing GitLab token', { userId: user.id });
-
         try {
-            const response = await axios.post(
-                `${this.config.url}/oauth/token`,
-                {
-                    client_id: this.config.clientId,
-                    client_secret: this.config.clientSecret,
-                    grant_type: 'refresh_token',
-                    refresh_token: user.vcsSession!.refreshToken,
-                    redirect_uri: user.vcsSession!.redirectUri
+            await ensureFreshVcsSession(
+                user,
+                async session => {
+                    this.logger.info('Refreshing GitLab token', { userId: user.id });
+                    const response = await axios.post(
+                        `${this.config.url}/oauth/token`,
+                        {
+                            client_id: this.config.clientId,
+                            client_secret: this.config.clientSecret,
+                            grant_type: 'refresh_token',
+                            refresh_token: session.refreshToken,
+                            redirect_uri: session.redirectUri
+                        },
+                        {
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded'
+                            }
+                        }
+                    );
+
+                    assert<{
+                        access_token: string;
+                        expires_in: number;
+                        refresh_token: string;
+                    }>(response.data);
+
+                    return {
+                        ...session,
+                        accessToken: response.data.access_token,
+                        expiresAt: Date.now() + response.data.expires_in * 1000,
+                        refreshToken: response.data.refresh_token
+                    };
                 },
-                {
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    }
-                }
+                err => axios.isAxiosError(err) && err.response?.data?.error === 'invalid_grant'
             );
-
-            assert<{
-                access_token: string;
-                expires_in: number;
-                refresh_token: string;
-            }>(response.data);
-
-            user.vcsSession = {
-                ...user.vcsSession!,
-                accessToken: response.data.access_token,
-                expiresAt: Date.now() + response.data.expires_in * 1000,
-                refreshToken: response.data.refresh_token
-            };
-            await user.save();
         } catch (err) {
             if (axios.isAxiosError(err)) {
                 throw new HttpBadRequestError(err.response?.data);

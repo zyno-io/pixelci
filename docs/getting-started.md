@@ -47,7 +47,7 @@ See the [Deployment Guide](./deployment.md) for Docker Compose, Kubernetes, and 
 
 ### 2. Set Up Authentication
 
-PixelCI uses GitLab OAuth for authentication. See the [GitLab Setup Guide](./gitlab-setup.md) to configure OAuth and create your first app.
+PixelCI authenticates users through your VCS provider. See the [GitLab Setup Guide](./gitlab-setup.md) (GitLab OAuth) or the [GitHub Setup Guide](./github-setup.md) (GitHub App) to configure login and create your first app.
 
 ### 3. Add to Your CI Pipeline
 
@@ -61,7 +61,17 @@ visual-regression:
         - pixelci ./screenshots
 ```
 
-See the [GitLab Setup Guide](./gitlab-setup.md#part-2-ci-pipeline-integration) for detailed CI configuration.
+On GitHub Actions, use the container step instead (with `permissions: id-token: write`):
+
+```yaml
+- uses: docker://ghcr.io/zyno-io/pixelci/cli:latest
+  env:
+      PIXELCI_API_URL: https://pixelci.example.com
+      PIXELCI_APP_ID: <your-app-id>
+      PIXELCI_IMAGES_PATH: ./screenshots
+```
+
+See the [GitLab Setup Guide](./gitlab-setup.md#part-2-ci-pipeline-integration) or [GitHub Setup Guide](./github-setup.md#part-2-github-actions-integration) for detailed CI configuration.
 
 ### 4. Review Results
 

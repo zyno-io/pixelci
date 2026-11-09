@@ -42,7 +42,7 @@ export type IExtBuildDetailResponse = IExtBuildResponse & {
 
 /**
  * Read-only API surface for programmatic consumers (e.g. the MCP server), authenticated with a
- * VCS (GitLab) personal access token. Intentionally separate from the user (JWT) controllers so a
+ * VCS personal access token. Intentionally separate from the user (JWT) controllers so a
  * token can only ever read — never approve, reject, or comment. Every app is additionally gated by
  * whether the caller's token can access its project in the VCS provider.
  */

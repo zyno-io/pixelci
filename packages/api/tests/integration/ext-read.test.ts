@@ -46,6 +46,12 @@ const MULTI_PAT = 'glpat-multi-provider-token';
 
 const SECOND_VCS_ID = 'e2222222-aaaa-bbbb-cccc-0000000000ff';
 
+const GITHUB_VCS_ID = 'e2222222-aaaa-bbbb-cccc-0000000000aa';
+const GITHUB_PAT = 'ghp_githubStyleToken';
+
+// Every credential the mock GitLab receives, so we can assert foreign tokens never reach it
+const gitlabSeenCredentials: string[] = [];
+
 let mockGitLabPort: number;
 let mockGitLabServer: Server;
 
@@ -63,6 +69,7 @@ function createMockGitLab(): Promise<void> {
     return new Promise(resolve => {
         mockGitLabServer = createServer((req: IncomingMessage, res: ServerResponse) => {
             const url = req.url ?? '';
+            gitlabSeenCredentials.push(String(req.headers['private-token'] ?? ''), String(req.headers['authorization'] ?? ''));
 
             // Identity lookup, used by VcsTokenAuthMiddleware (PRIVATE-TOKEN header)
             if (url === '/api/v4/user') {
@@ -129,6 +136,7 @@ async function run() {
     await testImageRequiresToken(facade);
     await testImageForbiddenWithoutAccess(facade);
     await testImageRedirectsWithAccess(facade);
+    await testGitHubTokenNeverReachesGitLab(facade);
     await testMultiProviderRequiresVcsId(facade);
 
     mockGitLabServer.close();
@@ -144,6 +152,15 @@ async function createBaseEntities() {
             clientId: 'client-id',
             clientSecret: 'client-secret'
         }
+    });
+
+    // A GitHub integration coexisting with the GitLab one: GitLab PATs must still resolve with no header.
+    await createPersistedEntity(VcsIntegrationEntity, {
+        id: GITHUB_VCS_ID,
+        name: 'Ext Test GitHub',
+        platform: 'github',
+        // url points at a closed local port so tests never contact real GitHub
+        config: { url: 'http://127.0.0.1:9', clientId: 'gh-client', clientSecret: 'gh-secret', oidcAudience: 'https://pixelci.example.com' }
     });
 
     await createPersistedEntity(UserEntity, {
@@ -306,6 +323,32 @@ async function testImageRedirectsWithAccess(facade: Facade) {
         authed(HttpRequest.GET(`/api/ext/apps/${APP_ID}/builds/${BUILD_ID}/screens/${SCREEN_ID}/image?kind=new`), VALID_PAT)
     );
     expectStatus(response.statusCode, 302);
+    console.log('  PASS');
+}
+
+async function testGitHubTokenNeverReachesGitLab(facade: Facade) {
+    console.log('\nTest: a GitHub-style token is never sent to a GitLab provider');
+    gitlabSeenCredentials.length = 0;
+
+    // No header: routed to the (only) GitHub integration, whose lookup fails -> 401
+    const noHint = await facade.request(authed(HttpRequest.GET('/api/ext/apps'), GITHUB_PAT));
+    expectStatus(noHint.statusCode, 401);
+
+    // Explicitly pointed at the GitLab integration: refused before any outbound request
+    const gitlabHint = await facade.request(authed(HttpRequest.GET('/api/ext/apps'), GITHUB_PAT).header('x-pixelci-vcs-id', VCS_ID));
+    expectStatus(gitlabHint.statusCode, 401);
+
+    // Leading whitespace must not defeat prefix detection
+    const padded = await facade.request(HttpRequest.GET('/api/ext/apps').header('authorization', `Bearer  ${GITHUB_PAT}`));
+    expectStatus(padded.statusCode, 401);
+
+    if (gitlabSeenCredentials.some(c => c.includes(GITHUB_PAT))) {
+        throw new Error('GitHub-style token was sent to the GitLab mock');
+    }
+
+    // Reverse direction: an unprefixed (GitLab-style) token pointed at the GitHub integration is refused
+    const reverse = await facade.request(authed(HttpRequest.GET('/api/ext/apps'), 'glpat-unprefixedStyle').header('x-pixelci-vcs-id', GITHUB_VCS_ID));
+    expectStatus(reverse.statusCode, 401);
     console.log('  PASS');
 }
 

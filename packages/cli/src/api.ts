@@ -6,11 +6,16 @@ import { AppError } from './error.js';
 
 export type IBuildStatus = 'draft' | 'processing' | 'no changes' | 'needs review' | 'changes approved' | 'changes rejected' | 'failed';
 
-export function getApi(jobInfo: ICIJobInfo): PixelCiApi {
+export function getApiUrl(): string {
     const apiUrl = process.env.PIXELCI_API_URL;
     if (!apiUrl) {
         throw new AppError('PIXELCI_API_URL environment variable is not set');
     }
+    return apiUrl.replace(/\/+$/, '');
+}
+
+export function getApi(jobInfo: ICIJobInfo): PixelCiApi {
+    const apiUrl = getApiUrl();
 
     const appId = process.env.PIXELCI_APP_ID;
     if (!appId) {

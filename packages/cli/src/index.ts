@@ -1,6 +1,7 @@
 import { existsSync } from 'fs';
 
 import { getApi } from './api.js';
+import { reportGitHubResult } from './ci-github.js';
 import { getJobInfo } from './ci.js';
 import { AppError, handleError } from './error.js';
 import { getImages, getScreenName } from './glob.js';
@@ -15,7 +16,7 @@ if (!existsSync(sourcePath)) throw new AppError(`Source path "${sourcePath}" doe
 const imageFiles = await getImages(sourcePath);
 if (!imageFiles.length) throw new AppError(`No PNG files found in "${sourcePath}"`);
 
-const jobInfo = getJobInfo();
+const jobInfo = await getJobInfo();
 if (!jobInfo) throw new AppError('No job information found in CI');
 
 const api = getApi(jobInfo);
@@ -60,7 +61,9 @@ if (buildStatus === 'processing') {
 }
 
 console.log(`\nBuild status: ${buildStatus}`);
-console.log(`\nSee details at:\n${api.getBuildUserUrl(buildId)}`);
+const buildUrl = api.getBuildUserUrl(buildId);
+console.log(`\nSee details at:\n${buildUrl}`);
+reportGitHubResult(buildStatus, buildUrl);
 
 if (buildStatus === 'failed') {
     throw new AppError(`Build ${buildId} failed during processing.`);

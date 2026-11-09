@@ -92,7 +92,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/IOnboardingVcsIntegrationInput"
+              $ref: "#/components/schemas/IVcsIntegrationCreateInput"
   /api/session/login:
     post:
       operationId: postSessionLogin
@@ -804,12 +804,17 @@ components:
           type: string
           format: uuid
           pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        vcsId:
+          type: string
+          format: uuid
+          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         name:
           type: string
         isAdmin:
           type: boolean
       required:
         - id
+        - vcsId
         - name
         - isAdmin
     ISessionProvider:
@@ -821,9 +826,15 @@ components:
           pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         name:
           type: string
+        platform:
+          enum:
+            - gitlab
+            - github
+          type: string
       required:
         - id
         - name
+        - platform
     IOnboardingStatusResponse:
       type: object
       properties:
@@ -831,16 +842,24 @@ components:
           type: boolean
       required:
         - isOnboarded
-    IOnboardingVcsIntegrationInput:
+    IVcsIntegrationCreateInput:
+      oneOf:
+        - $ref: "#/components/schemas/IGitLabIntegrationInput"
+        - $ref: "#/components/schemas/IGitHubIntegrationInput"
+      discriminator:
+        propertyName: platform
+        mapping:
+          gitlab: "#/components/schemas/IGitLabIntegrationInput"
+          github: "#/components/schemas/IGitHubIntegrationInput"
+    IGitLabIntegrationInput:
       type: object
       properties:
         name:
           type: string
         platform:
+          type: string
           enum:
             - gitlab
-            - github
-          type: string
         config:
           $ref: "#/components/schemas/IGitLabConfig"
       required:
@@ -860,6 +879,44 @@ components:
         - url
         - clientId
         - clientSecret
+    IGitHubIntegrationInput:
+      type: object
+      properties:
+        name:
+          type: string
+        platform:
+          type: string
+          enum:
+            - github
+        config:
+          $ref: "#/components/schemas/IGitHubConfigInput"
+      required:
+        - name
+        - platform
+        - config
+    IGitHubConfigInput:
+      type: object
+      properties:
+        url:
+          type: string
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+        appId:
+          type: string
+        privateKey:
+          type: string
+        oidcAudience:
+          type: string
+        oidcIssuer:
+          type: string
+      required:
+        - clientId
+        - clientSecret
+        - appId
+        - privateKey
+        - oidcAudience
     PickVcsIntegrationEntity:
       type: object
       properties:
@@ -1080,6 +1137,8 @@ components:
             - type: boolean
               enum:
                 - false
+        vcsError:
+          type: string
       required:
         - vcsUrl
     IBuildScreenResponse:
@@ -1245,61 +1304,125 @@ components:
         - name
         - platform
     IVcsIntegrationDetailResponse:
+      oneOf:
+        - $ref: "#/components/schemas/IGitLabIntegrationDetail"
+        - $ref: "#/components/schemas/IGitHubIntegrationDetail"
+      discriminator:
+        propertyName: platform
+        mapping:
+          gitlab: "#/components/schemas/IGitLabIntegrationDetail"
+          github: "#/components/schemas/IGitHubIntegrationDetail"
+    IGitLabIntegrationDetail:
       type: object
       properties:
         id:
           type: string
-          format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         name:
           type: string
         platform:
+          type: string
           enum:
             - gitlab
-            - github
-          type: string
         config:
-          oneOf:
-            - $ref: "#/components/schemas/IGitLabConfig"
-            - $ref: "#/components/schemas/IGitHubConfig"
+          type: object
+          properties:
+            url:
+              type: string
+            clientId:
+              type: string
+          required:
+            - url
+            - clientId
       required:
         - id
         - name
         - platform
         - config
-    IGitHubConfig:
+    IGitHubIntegrationDetail:
       type: object
       properties:
-        clientId:
+        id:
           type: string
-        clientSecret:
+        name:
           type: string
+        platform:
+          type: string
+          enum:
+            - github
+        config:
+          type: object
+          properties:
+            url:
+              type: string
+            clientId:
+              type: string
+            appId:
+              type: string
+            oidcAudience:
+              type: string
+            hasPrivateKey:
+              type: boolean
+          required:
+            - clientId
+            - oidcAudience
+            - hasPrivateKey
       required:
-        - clientId
-        - clientSecret
-    IVcsIntegrationCreateInput:
+        - id
+        - name
+        - platform
+        - config
+    IVcsIntegrationUpdateInput:
+      oneOf:
+        - $ref: "#/components/schemas/IGitHubIntegrationUpdateInput"
+        - $ref: "#/components/schemas/IGitLabIntegrationUpdateInput"
+    IGitHubIntegrationUpdateInput:
       type: object
       properties:
         name:
           type: string
         platform:
-          enum:
-            - gitlab
-            - github
           type: string
+          enum:
+            - github
         config:
-          $ref: "#/components/schemas/IGitLabConfig"
+          $ref: "#/components/schemas/PartialIGitHubConfigInput"
       required:
-        - name
         - platform
-        - config
-    IVcsIntegrationUpdateInput:
+    PartialIGitHubConfigInput:
+      type: object
+      properties:
+        url:
+          type: string
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+        appId:
+          type: string
+        privateKey:
+          type: string
+        oidcAudience:
+          type: string
+        oidcIssuer:
+          type: string
+    IGitLabIntegrationUpdateInput:
       type: object
       properties:
         name:
           type: string
+        platform:
+          type: string
+          enum:
+            - gitlab
         config:
-          $ref: "#/components/schemas/IGitLabConfig"
+          type: object
+          properties:
+            url:
+              type: string
+            clientId:
+              type: string
+            clientSecret:
+              type: string
     IUserListResponse:
       type: object
       properties:
