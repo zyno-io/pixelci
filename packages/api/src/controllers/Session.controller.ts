@@ -46,7 +46,10 @@ export class SessionController {
 
     @http.GET('providers')
     async getProviders(): Promise<ISessionProvider[]> {
-        return VcsIntegrationEntity.query().orderBy('name').find();
+        // Unauthenticated endpoint: map explicitly. Responses are JSON.stringify'd as-is (not filtered by the
+        // declared return type), so returning entities would leak `config` (OAuth client secrets).
+        const integrations = await VcsIntegrationEntity.query().orderBy('name').find();
+        return integrations.map(({ id, name }) => ({ id, name }));
     }
 
     @http.GET('providers/:id/login-url')
