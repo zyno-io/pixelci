@@ -71,7 +71,7 @@ You must have access to at least one installation of the App to log in. Install 
 On github.com, anyone with a GitHub account who has access to an installation of your App can log in. Public repositories are readable by any logged-in user. Review [Access Control](/deployment#access-control) before exposing the instance publicly.
 :::
 
-<!-- TODO(verify): login gate behavior (403 "No access to any installation of this GitHub App") and public-repo read semantics depend on WP-A2 and are unverified on real GitHub. -->
+<!-- TODO(verify): public-repo read semantics are unverified on real GitHub (login with an installation was verified on github.com 2026-11-10; the no-installation rejection is covered by integration tests only). -->
 
 ## Part 2: GitHub Actions Integration
 
@@ -106,7 +106,14 @@ jobs:
 
 `permissions: id-token: write` is required: the CLI authenticates with the job's OIDC token, so no secrets are needed. You can find the app ID in the PixelCI web UI on the app settings page.
 
-Use a single trigger (such as `push`) rather than both `push` and `pull_request`, to avoid duplicate builds for the same commit.
+Don't let `push` and `pull_request` both run for the same commit. A `pull_request` run tests GitHub's merge commit, so the two runs create separate builds; if both need review at the same time, each must be approved separately. To use both triggers, limit `push` to your default branch:
+
+```yaml
+on:
+    push:
+        branches: [main]
+    pull_request:
+```
 
 The container step runs in `/github/workspace`, so relative screenshot paths resolve against your checkout.
 
