@@ -6,6 +6,9 @@
   (push, pull_request, workflow_dispatch and schedule events; GitHub Enterprise Server supported). See the GitHub Setup guide
 - MCP/`/api/ext` read access now accepts GitHub personal access tokens; token env var is `PIXELCI_VCS_TOKEN`
   (`PIXELCI_GITLAB_TOKEN` and `PIXELCI_GITHUB_TOKEN` remain as aliases)
+- License updated to the PixelCI Source Available License, Version 1.1: adds contribution terms (inbound license to the
+  Licensor), clarifies ownership of your own modifications, and replaces examples with PixelCI-specific ones. Self-hosting
+  for internal use remains free
 
 ## v0.4.0
 

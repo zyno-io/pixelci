@@ -99,7 +99,7 @@ For issues, questions, or contributions, please open an issue on [GitHub](https:
 
 ## License
 
-This project is source-available. See [LICENSE.md](LICENSE.md) for details.
+PixelCI is source-available under the PixelCI Source Available License, Version 1.1. It is free for internal use within your organization; see [LICENSE.md](LICENSE.md) for details.
 
 ---
 
