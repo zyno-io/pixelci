@@ -27,7 +27,7 @@ export function hashCiToken(ciToken: string): string {
 
 /**
  * Middleware for build-level CI token authentication.
- * Verifies that the Bearer token's SHA-256 hash matches the build's stored ciTokenHash.
+ * Verifies that the Bearer token's SHA-256 hash matches the build's ciTokenHash (or, for GET, ciReadTokenHashes).
  * Used on upload, process, and getBuildStatus endpoints.
  */
 export class BuildCiTokenMiddleware extends HttpMiddleware {
@@ -53,7 +53,10 @@ export class BuildCiTokenMiddleware extends HttpMiddleware {
         const buildId = match[1];
 
         const build = await BuildEntity.query().filter({ id: buildId }).findOneOrUndefined();
-        if (!build || build.ciTokenHash !== tokenHash) {
+        // Uploads/process require the creator's token; status polling also accepts read-only tokens of concurrent jobs
+        const allowed =
+            !!build && (build.ciTokenHash === tokenHash || (request.method === 'GET' && (build.ciReadTokenHashes ?? []).includes(tokenHash)));
+        if (!build || !allowed) {
             this.logger.warn(`CI token auth failed: build not found or token hash mismatch for buildId=${buildId}`);
             throw new HttpUnauthorizedError();
         }

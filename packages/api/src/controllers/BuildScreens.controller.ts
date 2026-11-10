@@ -124,7 +124,8 @@ export class BuildScreensController {
                 );
             } else {
                 const buildScreen = await txn.query(BuildScreenEntity).filter({ buildId: id, screenId: screen.id }).findOneOrUndefined();
-                if (buildScreen) throw new HttpBadRequestError('screen with same name already uploaded for this build');
+                // Re-upload (e.g. a re-run after a partial failure): replace the earlier upload
+                if (buildScreen) await txn.query(BuildScreenEntity).filter({ id: buildScreen.id }).deleteOne();
             }
 
             const buildScreen = await createPersistedEntity(
@@ -141,6 +142,7 @@ export class BuildScreensController {
             );
 
             await this.s3Svc.uploadFile(body.image.path, this.s3Svc.getPathForScreen(appId, id, screen.id), 'image/png');
+            await txn.query(BuildEntity).filter({ id }).patchMany({ draftActiveAt: new Date() });
 
             return {
                 ...buildScreen,

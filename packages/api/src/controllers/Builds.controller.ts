@@ -19,15 +19,44 @@ type IBuildResponse = Pick<BuildEntity, 'id' | 'branchId' | 'commitHash' | 'comm
     branchName: string;
 };
 type IBuildBasicResponse = Pick<BuildEntity, 'status'>;
+
+/** A draft older than this is considered abandoned: it may be taken over by a new job or canceled by another build's processing. */
+export const STALE_DRAFT_MS = 15 * 60 * 1000;
+const MAX_READ_TOKEN_HASHES = 20;
+const MAX_DEADLOCK_ATTEMPTS = 3;
+
+export function isDeadlockError(err: unknown): boolean {
+    for (let e = err as { code?: string; errno?: number; message?: string; cause?: unknown } | undefined, depth = 0; e && depth < 5; depth++) {
+        if (e.errno === 1213 || e.code === 'ER_LOCK_DEADLOCK' || /deadlock found/i.test(e.message ?? '')) return true;
+        e = e.cause as typeof e;
+    }
+    return false;
+}
+/**
+ * Whether a CI job id identifies a single job. GitHub ids are `${run_id}:${check_run_id}`, but fall back to the bare run id
+ * (shared by every job in the run) when the OIDC token lacks check_run_id (some GHES versions). GitLab job tokens are
+ * unique per job, so the token-hash match already covers GitLab.
+ */
+function isPerJobId(ciJobId: string): boolean {
+    return ciJobId.includes(':');
+}
+
 export interface IBuildApprovalResponse {
     vcsUrl: string | false;
     vcsError?: string;
 }
 
-/** Responses are serialized as-is, so strip the CI session credential hash before returning builds to users. */
+/** Responses are serialized as-is, so strip the CI session credential hashes before returning builds to users. */
 function omitCiTokenHash(build: BuildEntity) {
-    const { ciTokenHash: _ciTokenHash, ...rest } = build;
+    const { ciTokenHash: _ciTokenHash, ciReadTokenHashes: _ciReadTokenHashes, ...rest } = build;
     return rest;
+}
+
+/** Adds a read-only (status polling) token hash, de-duplicated and capped to the most recent entries. */
+function addReadTokenHash(build: BuildEntity, hash: string) {
+    if (build.ciTokenHash === hash) return;
+    const current = (build.ciReadTokenHashes ?? []).filter(h => h !== hash);
+    build.ciReadTokenHashes = [...current, hash].slice(-MAX_READ_TOKEN_HASHES);
 }
 
 @ApiController('/api/apps/:appId/builds')
@@ -87,17 +116,24 @@ export class BuildsController {
 
     @http.GET(':id/status')
     @http.middleware(BuildCiTokenMiddleware)
-    async show(appId: string, id: string): Promise<IBuildBasicResponse> {
+    async show(request: HttpRequest, appId: string, id: string): Promise<IBuildBasicResponse> {
         const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
 
-        // Null out the token hash when returning a final status (session is over)
-        if (build.status !== 'draft' && build.status !== 'processing') {
-            build.ciTokenHash = null;
+        // A draft is never reported to pollers (the CLI would treat it as final and exit 0)
+        if (build.status === 'draft') return { status: 'processing' };
+        // The CLI doesn't know `canceled`; report it as a clean failure
+        const reportedStatus: BuildEntity['status'] = build.status === 'canceled' ? 'failed' : build.status;
+
+        // Final status: revoke only the calling session's access (other concurrent jobs may still be polling)
+        if (build.status !== 'processing') {
+            const callerHash = hashCiToken(request.headers.authorization!.slice(7));
+            if (build.ciTokenHash === callerHash) build.ciTokenHash = null;
+            else build.ciReadTokenHashes = (build.ciReadTokenHashes ?? []).filter(h => h !== callerHash);
             await build.save();
         }
 
-        return build;
+        return { status: reportedStatus };
     }
 
     @http.POST()
@@ -117,8 +153,30 @@ export class BuildsController {
         const ciTokenHash = hashCiToken(ciToken);
         const { branch: branchName, commitHash, commitSubject, commitAuthor, jobId: ciJobId } = ciJobData;
 
+        // Concurrent creates for an app with no branch row yet can deadlock (gap locks); retry the whole transaction
+        for (let attempt = 1; ; attempt++) {
+            try {
+                return await this.createInTransaction(appId, branchName, commitHash, commitSubject, commitAuthor, ciJobId, ciTokenHash);
+            } catch (err) {
+                if (attempt >= MAX_DEADLOCK_ATTEMPTS || !isDeadlockError(err)) throw err;
+                this.logger.warn(`Build creation deadlocked (attempt ${attempt}); retrying`);
+                await new Promise(resolve => setTimeout(resolve, 20 + Math.random() * 80));
+            }
+        }
+    }
+
+    private createInTransaction(
+        appId: string,
+        branchName: string,
+        commitHash: string,
+        commitSubject: string,
+        commitAuthor: string,
+        ciJobId: string,
+        ciTokenHash: string
+    ): Promise<IBuildResponse> {
         return this.db.transaction(async txn => {
-            let branch = await txn.query(BranchEntity).filter({ appId: app.id, name: branchName }).findOneOrUndefined();
+            // Lock the branch row so concurrent creates for the same branch serialize
+            let branch = await txn.query(BranchEntity).filter({ appId, name: branchName }).forUpdate().findOneOrUndefined();
 
             if (!branch) {
                 branch = await createPersistedEntity(
@@ -132,15 +190,42 @@ export class BuildsController {
                 );
             }
 
-            const existingBuild = await txn.query(BuildEntity).filter({ appId, branchId: branch.id, commitHash }).findOneOrUndefined();
+            const existingBuild = await txn.query(BuildEntity).filter({ appId, branchId: branch.id, commitHash }).forUpdate().findOneOrUndefined();
             if (existingBuild) {
-                // Update the token hash so subsequent calls use the current token
-                existingBuild.ciTokenHash = ciTokenHash;
-                // A re-run attempt gets a new job id; approval must target the latest one.
-                if (existingBuild.status === 'needs review') existingBuild.ciJobId = ciJobId;
+                const now = new Date();
+                const isDraft = existingBuild.status === 'draft';
+                const isStaleDraft = isDraft && now.getTime() - existingBuild.draftActiveAt.getTime() > STALE_DRAFT_MS;
+                let reportedStatus: BuildEntity['status'] = existingBuild.status;
+
+                if (isStaleDraft || existingBuild.status === 'canceled' || existingBuild.status === 'failed') {
+                    // Abandoned/canceled/failed build: the caller takes over (reviving it) as the uploader and re-uploads
+                    await txn.query(BuildScreenEntity).filter({ buildId: existingBuild.id }).deleteMany();
+                    existingBuild.status = 'draft';
+                    existingBuild.ciTokenHash = ciTokenHash;
+                    existingBuild.ciReadTokenHashes = (existingBuild.ciReadTokenHashes ?? []).filter(h => h !== ciTokenHash);
+                    existingBuild.ciJobId = ciJobId;
+                    existingBuild.draftActiveAt = now;
+                    reportedStatus = 'draft';
+                } else if (isDraft && (existingBuild.ciTokenHash === ciTokenHash || (isPerJobId(ciJobId) && existingBuild.ciJobId === ciJobId))) {
+                    // The uploader itself re-creating (a new CLI run may carry a new token within the same job)
+                    existingBuild.ciTokenHash = ciTokenHash;
+                    existingBuild.ciReadTokenHashes = (existingBuild.ciReadTokenHashes ?? []).filter(h => h !== ciTokenHash);
+                    existingBuild.draftActiveAt = now;
+                } else {
+                    // Never overwrite the uploader's hash; additional jobs only get status-polling access
+                    addReadTokenHash(existingBuild, ciTokenHash);
+                    if (isDraft) {
+                        // Another job is uploading: the caller must skip upload and poll (ciJobId stays the uploader's)
+                        reportedStatus = 'processing';
+                    } else if (existingBuild.status === 'processing' || existingBuild.status === 'needs review') {
+                        // A re-run attempt gets a new job id; approval must target the latest one.
+                        existingBuild.ciJobId = ciJobId;
+                    }
+                }
                 txn.add(existingBuild);
                 return {
-                    ...existingBuild,
+                    ...omitCiTokenHash(existingBuild),
+                    status: reportedStatus,
                     branchName: branch.name
                 };
             }
@@ -156,14 +241,16 @@ export class BuildsController {
                     commitAuthor,
                     ciJobId,
                     ciTokenHash,
+                    ciReadTokenHashes: [],
                     status: 'draft',
-                    createdAt: new Date()
+                    createdAt: new Date(),
+                    draftActiveAt: new Date()
                 },
                 txn
             );
 
             return {
-                ...newBuild,
+                ...omitCiTokenHash(newBuild),
                 branchName: branch!.name
             };
         });
@@ -171,16 +258,21 @@ export class BuildsController {
 
     @http.POST(':id/process')
     @http.middleware(BuildCiTokenMiddleware)
-    async process(appId: string, id: string): OkResponse {
-        const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
-        if (!build) throw new HttpNotFoundError();
-
-        if (build.status !== 'draft') throw new HttpBadRequestError('Build is not in draft status');
+    async process(request: HttpRequest, appId: string, id: string): OkResponse {
+        const callerHash = hashCiToken((request.headers.authorization ?? '').slice(7));
 
         await this.db.transaction(async txn => {
+            // Re-check under lock: a takeover may have replaced the uploader (and its screens) since the middleware ran.
+            const build = await txn.query(BuildEntity).filter({ id, appId }).forUpdate().findOneOrUndefined();
+            if (!build) throw new HttpNotFoundError();
+            if (build.status !== 'draft') throw new HttpBadRequestError('Build is not in draft status');
+            if (build.ciTokenHash !== callerHash) throw new HttpUnauthorizedError();
+            const screenCount = await txn.query(BuildScreenEntity).filter({ buildId: id }).count();
+            if (screenCount === 0) throw new HttpBadRequestError('Build has no screens');
+
             await txn
                 .query(BuildEntity)
-                .filter({ appId, id: { $ne: id }, status: 'draft' })
+                .filter({ appId, id: { $ne: id }, status: 'draft', draftActiveAt: { $lt: new Date(Date.now() - STALE_DRAFT_MS) } })
                 .patchMany({ status: 'canceled' });
 
             build.status = 'processing';

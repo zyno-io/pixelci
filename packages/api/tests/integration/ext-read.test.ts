@@ -197,6 +197,7 @@ async function createBaseEntities() {
     await createPersistedEntity(ScreenEntity, { id: SCREEN_ID, appId: APP_ID, name: 'home' });
 
     await createPersistedEntity(BuildEntity, {
+        ciReadTokenHashes: [],
         id: BUILD_ID,
         appId: APP_ID,
         branchId: BRANCH_ID,
