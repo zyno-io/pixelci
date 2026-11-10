@@ -46,4 +46,5 @@ See the [Development Guide](DEVELOPMENT.md) for prerequisites, local services, r
 
 - Pull requests are never merged on GitHub. Apply an accepted pull request in the primary repository, then close it once the change reaches `main` on GitHub.
 - Before applying a pull request, check that the CLA check passed and that every commit is attributed to a GitHub account. If any commit's author shows as not being a GitHub user (its email is not linked to an account), do not apply it: ask the contributor to fix the commit author and re-push, because the CLA signature cannot be tied to that commit.
+- The CLA check matches commits to GitHub accounts by commit email, which the committer controls. Check that the author of every commit is the person who opened the pull request. For any commit by someone else, that person must have signed the CLA and must confirm in a comment on the pull request that they authored it.
 - If the contributor works for a company, confirm that a signed Part B of the CLA is on file for it.
