@@ -1139,6 +1139,8 @@ components:
                 - false
         vcsError:
           type: string
+        vcsNotice:
+          type: string
       required:
         - vcsUrl
     IBuildScreenResponse:

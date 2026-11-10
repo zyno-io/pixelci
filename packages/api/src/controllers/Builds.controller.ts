@@ -12,6 +12,7 @@ import { BuildEntity } from '../entities/Build.entity';
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
 import { UserEntity } from '../entities/User.entity';
 import { ProcessBuildJob } from '../jobs/ProcessBuild.job';
+import { RERUN_DEFERRED_NOTICE, RERUN_RETRY_DELAY_MS, RerunCiJobJob } from '../jobs/RerunCiJob.job';
 import { AppAccessService } from '../services/AppAccess.service';
 import { VcsService } from '../services/Vcs.service';
 
@@ -44,6 +45,8 @@ function isPerJobId(ciJobId: string): boolean {
 export interface IBuildApprovalResponse {
     vcsUrl: string | false;
     vcsError?: string;
+    /** Informational (non-error) message, e.g. the re-run was deferred until the workflow finishes. */
+    vcsNotice?: string;
 }
 
 /** Responses are serialized as-is, so strip the CI session credential hashes before returning builds to users. */
@@ -290,13 +293,18 @@ export class BuildsController {
     @http.POST(':id/approve')
     @http.middleware(UserAuthMiddleware)
     async approve(user: UserEntity, appId: string, id: string): Promise<IBuildApprovalResponse> {
-        const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
+        let build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
         if (build.status !== 'needs review') throw new HttpBadRequestError('Build is not in needs review status');
 
         let rejected = false;
         await this.db.transaction(async txn => {
+            // Re-check under lock so concurrent approvals can't both flip the build (and both trigger a re-run).
+            const locked = await txn.query(BuildEntity).filter({ id, appId }).forUpdate().findOneOrUndefined();
+            if (!locked || locked.status !== 'needs review') throw new HttpBadRequestError('Build is not in needs review status');
+            build = locked;
+
             const buildScreens = await txn
                 .query(BuildScreenEntity)
                 .filter({ appId, buildId: id, status: { $ne: 'no changes' } })
@@ -342,7 +350,16 @@ export class BuildsController {
         try {
             const app = await AppEntity.query().filter({ id: appId }).findOne();
             const result = await this.vcsSvc.rerunCiJob(user, app, build.ciJobId);
-            return result.ok ? { vcsUrl: result.url } : { vcsUrl: false, vcsError: result.error };
+            if (result.ok) return { vcsUrl: result.url };
+            if (result.deferred) {
+                await this.workerSvc.queueJob(
+                    RerunCiJobJob,
+                    { buildId: build.id, userId: user.id, ciJobId: build.ciJobId, runAttempt: result.runAttempt, attempt: 1 },
+                    { delay: RERUN_RETRY_DELAY_MS }
+                );
+                return { vcsUrl: result.url, vcsNotice: RERUN_DEFERRED_NOTICE };
+            }
+            return { vcsUrl: false, vcsError: result.error };
         } catch (err) {
             this.logger.error('Failed to rerun CI job', err);
             return { vcsUrl: false, vcsError: 'Failed to re-run the CI job; please re-run it from your CI provider.' };

@@ -32,7 +32,31 @@ export interface ICiJobData {
     vcsProjectId: number;
 }
 
-export type IVcsRerunResult = { ok: true; url: string; movedProjectPath?: string } | { ok: false; error: string; movedProjectPath?: string };
+/**
+ * `deferred: true`: the provider can't re-run right now because the pipeline/run is still in progress; the caller should
+ * retry later (`runAttempt` identifies the run attempt that was in progress). `superseded: true`: the run was re-run by someone
+ * else since `expectedRunAttempt`, so nothing was done. `retryable: true` marks transient failures (5xx, network, timeouts).
+ * Only the GitHub provider produces deferred/superseded/retryable (GitLab can retry a job mid-pipeline).
+ */
+export type IVcsRerunResult =
+    | { ok: true; url: string; movedProjectPath?: string }
+    | {
+          ok: false;
+          deferred?: false;
+          superseded?: false;
+          retryable?: boolean;
+          url?: undefined;
+          runAttempt?: undefined;
+          error: string;
+          movedProjectPath?: string;
+      }
+    | { ok: false; deferred: true; superseded?: false; retryable?: false; url: string; error: string; runAttempt?: number; movedProjectPath?: string }
+    | { ok: false; superseded: true; deferred?: false; retryable?: false; error: string; movedProjectPath?: string };
+
+export interface IVcsRerunOptions {
+    /** Skip the re-run (result `superseded`) if the run's current attempt differs. */
+    expectedRunAttempt?: number;
+}
 
 export interface IVcsTokenUser {
     id: string;
@@ -46,7 +70,12 @@ export interface IVcsServiceImpl {
     validateCiToken(ciToken: string, expectedProjectId: number | null): Promise<ICiJobData>;
     getProviderLoginUrl(redirectUri: string, state?: string): Promise<string>;
     exchangeProviderCode(redirectUri: string, code: string): Promise<IVcsLoginSessionResponse>;
-    rerunCiJob(user: UserEntity, app: Pick<AppEntity, 'projectPath' | 'vcsProjectId'>, ciJobId: string): Promise<IVcsRerunResult>;
+    rerunCiJob(
+        user: UserEntity,
+        app: Pick<AppEntity, 'projectPath' | 'vcsProjectId'>,
+        ciJobId: string,
+        options?: IVcsRerunOptions
+    ): Promise<IVcsRerunResult>;
     searchProjects(user: UserEntity, search: string): Promise<IVcsProject[]>;
     getProjectByPath(user: UserEntity, projectPath: string): Promise<IVcsProject>;
     /** Extracts the project path from a pasted repository URL; null when the URL doesn't belong to this provider. */
@@ -97,14 +126,14 @@ export class VcsService {
      * Re-runs the CI job behind a build on behalf of the user. Never throws: failures come back as `{ok:false}`.
      * Persists a provider-reported project move even when the re-run itself fails.
      */
-    async rerunCiJob(user: UserEntity, app: AppEntity, ciJobId: string): Promise<IVcsRerunResult> {
+    async rerunCiJob(user: UserEntity, app: AppEntity, ciJobId: string, options?: IVcsRerunOptions): Promise<IVcsRerunResult> {
         if (user.vcsId !== app.vcsId) {
             return { ok: false, error: 'Your VCS account belongs to a different provider than this app' };
         }
 
         let result: IVcsRerunResult;
         try {
-            result = await this.runWithProvider(app.vcsId, provider => provider.rerunCiJob(user, app, ciJobId));
+            result = await this.runWithProvider(app.vcsId, provider => provider.rerunCiJob(user, app, ciJobId, options));
         } catch (err) {
             this.logger.error('Failed to rerun CI job', err);
             return { ok: false, error: err instanceof Error ? err.message : String(err) };

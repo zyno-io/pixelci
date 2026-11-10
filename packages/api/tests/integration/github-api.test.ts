@@ -1,5 +1,5 @@
 import { HttpRequest } from '@zyno-io/ts-server-foundation';
-import { createPersistedEntity, JWT, ScopedLogger, TestingHelpers } from '@zyno-io/ts-server-foundation';
+import { createPersistedEntity, JWT, ScopedLogger, TestingHelpers, WorkerService } from '@zyno-io/ts-server-foundation';
 import { generateKeyPairSync } from 'crypto';
 import { createServer, IncomingMessage, Server, ServerResponse } from 'http';
 import { exportJWK, generateKeyPair, importSPKI, jwtVerify, SignJWT } from 'jose';
@@ -10,6 +10,7 @@ import { BranchEntity } from '../../src/entities/Branch.entity';
 import { BuildEntity } from '../../src/entities/Build.entity';
 import { IUserVcsSession, UserEntity } from '../../src/entities/User.entity';
 import { IGitHubConfig, VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { RerunCiJobJob, RERUN_RETRY_DELAY_MS } from '../../src/jobs/RerunCiJob.job';
 import { VcsGitHubService } from '../../src/services/VcsGitHub.service';
 
 process.env.CI = 'true';
@@ -293,6 +294,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
 
     if ((m = /^\/repos\/(acme\/[^/]+)\/actions\/jobs\/(\d+)\/rerun$/.exec(rest)) && method === 'POST') {
         if (!isUserAuth(auth)) return json(res, 401, { message: 'Bad credentials' });
+        if (m[2].startsWith('86')) return json(res, 403, { message: 'Resource not accessible by integration' });
+        // jobs starting 88/89 belong to a run that GitHub reports as already running
+        if (/^8[89]/.test(m[2])) return json(res, 403, { message: 'This workflow is already running' });
         // jobs ending in 3 are forbidden
         if (m[2].endsWith('3')) return json(res, 403, { message: 'Resource not accessible by integration' });
         return json(res, 201, {});
@@ -300,12 +304,33 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
 
     if ((m = /^\/repos\/(acme\/[^/]+)\/actions\/runs\/(\d+)\/rerun-failed-jobs$/.exec(rest)) && method === 'POST') {
         if (!isUserAuth(auth)) return json(res, 401, { message: 'Bad credentials' });
+        if (m[2].startsWith('86')) return json(res, 403, { message: 'Resource not accessible by integration' });
+        if (/^8[89]/.test(m[2])) return json(res, 403, { message: 'This workflow is already running' });
         if (m[2].startsWith('9')) return json(res, 403, { message: 'Workflow run cannot be rerun: it was created more than a month ago.' });
         return json(res, 201, {});
     }
 
+    if ((m = /^\/repos\/(acme\/[^/]+)\/actions\/runs\/(\d+)$/.exec(rest)) && method === 'GET') {
+        if (!isUserAuth(auth)) return json(res, 401, { message: 'Bad credentials' });
+        const failures = runGetFailures.get(m[2]) ?? 0;
+        if (failures > 0) {
+            runGetFailures.set(m[2], failures - 1);
+            return json(res, 500, { message: 'boom' });
+        }
+        // runs starting 88 or 86 are still in progress; everything else has completed
+        return json(res, 200, {
+            id: Number(m[2]),
+            status: /^8[68]/.test(m[2]) ? 'in_progress' : 'completed',
+            run_attempt: runAttempts.get(m[2]) ?? 1
+        });
+    }
+
     return json(res, 404, { message: `Not Found (mock): ${method} ${path}` });
 }
+
+/** Test controls for GET /actions/runs/{id}: advance run_attempt, or fail the next N lookups with a 500. */
+const runAttempts = new Map<string, number>();
+const runGetFailures = new Map<string, number>();
 
 function startMock(): Promise<void> {
     return new Promise(resolve => {
@@ -831,6 +856,142 @@ async function run() {
         assert(build.status === 'changes approved', `status: ${build.status}`);
     }
 
+    // Deferred re-run: capture queued jobs instead of hitting the real queue (BullMQ/Redis outside APP_ENV=test)
+    type Queued = { jobClass: unknown; data: Record<string, unknown>; options?: { delay?: number } };
+    const queued: Queued[] = [];
+    (
+        facade.get(WorkerService) as unknown as { queueJob: (c: unknown, d: Record<string, unknown>, o?: { delay?: number }) => Promise<undefined> }
+    ).queueJob = async (jobClass, data, options) => {
+        queued.push({ jobClass, data, options });
+        return undefined;
+    };
+    const rerunJob = facade.get<RerunCiJobJob>(RerunCiJobJob);
+
+    test('approve: run in progress (403 already running) → vcsNotice + run URL, no vcsError, RerunCiJobJob queued with 60s delay');
+    let deferredBuildId = '';
+    {
+        const { res, build, calls } = await approveFlow(APP1, { sha: 'a1'.repeat(20), run_id: '8800', check_run_id: '8801' });
+        assert(res.json.vcsUrl === `${base}/acme/app/actions/runs/8800`, `vcsUrl: ${JSON.stringify(res.json)}`);
+        assert(typeof res.json.vcsNotice === 'string' && /still running/.test(res.json.vcsNotice), `vcsNotice: ${JSON.stringify(res.json)}`);
+        assert(res.json.vcsError === undefined, 'no vcsError expected');
+        assert(build.status === 'changes approved', `status: ${build.status}`);
+        assert(
+            calls.some(c => c.method === 'GET' && c.path === `${API}/repos/acme/app/actions/runs/8800`),
+            'run status not looked up'
+        );
+        assert(!calls.some(c => c.path.endsWith('/rerun-failed-jobs')), 'run-level fallback must be skipped when the run is in progress');
+        assert(queued.length === 1 && queued[0].jobClass === RerunCiJobJob, `queued: ${queued.length}`);
+        const d = queued[0].data;
+        assert(
+            d.buildId === build.id && d.userId === userId && d.ciJobId === '8800:8801' && d.runAttempt === 1 && d.attempt === 1,
+            `job data: ${JSON.stringify(d)}`
+        );
+        assert(queued[0].options?.delay === RERUN_RETRY_DELAY_MS && RERUN_RETRY_DELAY_MS === 60_000, 'expected 60s delay');
+        deferredBuildId = build.id;
+    }
+
+    test('RerunCiJobJob: run still in progress → re-queued with attempt+1');
+    {
+        queued.length = 0;
+        const before = log.length;
+        await rerunJob.handle({ buildId: deferredBuildId, userId, ciJobId: '8800:8801', attempt: 1 });
+        assert(queued.length === 1 && queued[0].data.attempt === 2 && queued[0].options?.delay === 60_000, `queued: ${JSON.stringify(queued)}`);
+        assert(!log.slice(before).some(c => c.path.endsWith('/rerun-failed-jobs')), 'no run-level fallback expected while in progress');
+        // gives up at the attempt cap
+        queued.length = 0;
+        await rerunJob.handle({ buildId: deferredBuildId, userId, ciJobId: '8800:8801', attempt: 360 });
+        assert(queued.length === 0, 'must not re-queue past MAX_ATTEMPTS');
+    }
+
+    test('RerunCiJobJob: run completed → re-run POSTed, nothing re-queued');
+    {
+        const { build } = await approveFlow(APP1, { sha: 'a2'.repeat(20), run_id: '5800', check_run_id: '9800' });
+        queued.length = 0;
+        const before = log.length;
+        await rerunJob.handle({ buildId: build.id, userId, ciJobId: '5800:9800', attempt: 3 });
+        const posts = log
+            .slice(before)
+            .filter(c => c.method === 'POST')
+            .map(c => c.path);
+        assert(posts.length === 1 && posts[0] === `${API}/repos/acme/app/actions/jobs/9800/rerun`, `posts: ${posts}`);
+        assert(queued.length === 0, 'nothing should be re-queued');
+    }
+
+    test('RerunCiJobJob: build no longer approved or ciJobId changed → no GitHub call');
+    {
+        queued.length = 0;
+        let before = log.length;
+        await rerunJob.handle({ buildId: deferredBuildId, userId, ciJobId: '8800:9999', attempt: 2 });
+        await rerunJob.handle({ buildId: 'does-not-exist', userId, ciJobId: '8800:8801', attempt: 2 });
+        await BuildEntity.query().filter({ id: deferredBuildId }).patchMany({ status: 'needs review' });
+        await rerunJob.handle({ buildId: deferredBuildId, userId, ciJobId: '8800:8801', attempt: 2 });
+        assert(log.length === before && queued.length === 0, `unexpected GitHub calls/queue: ${log.length - before}/${queued.length}`);
+    }
+
+    test('RerunCiJobJob: run_attempt advanced (re-run by someone else) → no POST, nothing re-queued');
+    {
+        await BuildEntity.query().filter({ id: deferredBuildId }).patchMany({ status: 'changes approved' });
+        runAttempts.set('8800', 2);
+        queued.length = 0;
+        const before = log.length;
+        await rerunJob.handle({ buildId: deferredBuildId, userId, ciJobId: '8800:8801', runAttempt: 1, attempt: 2 });
+        assert(!log.slice(before).some(c => c.method === 'POST') && queued.length === 0, 'superseded job must not POST or re-queue');
+        runAttempts.delete('8800');
+    }
+
+    test('RerunCiJobJob: transient run-status failure (500) → re-queued; non-transient error → stops');
+    {
+        const { build } = await approveFlow(APP1, { sha: 'a4'.repeat(20), run_id: '5810', check_run_id: '9810' });
+        queued.length = 0;
+        runGetFailures.set('5810', 1);
+        await rerunJob.handle({ buildId: build.id, userId, ciJobId: '5810:9810', runAttempt: 1, attempt: 4 });
+        assert(queued.length === 1 && Number(queued[0].data.attempt) === 5, `expected requeue, got ${JSON.stringify(queued)}`);
+        // next attempt succeeds (lookup recovered)
+        queued.length = 0;
+        const before = log.length;
+        await rerunJob.handle({ buildId: build.id, userId, ciJobId: '5810:9810', runAttempt: 1, attempt: 5 });
+        assert(
+            log.slice(before).some(c => c.method === 'POST' && c.path.endsWith('/jobs/9810/rerun')) && queued.length === 0,
+            'expected re-run POST'
+        );
+
+        // 403 on a completed run (not "already running" in progress) is permanent
+        const perm = await approveFlow(APP1, { sha: 'a5'.repeat(20), run_id: '9103', check_run_id: '9113' });
+        queued.length = 0;
+        await rerunJob.handle({ buildId: perm.build.id, userId, ciJobId: '9103:9113', attempt: 1 });
+        assert(queued.length === 0, 'non-transient failure must not re-queue');
+    }
+
+    test('approve: in-progress run but refusal is not "already running" → real vcsError, no deferral');
+    {
+        queued.length = 0;
+        const { res } = await approveFlow(APP1, { sha: 'a6'.repeat(20), run_id: '8600', check_run_id: '8601' });
+        assert(res.json.vcsUrl === false && /Resource not accessible/.test(res.json.vcsError), `expected vcsError, got ${JSON.stringify(res.json)}`);
+        assert(res.json.vcsNotice === undefined && queued.length === 0, 'must not defer');
+    }
+
+    test('approve: second approval of an already-approved build → 400, exactly one re-run POST');
+    {
+        // (The test facade shares one DB connection via savepoints, so true row-lock contention can't be reproduced here.)
+        const created = await createBuild(facade, APP1, { sha: 'a7'.repeat(20), run_id: '5820', check_run_id: '9820' });
+        status(created, 200, 'create');
+        await BuildEntity.query().filter({ id: created.json.id }).patchMany({ status: 'needs review' });
+        const before = log.length;
+        const url = `/api/apps/${APP1}/builds/${created.json.id}/approve`;
+        const first = await send(facade, 'POST', url, {}, userJwt);
+        const second = await send(facade, 'POST', url, {}, userJwt);
+        assert(first.statusCode === 200 && second.statusCode === 400, `statuses: ${first.statusCode}/${second.statusCode}`);
+        assert(log.slice(before).filter(c => c.method === 'POST' && c.path.endsWith('/rerun')).length === 1, 'expected exactly one re-run POST');
+    }
+
+    test('approve: 403 but run completed → normal error, no deferral');
+    {
+        queued.length = 0;
+        const { res } = await approveFlow(APP1, { sha: 'a3'.repeat(20), run_id: '8900', check_run_id: '8901' });
+        assert(res.json.vcsUrl === false && /HTTP 403/.test(res.json.vcsError), `expected vcsError, got ${JSON.stringify(res.json)}`);
+        assert(res.json.vcsNotice === undefined && queued.length === 0, 'must not defer when the run is completed');
+    }
+
     test('approve: ciJobId with run only → only rerun-failed-jobs is called');
     {
         const { res, build, calls } = await approveFlow(APP1, { sha: '7'.repeat(40), run_id: '5200', check_run_id: undefined });
@@ -911,7 +1072,7 @@ async function run() {
         const none = await svc.rerunCiJob(user, { projectPath: 'acme/app', vcsProjectId: null }, '5000:9000');
         assert(!none.ok && none.error === 'No CI run recorded for this build', `unexpected: ${JSON.stringify(none)}`);
         const gone = await svc.rerunCiJob(user, { projectPath: 'acme/gone', vcsProjectId: GONE_ID }, '5000:9000');
-        assert(!gone.ok && gone.error.includes('Repository not accessible'), `unexpected: ${JSON.stringify(gone)}`);
+        assert(!gone.ok && gone.error.includes('Repository not accessible') && !gone.retryable, `unexpected: ${JSON.stringify(gone)}`);
     }
 
     // 10. PAT
