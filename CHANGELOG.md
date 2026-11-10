@@ -6,9 +6,18 @@
   (push, pull_request, workflow_dispatch and schedule events; GitHub Enterprise Server supported). See the GitHub Setup guide
 - MCP/`/api/ext` read access now accepts GitHub personal access tokens; token env var is `PIXELCI_VCS_TOKEN`
   (`PIXELCI_GITLAB_TOKEN` and `PIXELCI_GITHUB_TOKEN` remain as aliases)
-- License updated to the PixelCI Source Available License, Version 1.1: adds contribution terms (inbound license to the
-  Licensor), clarifies ownership of your own modifications, and replaces examples with PixelCI-specific ones. Self-hosting
-  for internal use remains free
+- License updated to the PixelCI Source Available License, Version 1.1. Self-hosting for internal use remains free
+    - Adds contribution terms (inbound license to the Licensor) and permits forking to prepare a contribution
+    - You own the copyright in your own modifications, which remain subject to the License
+    - Contractors no longer need confidentiality obligations; they must be bound to use your copies and deployments only on
+      your behalf. Your affiliates may use PixelCI under your license
+    - A service provider may operate your instance, but not one that offers PixelCI hosting or management as a service
+      to others; that requires a commercial license
+    - Termination: 30-day cure period for breaches other than hosting, embedding, distribution, white-labelling,
+      circumvention, or willful breach. Licensor notices must be retained on copies
+    - Examples replaced with PixelCI-specific ones
+- Contributions now require signing the Contributor License Agreement (`CLA.md`), checked by a CLA bot on GitHub pull
+  requests. See `CONTRIBUTING.md`
 
 ## v0.4.0
 

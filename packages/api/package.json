@@ -4,7 +4,7 @@
     "private": true,
     "description": "",
     "keywords": [],
-    "license": "UNLICENSED",
+    "license": "SEE LICENSE IN LICENSE.md",
     "author": "",
     "main": "./dist/src/index.js",
     "scripts": {

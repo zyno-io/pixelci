@@ -91,7 +91,7 @@ The single Docker image runs as either an API/UI server (`node . server:start`, 
 
 ## Contributing & Development
 
-See the [Development Guide](DEVELOPMENT.md) for local setup, running tests, and building Docker images.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, including the [Contributor License Agreement](CLA.md), and the [Development Guide](DEVELOPMENT.md) for local setup, running tests, and building Docker images.
 
 ## Support
 
