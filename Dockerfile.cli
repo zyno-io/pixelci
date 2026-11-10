@@ -27,7 +27,8 @@ ENV NODE_ENV=production
 
 COPY --from=builder /app/packages/cli .
 COPY --from=builder /app/node_modules node_modules
-COPY LICENSE.md THIRD-PARTY-LICENSES.md ./
+# The CLI is MIT-licensed: packages/cli/LICENSE is copied with the package above.
+COPY THIRD-PARTY-LICENSES.md ./
 
 RUN printf '#!/bin/sh\nexec node /app/dist/index.js "$@"\n' > /usr/bin/pixelci && \
     chmod +x /usr/bin/pixelci

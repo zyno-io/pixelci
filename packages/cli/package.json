@@ -4,7 +4,7 @@
     "private": true,
     "description": "",
     "keywords": [],
-    "license": "UNLICENSED",
+    "license": "MIT",
     "author": "",
     "type": "module",
     "main": "./dist/index.js",

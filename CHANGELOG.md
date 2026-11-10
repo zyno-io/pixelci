@@ -15,7 +15,11 @@
       to others; that requires a commercial license
     - Termination: 30-day cure period for breaches other than hosting, embedding, distribution, white-labelling,
       circumvention, or willful breach. Licensor notices must be retained on copies
-    - Examples replaced with PixelCI-specific ones
+    - Examples replaced with PixelCI-specific ones. Agencies may test the sites they build for clients; offering visual
+      regression testing as a service to others requires a commercial license
+    - Sister companies related only through a common financial investor are not affiliates
+- The CLI (`packages/cli`, the `pixelci/cli` image) and the MCP server (`packages/mcp`) are now licensed under the MIT
+  License, including earlier releases
 - Contributions now require signing the Contributor License Agreement (`CLA.md`), checked by a CLA bot on GitHub pull
   requests. See `CONTRIBUTING.md`
 

@@ -8,25 +8,25 @@ Copyright (c) 2026 Signal24 LLC dba Zyno Consulting. All rights reserved.
 
 ## 1. Definitions
 
-**“Licensed Work”** means the PixelCI software, in source code or any other form, and its documentation, as made available by the Licensor under this License, including any portion of it.
+**“Licensed Work”** means the PixelCI software, in source code or any other form, and its documentation, as made available by the Licensor under this License, including any portion of it. The Licensed Work does not include any component that the Licensor makes available under a different license, identified by a license file that the Licensor places in that component’s directory, such as the PixelCI CLI in `packages/cli` and the PixelCI MCP server in `packages/mcp`; each such component is governed by that license. The MIT License applies to all releases of the PixelCI CLI and the PixelCI MCP server, including those made available before Version 1.1 of this License.
 
 **“Modifications”** means any modification to, or derivative work of, the Licensed Work that is created by You or on Your behalf. Except in Sections 8 and 9 and in the definitions of Licensed Work, Modifications, and Contribution, references in this License to the Licensed Work include Your Modifications.
 
-**“Contribution”** means any work of authorship, including any modification of or addition to the Licensed Work, that is intentionally submitted to the Licensor for inclusion in the Licensed Work by its copyright owner or by an individual or legal entity authorized to submit it on the owner’s behalf, including by pull request, merge request, patch, or other electronic or written communication.
+**“Contribution”** means any work of authorship, including any modification of or addition to the Licensed Work, that is intentionally submitted to the Licensor for inclusion in the Licensed Work or in any other component of the repository in which the Licensor publishes the Licensed Work, including by pull request, merge request, patch, or other electronic or written communication.
 
 **“Licensor”** means Signal24 LLC dba Zyno Consulting.
 
 **“You”** means the individual or legal entity exercising rights under this License.
 
-**“Affiliate”** means any entity that directly or indirectly controls, is controlled by, or is under common control with an entity, where “control” means ownership of more than 50% of the voting interests (or equivalent), for so long as such control exists.
+**“Affiliate”** means any entity that directly or indirectly controls, is controlled by, or is under common control with an entity, where “control” means ownership of more than 50% of the voting interests (or equivalent), for so long as such control exists. An entity is not Your Affiliate solely because it and You are under common control of an investment fund, private equity sponsor, or similar financial investor.
 
 **“Organization”** means, as applicable, You and Your Affiliates.
 
 **“Third Party”** means any person or entity other than You and Your Organization. For avoidance of doubt, customers, end users, clients, partners, and the general public are Third Parties. Employees, contractors, and service providers are not Third Parties to the extent they act on Your behalf as permitted under the definition of Internal Use.
 
-**“Internal Use”** means use, running, modification, and deployment of the Licensed Work solely within Your Organization for Your internal business operations.
+**“Internal Use”** means use, running, modification, and deployment of the Licensed Work solely within Your Organization for the internal business operations of Your Organization.
 
-Internal Use includes operation of the Licensed Work by Your employees and contractors acting solely on Your behalf, provided they are bound by written obligations to use the copies and deployments of the Licensed Work that You provide or make accessible to them only on Your behalf and in compliance with this License. Internal Use also includes operation by a third-party service provider solely to support Your internal business operations, provided that (i) such service provider is not granted rights to use the Licensed Work for any other purpose; (ii) such use does not provide access to the Licensed Work’s functionality to any person other than You, Your Organization, and the employees, contractors, and service providers acting under this paragraph; and (iii) such service provider does not offer hosting, management, or operation of the Licensed Work as a service to others.
+Internal Use includes operation of the Licensed Work by Your employees, and by contractors acting solely on Your behalf provided such contractors are bound by written obligations to use the copies and deployments of the Licensed Work that You provide or make accessible to them only on Your behalf and in compliance with this License. Internal Use also includes operation by a third-party service provider solely to support the internal business operations of Your Organization, provided that (i) such service provider is not granted rights to use the Licensed Work for any other purpose; (ii) such use does not provide access to the Licensed Work’s functionality to any person other than You, Your Organization, and the employees, contractors, and service providers acting under this paragraph; and (iii) such service provider does not offer hosting, management, or operation of the Licensed Work as a service to others. Persons acting for You under this paragraph exercise Your rights, not their own, and their activities for You under this paragraph are not a Hosted Service or Distribution by them.
 
 For purposes of condition (iii), a provider of general information technology, infrastructure, cloud, or outsourced IT services that operates the Licensed Work for You as part of those services does not, by doing so, offer hosting, management, or operation of the Licensed Work as a service to others. A provider that markets or offers hosted or managed PixelCI (including dedicated or single-tenant instances) to its customers does.
 
@@ -82,12 +82,14 @@ Permitted without a commercial license:
 - A company self-hosting PixelCI internally to run visual regression tests on its own websites and applications, even if the company’s business serves customers.
 - Using PixelCI internally to develop, test, or improve a revenue-generating product or service, so long as Third Parties are not granted access to PixelCI itself.
 - Sharing a screenshot, visual diff, or build review report with a customer to explain a visual change, so long as the customer is not granted access to PixelCI itself.
+- An agency or consultancy using PixelCI internally to test the websites and applications it builds or maintains for its clients, and sharing the resulting outputs with them.
 - Using contractors, or Your outsourced IT or managed infrastructure provider, to operate PixelCI solely for Your Internal Use, as permitted under the definition of Internal Use.
 
 Prohibited without a commercial license:
 
 - Providing customers or other Third Parties with direct access to PixelCI (including temporary access, guest accounts, shared logins, VPN access, or screen-sharing intended to provide interactive access to PixelCI itself).
 - Offering PixelCI, or any product or service derived from PixelCI, to Third Parties as a hosted/managed service or API.
+- Operating PixelCI to offer visual regression testing as a service to clients or other Third Parties (for example, accepting their sites, builds, or screenshots for testing on request).
 - A hosting or managed-services provider offering to deploy or operate PixelCI for its customers, including as dedicated or single-tenant instances.
 - Shipping a desktop/on-prem product that bundles PixelCI as a component or dependency, or otherwise embedding PixelCI into a Commercial Product provided to Third Parties.
 
@@ -103,23 +105,23 @@ This License does not grant any present or future rights under any open-source l
 
 ## 8. Contributions
 
-This Section 8 applies to any individual or legal entity that submits a Contribution, whether or not that individual or entity otherwise exercises rights under this License. In this Section 8, “You” means that individual or entity. By submitting a Contribution, You agree to this Section 8.
+This Section 8 applies to any individual or legal entity that submits a Contribution, whether or not that individual or entity otherwise exercises rights under this License. In this Section 8, “You” means that individual or entity. By submitting a Contribution, You agree to this Section 8. If You submit a Contribution on behalf of its copyright owner (for example, Your employer), You make the grants in this Section 8 on the owner’s behalf, and they bind the owner.
 
-**Submitting Contributions.** You may submit Contributions to the Licensor for inclusion in the Licensed Work. The Licensor is not obligated to accept or use any Contribution. Notwithstanding Sections 2 and 3, You may copy, modify, and run the Licensed Work to prepare and test Contributions, and may make a Contribution, together with the Licensed Work, available in a fork or branch on a code-hosting platform on which the Licensor publishes the Licensed Work, solely for the purpose of submitting it to the Licensor. Doing so is not Distribution and grants no other person any rights in the Licensed Work.
+**Submitting Contributions.** You may submit Contributions to the Licensor. The Licensor is not obligated to accept or use any Contribution. Notwithstanding Sections 2 and 3, You may copy, modify, and run the Licensed Work to prepare and test Contributions, and may make a Contribution, together with the Licensed Work, available in a fork or branch on a code-hosting platform on which the Licensor publishes the Licensed Work, solely for the purpose of submitting it to the Licensor. Doing so is not Distribution and grants no other person any rights in the Licensed Work.
 
 **Copyright License.** You retain ownership of the copyright in Your Contributions; this Section 8 is a license, not an assignment. By submitting a Contribution, You grant the Licensor and its successors and assigns a perpetual, worldwide, non-exclusive, royalty-free, irrevocable, transferable license, with the right to sublicense through multiple tiers, to use, reproduce, modify, prepare derivative works of, publicly display, publicly perform, distribute, sublicense, and relicense the Contribution and such derivative works, in source or any other form, under any license terms, including commercial license terms and as part of any hosted service.
 
-**Patent License.** By submitting a Contribution, You grant the Licensor and its successors and assigns a perpetual, worldwide, non-exclusive, royalty-free, irrevocable, transferable patent license, with the right to sublicense through multiple tiers, to make, have made, use, offer to sell, sell, import, and otherwise transfer the Contribution, the Licensed Work, and any product or service of the Licensor or its sublicensees that incorporates the Contribution, where such license applies only to those patent claims licensable by You that are necessarily infringed by the Contribution alone or by combination of the Contribution with the Licensed Work to which it was submitted.
+**Patent License.** By submitting a Contribution, You grant the Licensor and its successors and assigns a perpetual, worldwide, non-exclusive, royalty-free, irrevocable, transferable patent license, with the right to sublicense through multiple tiers, to make, have made, use, offer to sell, sell, import, and otherwise transfer the Contribution, the work to which it was submitted, and any product or service of the Licensor or its sublicensees that incorporates the Contribution, where such license applies only to those patent claims licensable by You that are necessarily infringed by the Contribution alone or by combination of the Contribution with the work to which it was submitted.
 
 **Moral Rights.** To the fullest extent permitted by applicable law, You agree not to assert any moral rights in a Contribution against the Licensor or its successors, assigns, or sublicensees.
 
-**Representations.** You represent that You are legally entitled to grant the licenses in this Section 8, and that each Contribution is Your original creation or You otherwise have the right to submit it under this Section 8. If Your employer or any other party has rights to intellectual property that You create that includes the Contribution, You represent that You have received permission to make the Contribution on behalf of that party or that the party has waived such rights.
+**Representations.** For anything You submit to the Licensor for inclusion, You represent that You are legally entitled to grant the licenses in this Section 8, and that it is Your original creation or You otherwise have the right to submit it under this Section 8. If Your employer or any other party has rights to intellectual property that You create that includes what You submit, You represent that You are authorized to submit it and to grant the licenses in this Section 8 on that party’s behalf, or that the party has waived such rights.
 
-**Third-Party Work.** If You wish to submit work that is not Your original creation, You must submit it separately from any Contribution, identify its source and any license or other restriction (including related patents, trademarks, and license agreements) of which You are aware, and clearly mark it as submitted on behalf of a third party.
+**Third-Party Work.** If anything You submit for inclusion contains work that is not Your original creation, You must identify that work, its source, and any license or other restriction (including related patents, trademarks, and license agreements) of which You are aware. If You cannot grant the licenses in this Section 8 for that work, You must submit it separately from any Contribution and clearly mark it as submitted on behalf of a third party; the licenses in this Section 8 do not apply to work so marked.
 
 **No Warranty.** Except for the representations in this Section 8, You provide Your Contributions “AS IS”, without warranties or conditions of any kind, express or implied.
 
-**Contributor License Agreement.** The Licensor may require You to sign a separate contributor license agreement as a condition of accepting a Contribution. If You have signed such an agreement, it prevails over this Section 8 for the Contributions it covers.
+**Contributor License Agreement.** The Licensor may require You to sign a separate contributor license agreement as a condition of accepting a Contribution. If You have signed such an agreement, it prevails over this Section 8, to the extent of any conflict, for the Contributions it covers.
 
 ## 9. Intellectual Property
 
@@ -127,7 +129,7 @@ This Section 8 applies to any individual or legal entity that submits a Contribu
 
 **Trademarks.** No trademark rights are granted under this License.
 
-**Patents.** To the extent the Licensor holds patent claims that are necessarily infringed by the Licensed Work as provided by the Licensor, the Licensor grants You a license to those patent claims solely to exercise the rights granted in Section 2 for permitted Internal Use. No other patent rights are granted. If You or any of Your Affiliates makes any written claim that the Licensed Work infringes or contributes to infringement of any patent, Your patent license under this Section 9 ends immediately.
+**Patents.** To the extent the Licensor holds patent claims that are necessarily infringed by the Licensed Work as provided by the Licensor, the Licensor grants You a license to those patent claims solely to exercise the rights granted in Section 2 for permitted Internal Use. No other patent rights are granted. If You or any of Your Affiliates institutes patent litigation against any entity (including a cross-claim or counterclaim in a lawsuit) alleging that the Licensed Work infringes or contributes to infringement of any patent, Your patent license under this Section 9 terminates as of the date such litigation is filed.
 
 ## 10. Export and Sanctions Compliance
 
@@ -149,11 +151,11 @@ For any other breach, Your rights terminate only if You fail to cure the breach 
 
 Upon termination, You must cease all use and delete or destroy all copies of the Licensed Work in Your possession or control.
 
-Sections 1, 3, and 7 through 14 survive termination.
+Sections 1, 3, 7, 8 (other than the permission to copy, modify, run, and make available the Licensed Work under “Submitting Contributions”), and 9 through 14 survive termination.
 
 ## 14. Miscellaneous
 
-**Versions.** The Licensor may publish new or revised versions of this License from time to time, each identified by a version number. Each release of the Licensed Work is licensed under the version of this License that accompanies that release, and publication of a later version does not change the terms that apply to an earlier release. The version of this License published without a version number is Version 1.0. Section 8 of the version of this License in effect when a Contribution is submitted governs that Contribution.
+**Versions.** The Licensor may publish new or revised versions of this License from time to time, each identified by a version number. Each release of the Licensed Work is licensed under the version of this License that accompanies that release, and, except as stated in the definition of Licensed Work, publication of a later version does not change the terms that apply to an earlier release. The version of this License published without a version number is Version 1.0. Section 8 of the version of this License in effect when a Contribution is submitted governs that Contribution.
 
 **Assignment.** You may not assign or transfer this License without the Licensor’s prior written consent, except that You may assign this License without consent as part of a merger, reorganization, or sale of substantially all of Your assets, provided the assignee agrees in writing to be bound by this License.
 
