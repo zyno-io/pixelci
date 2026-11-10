@@ -261,14 +261,15 @@ export class BuildsController {
     async process(request: HttpRequest, appId: string, id: string): OkResponse {
         const callerHash = hashCiToken((request.headers.authorization ?? '').slice(7));
 
-        await this.db.transaction(async txn => {
+        // Validation failures are returned from the transaction (not thrown inside it) so a rejected request doesn't roll back anything.
+        const rejection = await this.db.transaction(async txn => {
             // Re-check under lock: a takeover may have replaced the uploader (and its screens) since the middleware ran.
             const build = await txn.query(BuildEntity).filter({ id, appId }).forUpdate().findOneOrUndefined();
-            if (!build) throw new HttpNotFoundError();
-            if (build.status !== 'draft') throw new HttpBadRequestError('Build is not in draft status');
-            if (build.ciTokenHash !== callerHash) throw new HttpUnauthorizedError();
+            if (!build) return new HttpNotFoundError();
+            if (build.status !== 'draft') return new HttpBadRequestError('Build is not in draft status');
+            if (build.ciTokenHash !== callerHash) return new HttpUnauthorizedError();
             const screenCount = await txn.query(BuildScreenEntity).filter({ buildId: id }).count();
-            if (screenCount === 0) throw new HttpBadRequestError('Build has no screens');
+            if (screenCount === 0) return new HttpBadRequestError('Build has no screens');
 
             await txn
                 .query(BuildEntity)
@@ -277,7 +278,9 @@ export class BuildsController {
 
             build.status = 'processing';
             txn.add(build);
+            return undefined;
         });
+        if (rejection) throw rejection;
 
         await this.workerSvc.queueJob(ProcessBuildJob, { buildId: id });
 
