@@ -881,6 +881,26 @@ async function run() {
         assert(build.ciJobId === '5500:9501', `ciJobId after dedupe: ${build.ciJobId}`);
     }
 
+    test('dedupe: same job with a new OIDC token on a fresh draft → uploader; bare run id (no check_run_id) → reader');
+    {
+        const job = { sha: '3c'.repeat(20), run_id: '5600', check_run_id: '9600' };
+        const first = await createBuild(facade, APP1, { ...job, jti: 'job-1' });
+        status(first, 200, 'first');
+        assert(first.json.status === 'draft', `first: ${first.json.status}`);
+        const again = await createBuild(facade, APP1, { ...job, jti: 'job-2' });
+        status(again, 200, 'same job, new token');
+        assert(again.json.id === first.json.id && again.json.status === 'draft', `same job re-create: ${again.json.status}`);
+
+        // Some GHES versions omit check_run_id: every job in the run shares the bare run id, so it must not identify the uploader
+        const run = { sha: '4d'.repeat(20), run_id: '5700', check_run_id: undefined };
+        const ghes1 = await createBuild(facade, APP1, { ...run, jti: 'run-1' });
+        status(ghes1, 200, 'ghes first');
+        assert(ghes1.json.status === 'draft', `ghes first: ${ghes1.json.status}`);
+        const ghes2 = await createBuild(facade, APP1, { ...run, jti: 'run-2' });
+        status(ghes2, 200, 'ghes second job');
+        assert(ghes2.json.id === ghes1.json.id && ghes2.json.status === 'processing', `bare run id must be a reader, got ${ghes2.json.status}`);
+    }
+
     // service-level rerun edge cases
     test('rerunCiJob: unparsable job id, repo gone (404)');
     {
