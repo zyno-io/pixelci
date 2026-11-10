@@ -10,7 +10,15 @@ import {
 import axios from 'axios';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-import type { ICiJobData, IVcsLoginSessionResponse, IVcsProject, IVcsRerunResult, IVcsServiceImpl, IVcsTokenUser } from './Vcs.service';
+import type {
+    ICiJobData,
+    IVcsLoginSessionResponse,
+    IVcsProject,
+    IVcsRerunOptions,
+    IVcsRerunResult,
+    IVcsServiceImpl,
+    IVcsTokenUser
+} from './Vcs.service';
 
 import { AppEntity } from '../entities/App.entity';
 import { IUserVcsSession, UserEntity } from '../entities/User.entity';
@@ -96,6 +104,9 @@ export function parseGitHubProjectUrl(web: string, url: URL): string | null {
     if (!owner || !repo) return null;
     return `${owner}/${repo}`;
 }
+
+/** Token refresh failed for a non-auth reason (network/5xx); the user's session itself may be fine. */
+class GitHubTransientError extends HttpBadRequestError {}
 
 class GitHubOAuthError extends Error {
     constructor(
@@ -406,6 +417,10 @@ export class VcsGitHubService implements IVcsServiceImpl {
             await this.renewToken(user);
         } catch (err) {
             if (err instanceof HttpBadRequestError) throw err;
+            if (err instanceof GitHubOAuthError && err.code === 'request_failed') {
+                this.logger.warn('GitHub token refresh request failed', { userId: user.id, error: String(err) });
+                throw new GitHubTransientError('Could not refresh your GitHub session; please try again');
+            }
             this.logger.warn('GitHub token refresh failed', { userId: user.id, error: String(err) });
             throw new HttpBadRequestError('GitHub session expired; please sign in again');
         }
@@ -568,7 +583,12 @@ export class VcsGitHubService implements IVcsServiceImpl {
 
     // ------------------------------------------------------------------ rerun
 
-    async rerunCiJob(user: UserEntity, app: Pick<AppEntity, 'projectPath' | 'vcsProjectId'>, ciJobId: string): Promise<IVcsRerunResult> {
+    async rerunCiJob(
+        user: UserEntity,
+        app: Pick<AppEntity, 'projectPath' | 'vcsProjectId'>,
+        ciJobId: string,
+        options: IVcsRerunOptions = {}
+    ): Promise<IVcsRerunResult> {
         const parsed = parseCiJobId(ciJobId);
         if (!app.vcsProjectId || !parsed) return { ok: false, error: 'No CI run recorded for this build' };
 
@@ -577,11 +597,25 @@ export class VcsGitHubService implements IVcsServiceImpl {
             ok: false,
             error: `GitHub session expired; please sign in again. Re-run it from GitHub: ${runUrl(fullName)}`
         });
+        // Rate limits can arrive as 429 or as 403 (primary: `rateLimited`; secondary: "You have exceeded a secondary rate limit").
+        const isTransient = (info: { status?: number; message: string; rateLimited?: boolean }) =>
+            info.status === undefined ||
+            info.status >= 500 ||
+            info.status === 429 ||
+            !!info.rateLimited ||
+            (info.status === 403 && /rate limit/i.test(info.message));
 
         let client: ReturnType<typeof createGitHubClient>;
         try {
             client = await this.userClient(user);
-        } catch {
+        } catch (err) {
+            if (err instanceof GitHubTransientError) {
+                return {
+                    ok: false,
+                    retryable: true,
+                    error: `Could not refresh your GitHub session. Re-run it from GitHub: ${runUrl(app.projectPath)}`
+                };
+            }
             return expired(app.projectPath);
         }
 
@@ -592,7 +626,7 @@ export class VcsGitHubService implements IVcsServiceImpl {
             const info = describeGitHubError(err);
             if (info.status === 401) return expired(app.projectPath);
             if (info.status === 404) return { ok: false, error: 'Repository not accessible (App uninstalled or access lost)' };
-            return { ok: false, error: `Could not look up the repository on GitHub: ${info.message}` };
+            return { ok: false, retryable: isTransient(info), error: `Could not look up the repository on GitHub: ${info.message}` };
         }
 
         const fullName = repo.full_name;
@@ -608,11 +642,41 @@ export class VcsGitHubService implements IVcsServiceImpl {
         }
 
         const repoPath = encodeRepoPath(fullName);
+        const runPath = `/repos/${repoPath}/actions/runs/${parsed.runId}`;
+        const getRun = async (): Promise<{ run: { status?: string | null; run_attempt?: number } } | { error: IVcsRerunResult }> => {
+            try {
+                return { run: (await client.get<{ status?: string | null; run_attempt?: number }>(runPath)).data ?? {} };
+            } catch (err) {
+                const info = describeGitHubError(err);
+                this.logger.warn('GitHub run lookup failed', { runId: parsed.runId, status: info.status, message: info.message });
+                if (info.status === 401) return { error: expired(fullName) };
+                return {
+                    error: {
+                        ok: false,
+                        retryable: isTransient(info),
+                        error: `Could not look up the workflow run on GitHub: ${info.message}. Re-run it from GitHub: ${runUrl(fullName)}`
+                    }
+                };
+            }
+        };
+
+        if (options.expectedRunAttempt !== undefined) {
+            const res = await getRun();
+            if ('error' in res) return withMove(res.error);
+            if (res.run.run_attempt !== undefined && res.run.run_attempt !== options.expectedRunAttempt) {
+                return withMove({
+                    ok: false as const,
+                    superseded: true as const,
+                    error: 'The workflow run was re-run since this re-run was scheduled'
+                });
+            }
+        }
+
         const attempts: string[] = [];
         if (parsed.jobId) attempts.push(`/repos/${repoPath}/actions/jobs/${parsed.jobId}/rerun`);
         attempts.push(`/repos/${repoPath}/actions/runs/${parsed.runId}/rerun-failed-jobs`);
 
-        let lastError: { status?: number; message: string } = { message: 'unknown error' };
+        let lastError: { status?: number; message: string; rateLimited?: boolean } = { message: 'unknown error' };
         for (let i = 0; i < attempts.length; i++) {
             try {
                 await client.post(attempts[i], {});
@@ -622,6 +686,22 @@ export class VcsGitHubService implements IVcsServiceImpl {
                 lastError = info;
                 this.logger.warn(`GitHub re-run request failed (${attempts[i]})`, { status: info.status, message: info.message });
                 if (info.status === 401) return withMove(expired(fullName));
+
+                // GitHub refuses a re-run with 403 "This workflow is already running" while jobs of the run are in progress.
+                if ((info.status === 403 || info.status === 409 || info.status === 422) && /already running/i.test(info.message)) {
+                    const res = await getRun();
+                    if ('error' in res) return withMove(res.error);
+                    if (res.run.status && res.run.status !== 'completed') {
+                        return withMove({
+                            ok: false as const,
+                            deferred: true as const,
+                            url: runUrl(fullName),
+                            runAttempt: res.run.run_attempt,
+                            error: `The workflow run is still in progress: ${info.message.replace(/[.\s]+$/, '')}`
+                        });
+                    }
+                }
+
                 // Only 4xx on the job-level call falls through to the run-level fallback.
                 const canFallback = i < attempts.length - 1 && info.status !== undefined && info.status >= 400 && info.status < 500;
                 if (!canFallback) break;
@@ -632,6 +712,7 @@ export class VcsGitHubService implements IVcsServiceImpl {
         const message = lastError.message.replace(/[.\s]+$/, '');
         return withMove({
             ok: false as const,
+            retryable: isTransient(lastError),
             error: `GitHub refused to re-run the job${status}: ${message}. Re-run it from GitHub: ${runUrl(fullName)}`
         });
     }

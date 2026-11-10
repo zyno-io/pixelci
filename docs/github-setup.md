@@ -176,9 +176,8 @@ After you approve the changes in the web UI, PixelCI re-runs the failed job thro
 Things to know:
 
 - The re-run uses the **approving user's** GitHub token, so that user needs **write access** to the repository.
-- Runs older than 30 days, and runs that are still in progress (other jobs running), can't be re-run by PixelCI. PixelCI shows a link to the run so you can re-run it manually from GitHub.
-
-<!-- TODO(verify): exact UI/error copy for the manual re-run fallback, and in-progress re-run behavior, are pending real-GitHub verification (WP-V). -->
+- GitHub won't re-run a job while other jobs of the same workflow run are still in progress. In that case PixelCI tells you the workflow is still running and re-runs the job automatically once the run finishes (it checks every minute, for up to 6 hours). It gives up after that, or on a non-transient error; if the job hasn't re-run a few minutes after the workflow finishes, re-run it from the link PixelCI shows.
+- Runs older than 30 days can't be re-run by PixelCI. PixelCI shows a link to the run so you can re-run it manually from GitHub.
 
 ### 9. Running the CLI Outside GitHub Actions
 
@@ -197,12 +196,12 @@ Some GHES versions omit the `check_run_id` claim from the OIDC token. In that ca
 
 ## Troubleshooting
 
-| Symptom                                    | Likely cause                                                                                                                   |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `401` creating the build                   | `PIXELCI_API_URL` does not equal the integration's OIDC audience; or `id-token: write` is missing; or the event is unsupported |
-| `401` / app mismatch                       | The app is bound to a different repository than the workflow is running in                                                     |
-| Fork pull request fails                    | Forks get no OIDC token; not supported                                                                                         |
-| Login rejected                             | Your account has no access to an installation of the GitHub App                                                                |
-| Repository missing from **Add App** search | The App is not installed on it, or you lack access; paste its URL instead                                                      |
-| Approval succeeds but job is not re-run    | No write access, run older than 30 days, or run still in progress; re-run manually from the link shown                         |
-| Org uses SAML SSO                          | Authorize the GitHub App for the organization, otherwise access checks fail <!-- TODO(verify): SSO behavior -->                |
+| Symptom                                    | Likely cause                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `401` creating the build                   | `PIXELCI_API_URL` does not equal the integration's OIDC audience; or `id-token: write` is missing; or the event is unsupported                                                                                                                                                                                                                                     |
+| `401` / app mismatch                       | The app is bound to a different repository than the workflow is running in                                                                                                                                                                                                                                                                                         |
+| Fork pull request fails                    | Forks get no OIDC token; not supported                                                                                                                                                                                                                                                                                                                             |
+| Login rejected                             | Your account has no access to an installation of the GitHub App                                                                                                                                                                                                                                                                                                    |
+| Repository missing from **Add App** search | The App is not installed on it, or you lack access; paste its URL instead                                                                                                                                                                                                                                                                                          |
+| Approval succeeds but job is not re-run    | No write access or run older than 30 days; re-run manually from the link shown. If the run is still in progress, PixelCI re-runs it automatically when it finishes (checked every minute, up to 6 hours; it gives up after that or on a non-transient error, so if the job hasn't re-run a few minutes after the workflow finishes, re-run it from the link shown) |
+| Org uses SAML SSO                          | Authorize the GitHub App for the organization, otherwise access checks fail <!-- TODO(verify): SSO behavior -->                                                                                                                                                                                                                                                    |

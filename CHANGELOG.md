@@ -4,6 +4,8 @@
 
 - GitHub Actions integration: GitHub App login, OIDC-authenticated CLI (no secrets), and per-job re-run after approval
   (push, pull_request, workflow_dispatch and schedule events; GitHub Enterprise Server supported). See the GitHub Setup guide
+- GitHub: if the workflow run is still in progress when a build is approved, PixelCI now re-runs the job automatically once the run
+  finishes (checked every minute, up to 6 hours) instead of asking for a manual re-run
 - MCP/`/api/ext` read access now accepts GitHub personal access tokens; token env var is `PIXELCI_VCS_TOKEN`
   (`PIXELCI_GITLAB_TOKEN` and `PIXELCI_GITHUB_TOKEN` remain as aliases)
 

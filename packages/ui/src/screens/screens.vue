@@ -472,7 +472,7 @@ async function submitBuild() {
 
     try {
         isLoading.value = true;
-        const { vcsUrl, vcsError } = await dataFromAsync(
+        const { vcsUrl, vcsError, vcsNotice } = await dataFromAsync(
             BuildsApi.postBuildsApprove({
                 path: { appId: String(route.params.id), id: String(route.params.buildId) }
             })
@@ -487,6 +487,10 @@ async function submitBuild() {
         if (!vcsUrl) {
             await showAlert(`Your review was submitted, but the VCS CI job could not be re-run automatically.${vcsError ? `\n\n${vcsError}` : ''}`);
             isLoading.value = false;
+        } else if (vcsNotice) {
+            // Informational (not an error): the re-run is deferred; continue to the workflow run afterwards.
+            await showAlert(`Your review was submitted. ${vcsNotice}\n\n${vcsUrl}`);
+            location.href = vcsUrl;
         } else {
             location.href = vcsUrl;
         }

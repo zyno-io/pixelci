@@ -13,6 +13,7 @@ import { UsersController } from './controllers/Users.controller';
 import { VcsIntegrationsController } from './controllers/VcsIntegrations.controller';
 import { Db } from './database';
 import { ProcessBuildJob } from './jobs/ProcessBuild.job';
+import { RerunCiJobJob } from './jobs/RerunCiJob.job';
 import { AppAccessService } from './services/AppAccess.service';
 import { PixelMatchService } from './services/PixelMatch.service';
 import { S3Service } from './services/S3.service';
@@ -48,6 +49,7 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         UserAuthMiddleware,
         VcsTokenAuthMiddleware,
         ProcessBuildJob,
+        RerunCiJobJob,
         PixelMatchService,
         VcsService,
         AppAccessService,
