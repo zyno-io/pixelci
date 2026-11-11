@@ -25,7 +25,7 @@ export type IAppShowResponse = EntityFields<AppEntity> & { commitUrlBase: string
 
 interface IAppCreateInput {
     name: string;
-    vcsId: string;
+    vcsId: UuidString;
     projectPath: string;
     vcsProjectId?: number;
     defaultBranchName?: string;

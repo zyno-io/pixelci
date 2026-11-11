@@ -14,7 +14,7 @@ type ISessionResponse = Pick<UserEntity, 'id' | 'name' | 'isAdmin' | 'vcsId'>;
 type ISessionProvider = Pick<VcsIntegrationEntity, 'id' | 'name' | 'platform'>;
 
 interface ISessionLoginRequest {
-    providerId: string;
+    providerId: UuidString;
     redirectUri: string;
     code: string;
 }

@@ -45,7 +45,7 @@ export class UsersController {
 
     @http.PUT('/:id')
     async update(id: UuidString, body: HttpBody<IUserUpdateInput>, currentUser: UserEntity): Promise<{ id: string; isAdmin: boolean }> {
-        if (id === currentUser.id) {
+        if (id.toLowerCase() === currentUser.id.toLowerCase()) {
             throw new HttpBadRequestError('Cannot modify your own admin status');
         }
 
