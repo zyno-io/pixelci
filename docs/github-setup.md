@@ -61,7 +61,7 @@ After creating the integration, click the GitHub login button to sign in.
 <img src="/images/login-light.png" alt="Login page" class="light-only">
 <img src="/images/login-dark.png" alt="Login page" class="dark-only">
 
-The first user to log in is automatically promoted to admin.
+While no admin exists, a user who signs in with the setup token (remembered from the onboarding wizard, or typed on the login page) is promoted to admin. Keep `SETUP_TOKEN` set until that has happened.
 
 ::: warning
 You must have access to at least one installation of the App to log in. Install the App (step 2) before the first login.

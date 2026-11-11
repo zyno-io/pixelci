@@ -11,6 +11,12 @@
                 <div class="notice-body">{{ errorMessage }}</div>
             </div>
 
+            <label v-if="needsSetupToken" class="setup-token">
+                Setup token (optional)
+                <input class="input" v-model="setupTokenInput" type="password" autocomplete="off" />
+                <small>No admin exists yet. Enter the server's SETUP_TOKEN to become the first admin.</small>
+            </label>
+
             <button v-for="provider in providers" :key="provider.id" class="btn primary" @click="login(provider)">
                 <i :class="providerIcon(provider)" aria-hidden="true" />
                 Login via {{ provider.name }}
@@ -41,6 +47,9 @@ const isLoading = ref(true);
 const providers = ref<ISessionProvider[]>();
 const targetPath = ref<string>();
 const errorMessage = ref<string>();
+// true while setup is enabled but no admin exists yet: the user may type the SETUP_TOKEN to claim the first admin role
+const needsSetupToken = ref(false);
+const setupTokenInput = ref('');
 // set when arriving with an error or a failed callback, so we show the picker instead of redirecting again
 const suppressAutoLogin = ref(false);
 
@@ -62,6 +71,15 @@ function parseState(): { path?: string; providerId?: string } | undefined {
 async function login(provider: ISessionProvider) {
     try {
         isLoading.value = true;
+
+        if (setupTokenInput.value) {
+            try {
+                // survives the provider redirect; processCode sends it with the login and clears it
+                sessionStorage.setItem(SETUP_TOKEN_STORAGE_KEY, setupTokenInput.value);
+            } catch {
+                // sessionStorage unavailable
+            }
+        }
 
         const { url } = await dataFromAsync(
             SessionApi.getSessionGetProviderLoginUrl({
@@ -172,8 +190,22 @@ async function loadSession() {
         return handleErrorAndAlert(err);
     }
 
-    // with a single provider, skip the picker and go straight to it
-    if (providers.value.length === 1 && !suppressAutoLogin.value && !store.showProviderPicker) {
+    try {
+        const status = await dataFromAsync(SessionApi.getSessionGetOnboardingStatus());
+        needsSetupToken.value = status.setupEnabled && !status.hasAdmin;
+        if (needsSetupToken.value) {
+            try {
+                setupTokenInput.value = sessionStorage.getItem(SETUP_TOKEN_STORAGE_KEY) ?? '';
+            } catch {
+                // sessionStorage unavailable
+            }
+        }
+    } catch {
+        // the field is optional; carry on without it
+    }
+
+    // with a single provider, skip the picker and go straight to it (unless the setup token may need to be typed first)
+    if (providers.value.length === 1 && !suppressAutoLogin.value && !needsSetupToken.value && !store.showProviderPicker) {
         return login(providers.value[0]);
     }
 

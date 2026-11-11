@@ -62,6 +62,7 @@ async function run() {
 
     // Phase 6: session includes isAdmin
     await testSessionIncludesIsAdmin(facade, adminJwt);
+    await testOnboardingStatusHasAdmin(facade);
 
     // Phase 7: VCS integration CRUD
     await testVcsIntegrationCrud(facade, adminJwt);
@@ -315,6 +316,9 @@ async function testOnboardingStatusFresh(facade: ReturnType<typeof TestingHelper
     if (body.isOnboarded !== false) {
         throw new Error(`Expected isOnboarded=false, got ${body.isOnboarded}`);
     }
+    if ((body as { hasAdmin?: boolean }).hasAdmin !== false) {
+        throw new Error('Expected hasAdmin=false on a fresh install');
+    }
     if (body.setupEnabled !== true) {
         throw new Error(`Expected setupEnabled=true, got ${body.setupEnabled}`);
     }
@@ -356,8 +360,8 @@ async function testOnboardingConcurrentRequests() {
         )
     );
     const codes = responses.map(r => r.statusCode).sort();
-    if (codes.filter(c => c === 200).length !== 1 || codes.filter(c => c === 400).length !== 5) {
-        throw new Error(`Expected one 200 and five 400, got ${codes.join(',')}`);
+    if (codes.filter(c => c === 200).length !== 1 || codes.filter(c => c === 400 || c === 403).length !== 5) {
+        throw new Error(`Expected one 200 and five 400/403, got ${codes.join(',')}`);
     }
     if ((await VcsIntegrationEntity.query().count()) !== 1) throw new Error('Expected exactly one integration row');
     console.log('  PASS');
@@ -437,7 +441,7 @@ async function testOnboardingStatusAfterSetup(facade: ReturnType<typeof TestingH
 }
 
 async function testCreateOnboardingVcsIntegrationBlocked(facade: ReturnType<typeof TestingHelpers.createTestingFacade>) {
-    console.log('\nTest: create onboarding VCS integration when already onboarded → 400');
+    console.log('\nTest: create onboarding VCS integration when already onboarded → 403 (even with the correct token)');
     const response = await facade.request(
         HttpRequest.POST('/api/session/onboarding/vcs-integration').json({
             setupToken: SETUP_TOKEN,
@@ -452,7 +456,7 @@ async function testCreateOnboardingVcsIntegrationBlocked(facade: ReturnType<type
             }
         })
     );
-    assertStatus(response, 400);
+    assertStatus(response, 403);
     console.log('  PASS');
 }
 
@@ -563,6 +567,13 @@ async function testAdminCannotToggleSelf(facade: ReturnType<typeof TestingHelper
         HttpRequest.PUT(`/api/admin/users/${ZERO_ID}`).header('authorization', `Bearer ${jwt}`).json({ isAdmin: false })
     );
     assertStatus(response, 400);
+    console.log('  PASS');
+}
+
+async function testOnboardingStatusHasAdmin(facade: Facade) {
+    console.log('\nTest: onboarding-status reports hasAdmin=true once an admin exists');
+    const body = (await facade.request(HttpRequest.GET('/api/session/onboarding-status'))).json as { hasAdmin: boolean };
+    if (body.hasAdmin !== true) throw new Error(`Expected hasAdmin=true, got ${JSON.stringify(body)}`);
     console.log('  PASS');
 }
 

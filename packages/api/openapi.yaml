@@ -926,9 +926,12 @@ components:
           type: boolean
         setupEnabled:
           type: boolean
+        hasAdmin:
+          type: boolean
       required:
         - isOnboarded
         - setupEnabled
+        - hasAdmin
     IOnboardingRequest:
       type: object
       properties:

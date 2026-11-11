@@ -33,7 +33,7 @@ After creating the integration, click the GitLab login button to sign in.
 <img src="/images/login-light.png" alt="Login page" class="light-only">
 <img src="/images/login-dark.png" alt="Login page" class="dark-only">
 
-The first user to log in right after onboarding is promoted to admin, because the wizard remembers the setup token for that one login. If no admin exists yet, a user who signs in without the token stays a regular user.
+While no admin exists, a user who signs in with the setup token (remembered from the onboarding wizard, or typed on the login page) is promoted to admin; without it they stay a regular user. Keep `SETUP_TOKEN` set until that has happened.
 
 ## Part 2: CI Pipeline Integration
 

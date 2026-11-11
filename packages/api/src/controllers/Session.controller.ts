@@ -40,6 +40,8 @@ interface IOnboardingStatusResponse {
     isOnboarded: boolean;
     // True when SETUP_TOKEN is configured (>= 16 chars); first-run setup is impossible otherwise.
     setupEnabled: boolean;
+    // True once at least one admin user exists. While false (and setupEnabled), login accepts the setup token to claim admin.
+    hasAdmin: boolean;
 }
 
 interface IOnboardingRequest {
@@ -49,6 +51,8 @@ interface IOnboardingRequest {
 
 const MIN_SETUP_TOKEN_LENGTH = 16;
 const ONBOARDING_LOCK = 'pixelci:onboarding';
+
+let warnedShortToken = false;
 
 function sha256(value: string): Buffer {
     return createHash('sha256').update(value, 'utf8').digest();
@@ -66,7 +70,11 @@ export class SessionController {
     ) {
         const configured = appConfig.SETUP_TOKEN;
         if (configured && configured.length < MIN_SETUP_TOKEN_LENGTH) {
-            logger.warn(`SETUP_TOKEN is shorter than ${MIN_SETUP_TOKEN_LENGTH} characters and is ignored; first-run setup is disabled`);
+            // The controller may be instantiated per request; warn once per process.
+            if (!warnedShortToken) {
+                warnedShortToken = true;
+                logger.warn(`SETUP_TOKEN is shorter than ${MIN_SETUP_TOKEN_LENGTH} characters and is ignored; first-run setup is disabled`);
+            }
         } else if (configured) {
             this.setupToken = configured;
         }
@@ -109,12 +117,14 @@ export class SessionController {
     @http.GET('onboarding-status')
     async getOnboardingStatus(): Promise<IOnboardingStatusResponse> {
         const count = await VcsIntegrationEntity.query().count();
-        return { isOnboarded: count > 0, setupEnabled: !!this.setupToken };
+        const adminCount = await UserEntity.query().filter({ isAdmin: true }).count();
+        return { isOnboarded: count > 0, setupEnabled: !!this.setupToken, hasAdmin: adminCount > 0 };
     }
 
     @http.POST('onboarding/vcs-integration')
     async createOnboardingVcsIntegration(body: HttpBody<IOnboardingRequest>): Promise<Pick<VcsIntegrationEntity, 'id' | 'name' | 'platform'>> {
-        if (!this.isSetupTokenValid(body.setupToken)) {
+        // Once onboarded, answer 403 whether or not the token is right so a guessed token can't be confirmed.
+        if (!this.isSetupTokenValid(body.setupToken) || (await VcsIntegrationEntity.query().count()) > 0) {
             throw new HttpAccessDeniedError('Invalid or missing setup token');
         }
         const input = body.integration;
@@ -125,7 +135,7 @@ export class SessionController {
             await txn.acquireSessionLock([ONBOARDING_LOCK]);
             const existingCount = await txn.query(VcsIntegrationEntity).count();
             if (existingCount > 0) {
-                return undefined;
+                return undefined; // lost a race with a concurrent request that passed the token check
             }
             const created = createEntity(VcsIntegrationEntity, {
                 id: uuid(),
@@ -156,46 +166,52 @@ export class SessionController {
 
         const findUser = () => UserEntity.query().filter({ vcsId: body.providerId, vcsUserId: id }).findOneOrUndefined();
         let user = await findUser();
-        let createdInTxn = false;
+        let writtenUnderLock = false;
 
-        if (!user) {
-            // The first admin needs both "no admin exists yet" and the setup token. Serialize with onboarding and
-            // other first logins so two racing logins cannot both become admin.
+        // Only new users, and non-admins presenting a valid setup token (who may be claiming the first admin role), need the lock.
+        if (!user || (!user.isAdmin && this.isSetupTokenValid(body.setupToken))) {
+            // Serialize with onboarding and other first logins so two racing logins can neither both become admin nor both insert.
+            // The lookup is repeated under the lock: the users index is not unique yet, so the unlocked lookup above can be stale.
             user = await this.db
                 .transaction(async txn => {
                     await txn.acquireSessionLock([ONBOARDING_LOCK]);
                     const adminCount = await txn.query(UserEntity).filter({ isAdmin: true }).count();
-                    const created = createEntity(UserEntity, {
-                        id: uuid(),
-                        vcsId: body.providerId,
-                        vcsUserId: id,
-                        createdAt: new Date(),
-                        isAdmin: adminCount === 0 && this.isSetupTokenValid(body.setupToken)
-                    });
-                    created.name = name;
-                    created.lastLoginAt = new Date();
-                    created.vcsSession = sessionDetails;
-                    txn.add(created);
+                    const claimAdmin = adminCount === 0 && this.isSetupTokenValid(body.setupToken);
+                    let locked = await txn.query(UserEntity).filter({ vcsId: body.providerId, vcsUserId: id }).findOneOrUndefined();
+                    if (!locked) {
+                        locked = createEntity(UserEntity, {
+                            id: uuid(),
+                            vcsId: body.providerId,
+                            vcsUserId: id,
+                            createdAt: new Date(),
+                            isAdmin: false
+                        });
+                        txn.add(locked);
+                    }
+                    if (claimAdmin) locked.isAdmin = true;
+                    locked.name = name;
+                    locked.lastLoginAt = new Date();
+                    locked.vcsSession = sessionDetails;
                     await txn.flush();
-                    createdInTxn = true;
-                    return created;
+                    writtenUnderLock = true;
+                    return locked;
                 })
                 .catch(async err => {
-                    // Lost a race with a concurrent login for the same account: use the row that won.
+                    // Second line of defence once the unique index exists: a concurrent insert won, so use its row.
                     if (isUniqueConstraintError(err)) return findUser();
                     throw err;
                 });
         }
-
-        if (!createdInTxn) {
-            // Existing account (or lost the insert race): refresh its profile and session.
-            user!.name = name;
-            user!.lastLoginAt = new Date();
-            user!.vcsSession = sessionDetails;
-            await user!.save();
+        if (!user) throw new HttpBadRequestError('Login failed');
+        if (!writtenUnderLock) {
+            // Rows not written under the lock (the common existing-user path, or the unique-error re-select): refresh the profile.
+            user.name = name;
+            user.lastLoginAt = new Date();
+            user.vcsSession = sessionDetails;
+            await user.save();
         }
 
-        const jwt = await JWT.generate({ subject: user!.id });
+        const jwt = await JWT.generate({ subject: user.id });
         return { jwt };
     }
 }

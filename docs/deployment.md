@@ -13,6 +13,10 @@ This guide covers self-hosting PixelCI — the API/UI server, background workers
 **1. Start the server**
 
 ```bash
+# Generate the setup token and keep it: you type it into the onboarding wizard
+SETUP_TOKEN=$(openssl rand -hex 32)
+echo "$SETUP_TOKEN"
+
 docker run -d \
   --name pixelci \
   -p 7924:7924 \
@@ -30,7 +34,7 @@ docker run -d \
   -e S3_ACCESS_KEY_ID=your-access-key \
   -e S3_ACCESS_SECRET=your-secret-key \
   -e S3_BUCKET=pixelci \
-  -e SETUP_TOKEN=a-long-random-secret-of-16-chars-or-more \
+  -e SETUP_TOKEN="$SETUP_TOKEN" \
   ghcr.io/zyno-io/pixelci:latest
 ```
 
@@ -50,6 +54,8 @@ Visit `http://localhost:7924`. On first launch, the onboarding wizard asks for y
 
 A complete setup with PostgreSQL, Redis, and PixelCI:
 
+Set `SETUP_TOKEN` in your shell or an `.env` file next to the compose file (for example `SETUP_TOKEN=$(openssl rand -hex 32)`).
+
 ```yaml
 services:
     pixelci:
@@ -59,7 +65,7 @@ services:
         environment:
             APP_ENV: production
             ENABLE_JOB_RUNNER: 'true'
-            SETUP_TOKEN: a-long-random-secret-of-16-chars-or-more
+            SETUP_TOKEN: ${SETUP_TOKEN}
             AUTH_JWT_SECRET: your-secret-key
             REDIS_HOST: redis
             REDIS_PREFIX: pixelci
@@ -189,9 +195,9 @@ PixelCI creates its tables at startup (migrations) and at runtime (the job queue
 
 ### First-run Setup
 
-| Variable      | Required           | Default | Description                                                                                                                                                                                                                       |
-| ------------- | ------------------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SETUP_TOKEN` | Yes, for first run | unset   | Secret you type into the onboarding wizard to create the first VCS integration and to claim the first admin account. At least 16 characters; unset or shorter disables first-run setup. You can remove it once setup is complete. |
+| Variable      | Required           | Default | Description                                                                                                                                                                                                                                                                                                   |
+| ------------- | ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SETUP_TOKEN` | Yes, for first run | unset   | Secret you type into the onboarding wizard to create the first VCS integration and to claim the first admin account. At least 16 characters; unset or shorter disables first-run setup. Keep it set until the first admin exists (the first login with the token claims admin); after that you can remove it. |
 
 Without this token, anyone who can reach a fresh instance could register their own VCS integration and become admin, so setup is refused until it is configured.
 

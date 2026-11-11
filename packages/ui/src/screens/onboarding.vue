@@ -91,7 +91,7 @@ async function submit() {
         try {
             sessionStorage.setItem(SETUP_TOKEN_STORAGE_KEY, form.setupToken);
         } catch {
-            // sessionStorage unavailable: the user can promote themselves later via another admin
+            // sessionStorage unavailable: login.vue will ask for the token again while no admin exists
         }
         form.setupToken = '';
         emit('complete');
