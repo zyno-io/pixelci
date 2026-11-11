@@ -14,6 +14,10 @@ export class AppConfig extends BaseAppConfig {
     // project in the VCS provider. Set false for environments without a reachable VCS (e.g. e2e).
     ENFORCE_VCS_PROJECT_ACCESS: boolean = true;
 
+    // Secret required to complete first-run setup (create the first VCS integration, become the first admin).
+    // Unset, or shorter than 16 characters, disables first-run setup.
+    SETUP_TOKEN?: string;
+
     // Maximum width*height of an uploaded screenshot (checked from the PNG header before decoding)
     SCREEN_MAX_PIXELS = 25_000_000;
 

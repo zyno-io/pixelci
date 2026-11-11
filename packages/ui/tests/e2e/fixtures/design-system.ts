@@ -64,7 +64,8 @@ export function createDesignApi(
 
     return (path: string, method = 'GET', body?: { reviewStatus: 'approved' | 'rejected'; comment: string }) => {
         const json = (data: unknown, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(data) });
-        if (path === '/api/session/onboarding-status') return json({ isOnboarded: !options.onboarding });
+        if (path === '/api/session/onboarding-status')
+            return json({ isOnboarded: !options.onboarding, setupEnabled: true, hasAdmin: !options.onboarding });
         if (path === '/api/session/me')
             return options.anonymous || options.onboarding
                 ? json({ message: 'Unauthorized' }, 401)

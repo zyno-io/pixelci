@@ -194,6 +194,8 @@ test('login and onboarding have working theme controls on mobile', async ({ page
     await mockApi(page, { onboarding: true });
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Welcome to PixelCI' })).toBeVisible();
+    await expect(page.getByLabel('Setup Token')).toBeVisible();
+    await expect(page.getByLabel('Setup Token')).toHaveAttribute('type', 'password');
     await expect(page.getByLabel('Integration Name')).toBeVisible();
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(width).toBeLessThanOrEqual(360);

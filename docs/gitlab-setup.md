@@ -24,7 +24,7 @@ Save and note the **Client ID** and **Client Secret**.
 
 ### 2. Create a VCS Integration
 
-On first launch, PixelCI shows an onboarding wizard that walks you through creating your first VCS integration. Enter your GitLab instance URL, Client ID, and Client Secret from step 1.
+On first launch, PixelCI shows an onboarding wizard that walks you through creating your first VCS integration. Enter the **Setup Token** (the `SETUP_TOKEN` environment variable you configured on the server; at least 16 characters), then your GitLab instance URL, Client ID, and Client Secret from step 1. If `SETUP_TOKEN` is unset or too short, first-run setup is disabled.
 
 ### 3. Log In
 
@@ -33,7 +33,7 @@ After creating the integration, click the GitLab login button to sign in.
 <img src="/images/login-light.png" alt="Login page" class="light-only">
 <img src="/images/login-dark.png" alt="Login page" class="dark-only">
 
-The first user to log in is automatically promoted to admin.
+While no admin exists, a user who signs in with the setup token (remembered from the onboarding wizard, or typed on the login page) is promoted to admin; without it they stay a regular user. Keep `SETUP_TOKEN` set until that has happened.
 
 ## Part 2: CI Pipeline Integration
 
