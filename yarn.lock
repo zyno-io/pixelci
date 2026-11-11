@@ -3160,7 +3160,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/pg@npm:*":
+"@types/pg@npm:*, @types/pg@npm:^8.23.1":
   version: 8.23.1
   resolution: "@types/pg@npm:8.23.1"
   dependencies:
@@ -3873,6 +3873,7 @@ __metadata:
     "@types/lodash": "npm:^4.17.27"
     "@types/mime-types": "npm:^3.0.1"
     "@types/node": "npm:^26.6.4"
+    "@types/pg": "npm:^8.23.1"
     "@types/pngjs": "npm:^6.0.5"
     "@zyno-io/ts-reflection": "npm:^26.1111.345"
     "@zyno-io/ts-server-foundation": "npm:26.1111.345"
@@ -3881,7 +3882,7 @@ __metadata:
     date-fns-tz: "npm:^3.2.0"
     jose: "npm:^6.2.12"
     lodash: "npm:^4.18.1"
-    mysql2: "npm:^3.24.6"
+    pg: "npm:^8.23.1"
     pixelmatch: "npm:^8.0.0"
     pngjs: "npm:^7.0.0"
     ttsc: "npm:0.34.2"

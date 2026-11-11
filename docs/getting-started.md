@@ -25,10 +25,10 @@ docker run -d \
   -e AUTH_JWT_SECRET=your-secret-key \
   -e REDIS_HOST=redis \
   -e REDIS_PREFIX=pixelci \
-  -e MYSQL_HOST=mysql \
-  -e MYSQL_USER=root \
-  -e MYSQL_PASSWORD_SECRET=your-password \
-  -e MYSQL_DATABASE=pixelci \
+  -e PG_HOST=postgres \
+  -e PG_USER=pixelci \
+  -e PG_PASSWORD_SECRET=your-password \
+  -e PG_DATABASE=pixelci \
   -e S3_ENDPOINT=https://s3.amazonaws.com \
   -e S3_REGION=us-east-1 \
   -e S3_ACCESS_KEY_ID=your-access-key \

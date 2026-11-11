@@ -1,7 +1,9 @@
 import { entity, PrimaryKey } from '@zyno-io/ts-server-foundation';
-import { BaseEntity, UuidString } from '@zyno-io/ts-server-foundation';
+import { BaseEntity, DatabaseField, UuidString } from '@zyno-io/ts-server-foundation';
 
 @entity.name('builds_screens')
+@entity.index(['buildId', 'screenId'])
+@entity.index(['screenId', 'id'])
 export class BuildScreenEntity extends BaseEntity {
     id!: UuidString & PrimaryKey;
     appId!: UuidString;
@@ -12,7 +14,7 @@ export class BuildScreenEntity extends BaseEntity {
     status!: 'new' | 'no changes' | 'needs review' | 'changes approved' | null;
     storageStatus!: 'stored' | 'pendingDeletion' | null;
     reviewStatus!: 'approved' | 'rejected' | null; // per-screen reviewer decision while a build is being reviewed
-    reviewComment!: string | null;
+    reviewComment!: (string & DatabaseField<{ type: 'text' }>) | null;
     reviewedById!: UuidString | null;
     reviewedAt!: Date | null;
 }

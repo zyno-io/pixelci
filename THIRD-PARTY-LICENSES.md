@@ -6,21 +6,6 @@ package's directory under node_modules/.
 
 ================================================================================
 
-mariadb - MariaDB Node.js Connector
-Version: 3.4.5
-License: LGPL-2.1-or-later (GNU Lesser General Public License v2.1 or later)
-Copyright: Diego Dupin, MariaDB Corporation
-Source: https://github.com/mariadb-corporation/mariadb-connector-nodejs
-
-This library is used unmodified as a runtime dependency via npm (dynamic
-linking equivalent). In accordance with LGPL-2.1 Section 6, users may
-replace this library with a modified version by replacing the contents of
-node_modules/mariadb/ in the distributed Docker image. The complete source
-code is available at the repository URL above. A copy of the LGPL-2.1
-license is included at node_modules/mariadb/LICENSE.
-
-================================================================================
-
 node-forge
 Version: 1.3.3
 License: BSD-3-Clause (chosen from dual-license: BSD-3-Clause OR GPL-2.0)

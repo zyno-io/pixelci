@@ -4,7 +4,7 @@
 
 - **Node.js** 22+
 - **Yarn** (managed via Corepack — run `corepack enable` once)
-- **Docker** (for local MySQL, Redis, and S3 services)
+- **Docker** (for local PostgreSQL, Redis, and S3 services)
 
 ## Getting Started
 
@@ -12,7 +12,7 @@
 # Install dependencies
 yarn --immutable
 
-# Start local services (MySQL, Redis, SeaweedFS S3)
+# Start local services (PostgreSQL, Redis, SeaweedFS S3)
 yarn services:up
 
 # Run database migrations
@@ -31,7 +31,7 @@ yarn services:down
 
 ## Running Tests
 
-All test commands work the same locally and in CI. Services (MySQL, Redis, S3) must be running first.
+All test commands work the same locally and in CI. Services (PostgreSQL, Redis, S3) must be running first.
 
 ### API Tests
 

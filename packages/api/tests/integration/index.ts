@@ -11,17 +11,13 @@ import { BuildEntity } from '../../src/entities/Build.entity';
 import { BuildScreenEntity } from '../../src/entities/BuildScreen.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { configureTestDatabase } from './db-defaults';
 import { IScenario, TestScenarios } from './scenarios';
 
 process.env.CI = 'true';
 process.env.REDIS_PREFIX = 'pixelci_test';
 
-TestingHelpers.setDefaultDatabaseConfig({
-    MYSQL_HOST: '127.0.0.1',
-    MYSQL_PORT: 3306,
-    MYSQL_USER: 'root',
-    MYSQL_PASSWORD_SECRET: 'secret'
-});
+configureTestDatabase();
 
 run()
     .then(() => process.exit(0))

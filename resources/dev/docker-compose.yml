@@ -1,16 +1,17 @@
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: pixelci-mysql
+  postgres:
+    image: postgres:18
+    container_name: pixelci-postgres
     environment:
-      MYSQL_ROOT_PASSWORD: secret
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: pixelci
     ports:
-      - '3306:3306'
+      - '5432:5432'
     volumes:
-      - mysql-data:/var/lib/mysql
-    command: --default-authentication-plugin=mysql_native_password
+      - postgres-data:/var/lib/postgresql
     healthcheck:
-      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-u', 'root', '-psecret']
+      test: ['CMD-SHELL', 'pg_isready -U root -d pixelci']
       interval: 5s
       timeout: 3s
       retries: 10
@@ -42,5 +43,5 @@ services:
       retries: 5
 
 volumes:
-  mysql-data:
+  postgres-data:
   s3-data:

@@ -4,7 +4,7 @@ This guide covers self-hosting PixelCI — the API/UI server, background workers
 
 ## Prerequisites
 
-- **MySQL 8+** — stores apps, builds, branches, screens, and user data
+- **PostgreSQL 15+** — stores apps, builds, branches, screens, and user data
 - **Redis** — job queue (BullMQ) and caching
 - **S3-compatible storage** — screenshots and diff images (AWS S3, MinIO, SeaweedFS, etc.)
 
@@ -21,10 +21,10 @@ docker run -d \
   -e AUTH_JWT_SECRET=your-secret-key \
   -e REDIS_HOST=redis \
   -e REDIS_PREFIX=pixelci \
-  -e MYSQL_HOST=mysql \
-  -e MYSQL_USER=root \
-  -e MYSQL_PASSWORD_SECRET=your-password \
-  -e MYSQL_DATABASE=pixelci \
+  -e PG_HOST=postgres \
+  -e PG_USER=pixelci \
+  -e PG_PASSWORD_SECRET=your-password \
+  -e PG_DATABASE=pixelci \
   -e S3_ENDPOINT=https://s3.amazonaws.com \
   -e S3_REGION=us-east-1 \
   -e S3_ACCESS_KEY_ID=your-access-key \
@@ -47,7 +47,7 @@ Visit `http://localhost:7924`. On first launch, the onboarding wizard will guide
 
 ## Docker Compose
 
-A complete setup with MySQL, Redis, and PixelCI:
+A complete setup with PostgreSQL, Redis, and PixelCI:
 
 ```yaml
 services:
@@ -61,30 +61,31 @@ services:
             AUTH_JWT_SECRET: your-secret-key
             REDIS_HOST: redis
             REDIS_PREFIX: pixelci
-            MYSQL_HOST: mysql
-            MYSQL_USER: root
-            MYSQL_PASSWORD_SECRET: your-password
-            MYSQL_DATABASE: pixelci
+            PG_HOST: postgres
+            PG_USER: pixelci
+            PG_PASSWORD_SECRET: your-password
+            PG_DATABASE: pixelci
             S3_ENDPOINT: https://s3.amazonaws.com
             S3_REGION: us-east-1
             S3_ACCESS_KEY_ID: your-access-key
             S3_ACCESS_SECRET: your-secret-key
             S3_BUCKET: pixelci
         depends_on:
-            mysql:
+            postgres:
                 condition: service_healthy
             redis:
                 condition: service_healthy
 
-    mysql:
-        image: mysql:8
+    postgres:
+        image: postgres:18
         environment:
-            MYSQL_ROOT_PASSWORD: your-password
-            MYSQL_DATABASE: pixelci
+            POSTGRES_USER: pixelci
+            POSTGRES_PASSWORD: your-password
+            POSTGRES_DB: pixelci
         volumes:
-            - mysql-data:/var/lib/mysql
+            - postgres-data:/var/lib/postgresql
         healthcheck:
-            test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-u', 'root', '-pyour-password']
+            test: ['CMD-SHELL', 'pg_isready -U pixelci -d pixelci']
             interval: 5s
             timeout: 3s
             retries: 10
@@ -98,7 +99,7 @@ services:
             retries: 10
 
 volumes:
-    mysql-data:
+    postgres-data:
 ```
 
 After starting:
@@ -139,15 +140,21 @@ kubectl exec deploy/pixelci-server -- node . migrate:run
 | ----------------- | -------- | ------- | -------------------------------- |
 | `AUTH_JWT_SECRET` | Yes      | —       | Secret key for JWT token signing |
 
-### MySQL
+### PostgreSQL
 
-| Variable                | Required | Default | Description           |
-| ----------------------- | -------- | ------- | --------------------- |
-| `MYSQL_HOST`            | Yes      | —       | MySQL server hostname |
-| `MYSQL_PORT`            | No       | `3306`  | MySQL server port     |
-| `MYSQL_USER`            | Yes      | —       | MySQL username        |
-| `MYSQL_PASSWORD_SECRET` | Yes      | —       | MySQL password        |
-| `MYSQL_DATABASE`        | Yes      | —       | MySQL database name   |
+| Variable                     | Required | Default | Description                                            |
+| ---------------------------- | -------- | ------- | ------------------------------------------------------ |
+| `PG_HOST`                    | Yes      | —       | PostgreSQL server hostname                             |
+| `PG_PORT`                    | No       | `5432`  | PostgreSQL server port                                 |
+| `PG_USER`                    | Yes      | —       | PostgreSQL username                                    |
+| `PG_PASSWORD_SECRET`         | Yes      | —       | PostgreSQL password                                    |
+| `PG_DATABASE`                | Yes      | —       | PostgreSQL database name (uses the `public` schema)    |
+| `PG_SSL`                     | No       | `false` | Connect over TLS                                       |
+| `PG_SSL_REJECT_UNAUTHORIZED` | No       | `true`  | Verify the server certificate when `PG_SSL` is enabled |
+| `PG_CONNECTION_LIMIT`        | No       | `10`    | Maximum pooled connections (`5` outside production)    |
+| `PG_IDLE_TIMEOUT_SECONDS`    | No       | `60`    | Idle connection timeout (`5` outside production)       |
+
+PixelCI creates its tables at startup (migrations) and at runtime (the job queue's `_jobs` table), so `PG_USER` needs `CREATE` on the `public` schema. On PostgreSQL 15+ only the database owner has that by default; the simplest setup is `CREATE DATABASE pixelci OWNER pixelci;`. PixelCI expects the server default `READ COMMITTED` isolation level.
 
 ### Redis
 
@@ -216,10 +223,10 @@ docker run -d \
   -e AUTH_JWT_SECRET=your-secret-key \
   -e REDIS_HOST=redis \
   -e REDIS_PREFIX=pixelci \
-  -e MYSQL_HOST=mysql \
-  -e MYSQL_USER=root \
-  -e MYSQL_PASSWORD_SECRET=your-password \
-  -e MYSQL_DATABASE=pixelci \
+  -e PG_HOST=postgres \
+  -e PG_USER=pixelci \
+  -e PG_PASSWORD_SECRET=your-password \
+  -e PG_DATABASE=pixelci \
   -e S3_ENDPOINT=https://s3.amazonaws.com \
   -e S3_REGION=us-east-1 \
   -e S3_ACCESS_KEY_ID=your-access-key \
@@ -244,4 +251,4 @@ Run migrations via `kubectl exec` against the server deployment after each upgra
 kubectl exec deploy/pixelci-server -- node . migrate:run
 ```
 
-All deployments share the same environment variables. Use Kubernetes Secrets for sensitive values (`AUTH_JWT_SECRET`, `MYSQL_PASSWORD_SECRET`, S3 credentials).
+All deployments share the same environment variables. Use Kubernetes Secrets for sensitive values (`AUTH_JWT_SECRET`, `PG_PASSWORD_SECRET`, S3 credentials).

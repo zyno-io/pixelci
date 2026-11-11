@@ -69,10 +69,12 @@ export class BuildScreensController {
 
         const app = await this.db.query(AppEntity).filter({ id: appId }).findOne();
 
-        const referenceBuild = await BuildEntity.query()
-            .filter({ appId: app.id, branchId: app.defaultBranchId, status: 'changes approved', id: { $lt: build.id } })
-            .orderBy('id', 'desc')
-            .findOneOrUndefined();
+        const referenceBuild = app.defaultBranchId
+            ? await BuildEntity.query()
+                  .filter({ appId: app.id, branchId: app.defaultBranchId, status: 'changes approved', id: { $lt: build.id } })
+                  .orderBy('id', 'desc')
+                  .findOneOrUndefined()
+            : undefined;
 
         const currentBuildScreens = await BuildScreenEntity.query().filter({ appId, buildId: build.id }).find();
 

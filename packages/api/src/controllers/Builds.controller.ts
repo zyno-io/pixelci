@@ -36,7 +36,7 @@ const MAX_DEADLOCK_ATTEMPTS = 3;
 
 export function isDeadlockError(err: unknown): boolean {
     for (let e = err as { code?: string; errno?: number; message?: string; cause?: unknown } | undefined, depth = 0; e && depth < 5; depth++) {
-        if (e.errno === 1213 || e.code === 'ER_LOCK_DEADLOCK' || /deadlock found/i.test(e.message ?? '')) return true;
+        if (e.code === '40P01' || /deadlock detected/i.test(e.message ?? '')) return true;
         e = e.cause as typeof e;
     }
     return false;
@@ -164,7 +164,7 @@ export class BuildsController {
         const ciTokenHash = hashCiToken(ciToken);
         const { branch: branchName, commitHash, commitSubject, commitAuthor, jobId: ciJobId } = ciJobData;
 
-        // Concurrent creates for an app with no branch row yet can deadlock (gap locks); retry the whole transaction
+        // Creation is serialized per (app, branch) by an advisory lock, but retry the whole transaction on a deadlock anyway
         for (let attempt = 1; ; attempt++) {
             try {
                 return await this.createInTransaction(appId, branchName, commitHash, commitSubject, commitAuthor, ciJobId, ciTokenHash);
@@ -186,7 +186,9 @@ export class BuildsController {
         ciTokenHash: string
     ): Promise<IBuildResponse> {
         return this.db.transaction(async txn => {
-            // Lock the branch row so concurrent creates for the same branch serialize
+            // Serialize concurrent creates for the same branch. Locking the branch row alone is not enough: under READ COMMITTED,
+            // SELECT ... FOR UPDATE on a branch that does not exist yet locks nothing, so two first builds would both insert it.
+            await txn.acquireSessionLock(['pixelci:build-create', appId, branchName]);
             let branch = await txn.query(BranchEntity).filter({ appId, name: branchName }).forUpdate().findOneOrUndefined();
 
             if (!branch) {

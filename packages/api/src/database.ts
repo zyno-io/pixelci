@@ -1,4 +1,4 @@
-import { createMySQLDatabase } from '@zyno-io/ts-server-foundation';
+import { createPostgresDatabase } from '@zyno-io/ts-server-foundation';
 
 import { AppEntity } from './entities/App.entity';
 import { BranchEntity } from './entities/Branch.entity';
@@ -8,7 +8,7 @@ import { ScreenEntity } from './entities/Screen.entity';
 import { UserEntity } from './entities/User.entity';
 import { VcsIntegrationEntity } from './entities/VcsIntegration.entity';
 
-export class Db extends createMySQLDatabase({}, [
+export class Db extends createPostgresDatabase({}, [
     AppEntity,
     BranchEntity,
     BuildEntity,

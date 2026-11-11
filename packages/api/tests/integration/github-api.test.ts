@@ -12,16 +12,12 @@ import { IUserVcsSession, UserEntity } from '../../src/entities/User.entity';
 import { IGitHubConfig, VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { RerunCiJobJob, RERUN_RETRY_DELAY_MS } from '../../src/jobs/RerunCiJob.job';
 import { VcsGitHubService } from '../../src/services/VcsGitHub.service';
+import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
 process.env.REDIS_PREFIX = 'pixelci_test';
 
-TestingHelpers.setDefaultDatabaseConfig({
-    MYSQL_HOST: '127.0.0.1',
-    MYSQL_PORT: 3306,
-    MYSQL_USER: 'root',
-    MYSQL_PASSWORD_SECRET: 'secret'
-});
+configureTestDatabase();
 
 // ---------------------------------------------------------------- constants
 
@@ -922,7 +918,7 @@ async function run() {
         queued.length = 0;
         let before = log.length;
         await rerunJob.handle({ buildId: deferredBuildId, userId, ciJobId: '8800:9999', attempt: 2 });
-        await rerunJob.handle({ buildId: 'does-not-exist', userId, ciJobId: '8800:8801', attempt: 2 });
+        await rerunJob.handle({ buildId: '00000000-0000-0000-0000-00000000dead', userId, ciJobId: '8800:8801', attempt: 2 });
         await BuildEntity.query().filter({ id: deferredBuildId }).patchMany({ status: 'needs review' });
         await rerunJob.handle({ buildId: deferredBuildId, userId, ciJobId: '8800:8801', attempt: 2 });
         assert(log.length === before && queued.length === 0, `unexpected GitHub calls/queue: ${log.length - before}/${queued.length}`);

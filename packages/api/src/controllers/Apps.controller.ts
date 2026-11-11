@@ -101,7 +101,7 @@ export class AppsController {
             vcsId: body.vcsId,
             projectPath: body.projectPath,
             vcsProjectId: body.vcsProjectId ?? null,
-            defaultBranchId: defaultBranchId ?? ''
+            defaultBranchId: defaultBranchId ?? null
         });
         await newApp.save();
 

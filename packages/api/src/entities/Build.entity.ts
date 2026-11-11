@@ -1,14 +1,17 @@
 import { entity, PrimaryKey } from '@zyno-io/ts-server-foundation';
-import { BaseEntity, HasDefault, UuidString } from '@zyno-io/ts-server-foundation';
+import { BaseEntity, DatabaseField, HasDefault, UuidString } from '@zyno-io/ts-server-foundation';
 
 @entity.name('builds')
+@entity.index(['appId', 'createdAt'])
+@entity.index(['branchId', 'id'])
+@entity.index(['branchId', 'commitHash'])
 export class BuildEntity extends BaseEntity {
     id!: UuidString & PrimaryKey;
     appId!: UuidString;
     branchId!: UuidString;
     createdAt!: Date;
     commitHash!: string;
-    commitSubject!: string;
+    commitSubject!: string & DatabaseField<{ type: 'text' }>;
     commitAuthor!: string;
     ciJobId!: string;
     /** Uploader/creator token hash. */

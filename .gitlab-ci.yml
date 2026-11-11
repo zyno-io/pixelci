@@ -56,10 +56,12 @@ prepare build:
   extends: .test-base
   image: mcr.microsoft.com/playwright:v1.64.1-jammy
   services:
-    - name: mysql:8
+    - name: postgres:18
+      alias: postgres
       variables:
-        MYSQL_ROOT_PASSWORD: secret
-        MYSQL_DATABASE: pixelci
+        POSTGRES_USER: root
+        POSTGRES_PASSWORD: secret
+        POSTGRES_DB: pixelci
     - name: redis:alpine
     - name: chrislusf/seaweedfs:latest
       alias: seaweedfs
@@ -73,8 +75,8 @@ prepare build:
     S3_ACCESS_KEY_ID: test
     S3_ACCESS_SECRET: test
     S3_BUCKET: pixelci
-    MYSQL_HOST: mysql
-    MYSQL_PORT: 3306
+    PG_HOST: postgres
+    PG_PORT: 5432
     REDIS_HOST: redis
     REDIS_PORT: 6379
   before_script:
