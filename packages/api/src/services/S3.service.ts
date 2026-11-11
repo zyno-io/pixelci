@@ -6,6 +6,10 @@ import { Readable } from 'stream';
 
 import { AppConfig } from '../config';
 
+// Bounds a whole S3 call, body included, so a stalled socket fails the call instead of hanging a build.
+// (requestTimeout/socketTimeout on the smithy handler only warn, or stop applying once headers arrive.)
+const S3_CALL_TIMEOUT_MS = 60_000;
+
 export class S3Service {
     private s3Client: S3Client;
 
@@ -14,8 +18,6 @@ export class S3Service {
             endpoint: appConfig.S3_ENDPOINT,
             region: appConfig.S3_REGION,
             forcePathStyle: true,
-            // Bound hung connections/sockets so a stuck S3 call fails instead of hanging a build forever
-            requestHandler: { connectionTimeout: 10_000, requestTimeout: 60_000 },
             // Only compute/validate checksums when an operation requires them (SDK defaults break some S3-compatible stores)
             requestChecksumCalculation: 'WHEN_REQUIRED',
             responseChecksumValidation: 'WHEN_REQUIRED',
@@ -41,7 +43,7 @@ export class S3Service {
             ContentType: contentType,
             Body: body
         });
-        await this.s3Client.send(command);
+        await this.s3Client.send(command, { abortSignal: AbortSignal.timeout(S3_CALL_TIMEOUT_MS) });
     }
 
     async deleteFile(path: string): Promise<void> {
@@ -66,7 +68,7 @@ export class S3Service {
             Bucket: this.appConfig.S3_BUCKET,
             Key: path
         });
-        const response = await this.s3Client.send(command);
+        const response = await this.s3Client.send(command, { abortSignal: AbortSignal.timeout(S3_CALL_TIMEOUT_MS) });
         assert(response.Body instanceof Readable);
         const body = response.Body as Readable;
         return new Promise<Buffer>((resolve, reject) => {
