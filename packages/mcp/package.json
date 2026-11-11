@@ -1,8 +1,10 @@
 {
     "name": "@zyno-io/pixelci-mcp",
     "version": "0.4.0",
+    "license": "MIT",
     "bin": "./dist/index.js",
     "files": [
+        "LICENSE",
         "dist"
     ],
     "type": "module",

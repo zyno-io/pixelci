@@ -55,3 +55,8 @@ Add to your MCP config (e.g. `claude_desktop_config.json`, or via `claude mcp ad
 
 Then ask your assistant things like _"In PixelCI, which screens on the latest build of app X were
 rejected and what were the comments?"_
+
+## License
+
+The PixelCI MCP server is licensed under the [MIT License](LICENSE). The PixelCI server and web UI are source-available
+under the [PixelCI Source Available License](https://github.com/zyno-io/pixelci/blob/main/LICENSE.md).

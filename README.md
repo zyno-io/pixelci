@@ -91,7 +91,7 @@ The single Docker image runs as either an API/UI server (`node . server:start`, 
 
 ## Contributing & Development
 
-See the [Development Guide](DEVELOPMENT.md) for local setup, running tests, and building Docker images.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, including the [Contributor License Agreement](CLA.md), and the [Development Guide](DEVELOPMENT.md) for local setup, running tests, and building Docker images.
 
 ## Support
 
@@ -99,7 +99,9 @@ For issues, questions, or contributions, please open an issue on [GitHub](https:
 
 ## License
 
-This project is source-available. See [LICENSE.md](LICENSE.md) for details.
+PixelCI is source-available under the PixelCI Source Available License, Version 1.1. It is free for internal use within your organization; see [LICENSE.md](LICENSE.md) for details.
+
+The CLI (`packages/cli`, the `pixelci/cli` container image) and the MCP server (`packages/mcp`) are licensed separately under the MIT License ([CLI](packages/cli/LICENSE), [MCP](packages/mcp/LICENSE)), so you can run them in any CI or development environment.
 
 ---
 

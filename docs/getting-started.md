@@ -79,4 +79,4 @@ Open the PixelCI web UI to review builds, compare screenshots, and approve chang
 
 ## License
 
-PixelCI is **source-available** under the PixelCI Source Available License. It is free for internal use within your organization. A [commercial license](mailto:support@sgnl24.com) is required to offer it as a hosted service, distribute it, or embed it in products sold to others.
+PixelCI is **source-available** under the PixelCI Source Available License, Version 1.1. It is free for internal use within your organization. A [commercial license](mailto:support@sgnl24.com) is required to offer it as a hosted service, distribute it, or embed it in products sold to others. The CLI and the MCP server are licensed separately under the MIT License.
