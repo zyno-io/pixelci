@@ -102,13 +102,14 @@ export class VcsService {
         }
 
         // An unbound app would accept any job token from the instance; refuse before the token reaches the provider.
-        if (app.vcsProjectId == null) {
+        const expectedProjectId = app.vcsProjectId;
+        if (expectedProjectId == null || !Number.isSafeInteger(expectedProjectId) || expectedProjectId <= 0) {
             this.logger.warn(`CI token validation failed: app is not bound to a VCS project (appId=${app.id})`);
             throw new HttpUnauthorizedError('App is not bound to a VCS project');
         }
 
         const provider = this.createProvider(integration);
-        const ciJobData = await provider.validateCiToken(ciToken, app.vcsProjectId);
+        const ciJobData = await provider.validateCiToken(ciToken, expectedProjectId);
 
         if (ciJobData.vcsProjectId !== app.vcsProjectId) {
             this.logger.warn(`Build creation failed: vcsProjectId mismatch (expected=${app.vcsProjectId}, got=${ciJobData.vcsProjectId})`);
