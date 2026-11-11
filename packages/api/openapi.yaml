@@ -307,6 +307,18 @@ paths:
             type: string
             format: uuid
             pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
     post:
       operationId: postBuildsCreate
       tags:
@@ -1082,10 +1094,14 @@ components:
             - string
             - "null"
           format: date-time
+        approvalMinRole:
+          $ref: "#/components/schemas/IApprovalMinRole"
         commitUrlBase:
           type:
             - string
             - "null"
+        canReview:
+          type: boolean
       required:
         - id
         - vcsId
@@ -1094,7 +1110,15 @@ components:
         - defaultBranchId
         - name
         - deletedAt
+        - approvalMinRole
         - commitUrlBase
+        - canReview
+    IApprovalMinRole:
+      enum:
+        - read
+        - write
+        - maintain
+      type: string
     IAppCreateInput:
       type: object
       properties:
@@ -1110,6 +1134,8 @@ components:
           type: number
         defaultBranchName:
           type: string
+        approvalMinRole:
+          $ref: "#/components/schemas/IApprovalMinRole"
       required:
         - name
         - vcsId
@@ -1125,6 +1151,8 @@ components:
           pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         name:
           type: string
+        approvalMinRole:
+          $ref: "#/components/schemas/IApprovalMinRole"
     IVcsProject:
       type: object
       properties:

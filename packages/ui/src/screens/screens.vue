@@ -50,6 +50,11 @@
                 </div>
             </div>
 
+            <div v-if="!loadError && reviewLocked" class="notice review-locked" data-testid="review-locked">
+                <i class="fa fa-lock" aria-hidden="true" />
+                <div class="notice-body">You can view this build but not review it. {{ reviewLockedReason }}</div>
+            </div>
+
             <div v-if="loadError" class="notice danger load-error" role="alert">
                 <i class="fa fa-triangle-exclamation" aria-hidden="true" />
                 <div class="notice-body">
@@ -442,7 +447,22 @@ const removedScreenCount = computed(() => screens.value?.filter(isRemoved).lengt
 const reviewFilterCount = computed(() => reviewableScreens.value.length + removedScreenCount.value);
 // Reviewing is only possible while the build itself is awaiting review; every other build is read-only.
 const isReviewable = computed(() => build.value?.status === 'needs review');
-const showDecisionBar = computed(() => isReviewable.value && reviewableScreens.value.length > 0);
+// Whether this user may review at all (PixelCI admin, or the app's minimum VCS role). The API enforces it too.
+const userCanReview = computed(() => app.value?.canReview === true);
+const canReviewBuild = computed(() => isReviewable.value && userCanReview.value);
+const showDecisionBar = computed(() => canReviewBuild.value && reviewableScreens.value.length > 0);
+// Shown only when the app loaded and says no: a failed app load must not claim the user lacks rights.
+const reviewLocked = computed(() => isReviewable.value && reviewableScreens.value.length > 0 && app.value?.canReview === false);
+const reviewLockedReason = computed(() => {
+    switch (app.value?.approvalMinRole) {
+        case 'maintain':
+            return 'Reviewing needs maintainer access to the project.';
+        case 'write':
+            return 'Reviewing needs write access to the project.';
+        default:
+            return 'Ask a PixelCI admin for access.';
+    }
+});
 const isAnySubmitting = computed(() => !!screens.value?.some(s => s.reviewSubmitting));
 const approvedScreenCount = computed(() => reviewableScreens.value.filter(s => s.currentBuildScreen?.reviewStatus === 'approved').length);
 const rejectedScreenCount = computed(() => reviewableScreens.value.filter(s => s.currentBuildScreen?.reviewStatus === 'rejected').length);
@@ -474,7 +494,7 @@ function showsInReviewFilter(screen: IScreen) {
 }
 
 function canReview(screen: IScreen) {
-    return isReviewable.value && needsReview(screen);
+    return canReviewBuild.value && needsReview(screen);
 }
 
 function hasDiff(screen: IScreen) {
@@ -1061,6 +1081,9 @@ async function submitBuild() {
     // ── Failure ──
     .load-error {
         align-items: center;
+    }
+    .review-locked {
+        margin-bottom: 16px;
     }
 
     // ── Cards ──

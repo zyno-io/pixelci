@@ -1,11 +1,13 @@
-import type { IAppShowResponse, IBuildResponse, IBuildScreenResponse } from '../../../src/openapi-client-generated';
+import type { IApprovalMinRole, IAppShowResponse, IBuildResponse, IBuildScreenResponse } from '../../../src/openapi-client-generated';
 
 export const appId = '00000000-0000-0000-0000-000000000001';
 export const buildId = '00000000-0000-0000-0000-000000000002';
 const branchId = '00000000-0000-0000-0000-000000000003';
 const userId = '00000000-0000-0000-0000-000000000004';
 
-export function createDesignApi(options: { anonymous?: boolean; onboarding?: boolean; admin?: boolean } = {}) {
+export function createDesignApi(
+    options: { anonymous?: boolean; onboarding?: boolean; admin?: boolean; canReview?: boolean; approvalMinRole?: IApprovalMinRole } = {}
+) {
     const app: IAppShowResponse = {
         id: appId,
         name: 'PixelCI UI',
@@ -14,7 +16,9 @@ export function createDesignApi(options: { anonymous?: boolean; onboarding?: boo
         vcsProjectId: 230,
         defaultBranchId: branchId,
         deletedAt: null,
-        commitUrlBase: null
+        approvalMinRole: options.approvalMinRole ?? 'write',
+        commitUrlBase: null,
+        canReview: options.canReview !== false
     };
     const build: IBuildResponse = {
         id: buildId,

@@ -27,6 +27,7 @@ const GITLAB_VCS_ID = 'e3234567-aaaa-bbbb-cccc-000000000003';
 
 const USER_B_ID = 'e3234567-aaaa-bbbb-cccc-0000000000b1';
 const USER_C_ID = 'e3234567-aaaa-bbbb-cccc-0000000000c1';
+const USER_D_ID = 'e3234567-aaaa-bbbb-cccc-0000000000d1';
 
 const AUDIENCE = 'https://pixelci.test';
 const APP_ID = '4321';
@@ -117,6 +118,9 @@ function otherRepos() {
         }
     ];
 }
+
+/** Per-token push permission on REPO_ID (`permissions.push` on /repositories/:id); tokens not listed get push:true. */
+const REPO_PUSH_BY_AUTH: Record<string, boolean> = { 'Bearer ghu_B_new': false };
 
 function repoJson(id: number, fullName: string, push = true) {
     const [, name] = fullName.split('/');
@@ -249,7 +253,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, path: string
         const id = Number(m[1]);
         if (id === MOVED_ID) return json(res, 200, repoJson(id, 'acme/renamed'));
         if (id === NOPUSH_ID) return json(res, 200, repoJson(id, 'acme/readonly', false));
-        if (id === REPO_ID) return json(res, 200, repoJson(id, 'acme/app'));
+        if (id === REPO_ID) return json(res, 200, repoJson(id, 'acme/app', REPO_PUSH_BY_AUTH[auth] ?? true));
         if (ACCESSIBLE_IDS.has(id)) return json(res, 200, repoJson(id, `acme/r${id}`));
         return json(res, 404, { message: 'Not Found' });
     }
@@ -1033,6 +1037,45 @@ async function run() {
         });
         assert(res.json.vcsUrl === false && /write access/i.test(res.json.vcsError), `expected write-access error, got ${JSON.stringify(res.json)}`);
         assert(!calls.some(c => c.method === 'POST'), 'no re-run POST expected');
+    }
+
+    test('approve by a non-admin: push:false → 403 without touching the build; push:true → 200');
+    {
+        const approveAs = async (jwt: string, claims: Record<string, unknown>) => {
+            const created = await createBuild(facade, APP1, claims);
+            status(created, 200, 'create build for non-admin approve');
+            await BuildEntity.query().filter({ id: created.json.id }).patchMany({ status: 'needs review' });
+            const logStart = log.length;
+            const res = await send(facade, 'POST', `/api/apps/${APP1}/builds/${created.json.id}/approve`, {}, jwt);
+            const build = await BuildEntity.query().filter({ id: created.json.id }).findOne();
+            return { res, build, calls: log.slice(logStart) };
+        };
+
+        // USER_B (non-admin, token ghu_B_new) can read acme/app but has push:false
+        const denied = await approveAs(await JWT.generate({ subject: USER_B_ID }), { sha: 'b1'.repeat(20), run_id: '5900', check_run_id: '9900' });
+        status(denied.res, 403, 'non-admin without push');
+        assert(/write access/.test(String(denied.res.body)), `expected a write-access message, got ${denied.res.body}`);
+        assert(denied.build.status === 'needs review', `denied approve changed the build: ${denied.build.status}`);
+        assert(!denied.calls.some(c => c.method === 'POST'), 'no re-run POST expected');
+
+        await createPersistedEntity(UserEntity, {
+            id: USER_D_ID,
+            name: 'User D',
+            createdAt: new Date(),
+            lastLoginAt: new Date(),
+            isAdmin: false,
+            vcsId: GH_VCS_ID,
+            vcsUserId: '6666'
+        });
+        await setSession(USER_D_ID, { accessToken: 'ghu_D', expiresAt: Date.now() + 8 * 3600_000, refreshToken: 'ghr_D', redirectUri: 'x' });
+        const allowed = await approveAs(await JWT.generate({ subject: USER_D_ID }), { sha: 'd1'.repeat(20), run_id: '5910', check_run_id: '9910' });
+        status(allowed.res, 200, 'non-admin with push');
+        assert(allowed.build.status === 'changes approved' && allowed.build.approvedById === USER_D_ID, `status: ${allowed.build.status}`);
+        assert(allowed.res.json.vcsUrl === `${base}/acme/app/actions/runs/5910`, `vcsUrl: ${JSON.stringify(allowed.res.json)}`);
+
+        const show = await get(facade, `/api/apps/${APP1}`, await JWT.generate({ subject: USER_B_ID }));
+        status(show, 200, 'show as USER_B');
+        assert(show.json.canReview === false && show.json.approvalMinRole === 'write', `show as USER_B: ${show.body}`);
     }
 
     test('dedupe: same sha with a new check_run_id while needs review → ciJobId updated');

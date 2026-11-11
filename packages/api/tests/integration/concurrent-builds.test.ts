@@ -1,5 +1,5 @@
 import { HttpRequest } from '@zyno-io/ts-server-foundation';
-import { createPersistedEntity, JWT, TestingHelpers } from '@zyno-io/ts-server-foundation';
+import { createPersistedEntity, JWT, TestingHelpers, uuid7 } from '@zyno-io/ts-server-foundation';
 import { readdirSync, readFileSync } from 'fs';
 import { createServer, IncomingMessage, Server, ServerResponse } from 'http';
 import { mock } from 'node:test';
@@ -221,6 +221,7 @@ async function run() {
     await testConcurrentUploads(facade);
     await testTakeoverDuringUpload(facade);
     await testS3FailureLeavesNoRow(facade);
+    await testReviewRacesApprove(facade);
 
     mockServer.close();
 }
@@ -609,4 +610,74 @@ async function testS3FailureLeavesNoRow(f: Facade) {
         m.mock.restore();
     }
     console.log('  PASS');
+}
+
+async function testReviewRacesApprove(f: Facade) {
+    console.log('\nTest (i): a rejection racing an approval never leaves an approved build with a rejected screen');
+    const jwt = await JWT.generate({ subject: ZERO_ID });
+    const userAuth = (r: HttpRequest) => r.header('authorization', `Bearer ${jwt}`);
+    const ROUNDS = 20;
+    const outcomes = { reviewFirst: 0, approveFirst: 0 };
+
+    for (let round = 1; round <= ROUNDS; round++) {
+        counter++;
+        const build = await createPersistedEntity(BuildEntity, {
+            id: uuid7(),
+            appId: APP_ID,
+            branchId: BRANCH_ID,
+            createdAt: new Date(),
+            commitHash: counter.toString(16).padStart(40, '0'),
+            commitSubject: 'race',
+            commitAuthor: 'Test Author',
+            ciJobId: String(counter * 10),
+            ciTokenHash: null,
+            ciReadTokenHashes: [],
+            status: 'needs review',
+            approvedById: null,
+            approvedAt: null
+        });
+        const screen = await createPersistedEntity(ScreenEntity, { id: uuid7(), appId: APP_ID, name: `race-${round}` });
+        await createPersistedEntity(BuildScreenEntity, {
+            id: uuid7(),
+            appId: APP_ID,
+            buildId: build.id,
+            screenId: screen.id,
+            matchedBuildId: null,
+            approvalBuildId: null,
+            status: 'needs review',
+            storageStatus: 'stored',
+            reviewStatus: null,
+            reviewComment: null,
+            reviewedById: null,
+            reviewedAt: null
+        });
+
+        const [approve, review] = await Promise.all([
+            f.request(userAuth(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${build.id}/approve`))),
+            f.request(
+                userAuth(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${build.id}/screens/${screen.id}/review`)).json({
+                    reviewStatus: 'rejected',
+                    comment: 'race'
+                })
+            )
+        ]);
+        assert(approve.statusCode === 200, `round ${round}: approve returned ${approve.statusCode}: ${approve.body}`);
+        assert(review.statusCode === 200 || review.statusCode === 400, `round ${round}: review returned ${review.statusCode}: ${review.body}`);
+
+        const after = await getBuild(build.id);
+        const rejected = await BuildScreenEntity.query().filter({ buildId: build.id, reviewStatus: 'rejected' }).count();
+        assert(
+            !(after.status === 'changes approved' && rejected > 0),
+            `round ${round}: build is changes approved but has ${rejected} rejected screen(s) (review ${review.statusCode})`
+        );
+        // The two outcomes a serialized order can produce
+        if (review.statusCode === 200) {
+            assert(after.status === 'changes rejected' && rejected === 1, `round ${round}: review won but build is ${after.status}`);
+            outcomes.reviewFirst++;
+        } else {
+            assert(after.status === 'changes approved' && rejected === 0, `round ${round}: approve won but build is ${after.status}`);
+            outcomes.approveFirst++;
+        }
+    }
+    console.log(`  PASS (review first ${outcomes.reviewFirst}, approve first ${outcomes.approveFirst})`);
 }

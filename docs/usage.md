@@ -39,6 +39,10 @@ The screen comparison view shows screenshots from the new build alongside the re
 <img src="/images/screen-list-light.png" alt="Screen list" class="light-only">
 <img src="/images/screen-list-dark.png" alt="Screen list" class="dark-only">
 
+### Who can review
+
+Anyone who can open a build can look at it. Reviewing screens and approving the build needs at least the role the app's admin chose under **Who Can Approve Builds** in the app settings: anyone who can view the app, write access (the default; Developer in GitLab, Write in GitHub), or maintainers only. PixelCI admins can always review. Without the role, the build opens read-only with a notice saying what access is needed.
+
 ### Needs review / All screens
 
 Use the **Needs review** and **All screens** buttons at the top to choose what's listed. **Needs review** shows only screens with visual differences (including new screens, and screens removed from the build), so you can focus on what's changed. It's the default whenever anything needs review. **All screens** lists every screen in the build; unchanged screens appear as collapsed one-line rows, and the chevron reveals their screenshot.

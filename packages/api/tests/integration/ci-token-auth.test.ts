@@ -20,6 +20,7 @@ const TEST_CI_TOKEN = 'glcbt-test-ci-token';
 const PROJECT_PATH = 'group/auth-test';
 
 let mockGitLabPort: number;
+let jobHitCount = 0;
 let mockGitLabServer: Server;
 
 type MockOverride = (req: IncomingMessage, res: ServerResponse) => boolean;
@@ -44,6 +45,7 @@ function createMockGitLab(): Promise<void> {
             const token = req.headers['job-token'] as string | undefined;
 
             if (req.url === '/api/v4/job') {
+                jobHitCount++;
                 if (token !== TEST_CI_TOKEN) {
                     res.writeHead(401);
                     res.end('Unauthorized');
@@ -88,6 +90,7 @@ async function run() {
     await testNoToken(facade);
     await testInvalidToken(facade);
     await testValidTokenWrongProject(facade);
+    await testUnboundApp(facade);
     await testValidToken(facade);
     await testHashBasedAuth(facade);
     await testWrongTokenOnSubsequentCall(facade);
@@ -168,6 +171,35 @@ async function testValidTokenWrongProject(facade: Facade) {
     const response = await facade.request(HttpRequest.POST(`/api/apps/${wrongAppId}/builds`).header('authorization', `Bearer ${TEST_CI_TOKEN}`));
     if (response.statusCode !== 401) {
         throw new Error(`Expected 401 but got ${response.statusCode}: ${response.body}`);
+    }
+    console.log('  PASS');
+}
+
+async function testUnboundApp(facade: Facade) {
+    console.log('\nTest: GitLab app with null vcsProjectId + valid token → 401, provider not called');
+    const unboundAppId = 'e1234567-aaaa-bbbb-cccc-000000000091';
+    const unboundBranchId = 'e1234567-aaaa-bbbb-cccc-000000000092';
+    await createPersistedEntity(AppEntity, {
+        id: unboundAppId,
+        name: 'Unbound App',
+        defaultBranchId: unboundBranchId,
+        projectPath: 'group/unbound',
+        vcsProjectId: null,
+        vcsId: ZERO_ID
+    });
+    await createPersistedEntity(BranchEntity, {
+        id: unboundBranchId,
+        appId: unboundAppId,
+        name: 'main'
+    });
+
+    const hitsBefore = jobHitCount;
+    const response = await facade.request(HttpRequest.POST(`/api/apps/${unboundAppId}/builds`).header('authorization', `Bearer ${TEST_CI_TOKEN}`));
+    if (response.statusCode !== 401) {
+        throw new Error(`Expected 401 but got ${response.statusCode}: ${response.body}`);
+    }
+    if (jobHitCount !== hitsBefore) {
+        throw new Error(`Expected no GitLab /api/v4/job call, but hit count went ${hitsBefore} -> ${jobHitCount}`);
     }
     console.log('  PASS');
 }

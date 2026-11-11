@@ -4,12 +4,49 @@ import { Logger, ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { JWT, r } from '@zyno-io/ts-server-foundation';
 import axios from 'axios';
 
-import type { ICiJobData, IVcsLoginSessionResponse, IVcsProject, IVcsRerunResult, IVcsServiceImpl, IVcsTokenUser } from './Vcs.service';
+import type {
+    ICiJobData,
+    IVcsLoginSessionResponse,
+    IVcsProject,
+    IVcsProjectRole,
+    IVcsRerunResult,
+    IVcsServiceImpl,
+    IVcsTokenUser
+} from './Vcs.service';
 
 import { AppEntity } from '../entities/App.entity';
 import { UserEntity } from '../entities/User.entity';
 import { IGitLabConfig } from '../entities/VcsIntegration.entity';
 import { ensureFreshVcsSession } from './VcsSessionRefresh';
+
+/** GitLab access levels (https://docs.gitlab.com/api/members/#roles). */
+const GITLAB_DEVELOPER = 30;
+const GITLAB_MAINTAINER = 40;
+
+/** Reads `access_level` from a GitLab member-like object; anything malformed counts as no access. */
+function accessLevelOf(value: unknown): number {
+    const level = (value as { access_level?: unknown } | null | undefined)?.access_level;
+    return typeof level === 'number' && Number.isFinite(level) ? level : 0;
+}
+
+/**
+ * `membership_state` is the membership's own state ('awaiting' while pending a seat or approval); `state` is the user
+ * account's. Either must be active (or absent, on older GitLab), and the membership must not have expired.
+ */
+function isActiveMembership(data: unknown): boolean {
+    const m = (data ?? {}) as { membership_state?: unknown; state?: unknown; expires_at?: unknown };
+    if (m.membership_state !== undefined && m.membership_state !== 'active') return false;
+    if (m.state !== undefined && m.state !== 'active') return false;
+    const expiresAt = typeof m.expires_at === 'string' ? Date.parse(m.expires_at) : NaN;
+    return !(expiresAt < Date.now());
+}
+
+/** Maps a GitLab access level to a role. The caller has already seen the project, so the floor is 'read'. */
+export function gitlabRoleFromAccessLevel(level: number): IVcsProjectRole {
+    if (level >= GITLAB_MAINTAINER) return 'maintain';
+    if (level >= GITLAB_DEVELOPER) return 'write';
+    return 'read';
+}
 
 export class VcsGitLabService implements IVcsServiceImpl {
     private logger: ScopedLogger;
@@ -275,6 +312,36 @@ export class VcsGitLabService implements IVcsServiceImpl {
 
     async tokenCanAccessProject(token: string, projectIdentifier: string): Promise<boolean> {
         return this.checkProjectAccess(token, projectIdentifier);
+    }
+
+    /**
+     * `GET /projects/:id` reports direct project membership (`project_access`) and the highest membership in the project's
+     * group or its ancestors (`group_access`). Neither covers access through a group the project (or an ancestor) is shared
+     * with, so below Maintainer we ask `members/all/:user_id`, whose access_level is the user's effective level.
+     */
+    async getUserProjectRole(user: UserEntity, projectIdentifier: string): Promise<IVcsProjectRole> {
+        if (!user.vcsSession) return 'none';
+        // Token renewal and transport/5xx failures propagate: the caller denies without caching a transient error.
+        await this.renewToken(user);
+
+        const projectUrl = `${this.config.url}/api/v4/projects/${encodeURIComponent(projectIdentifier)}`;
+        const headers = { Authorization: `Bearer ${user.vcsSession.accessToken}` };
+        const definitive = (status: number) => status === 200 || status === 401 || status === 403 || status === 404;
+
+        const project = await axios.get(projectUrl, { headers, validateStatus: definitive });
+        if (project.status !== 200) return 'none';
+
+        const permissions = project.data?.permissions;
+        let level = Math.max(accessLevelOf(permissions?.project_access), accessLevelOf(permissions?.group_access));
+
+        // vcsUserId is the OIDC `sub`, which GitLab sets to the numeric user id. Below Maintainer, a shared group may grant more.
+        if (level < GITLAB_MAINTAINER && /^\d+$/.test(user.vcsUserId)) {
+            // A 5xx or transport failure throws (deny, uncached); a definitive 401/403/404 keeps the first result.
+            const member = await axios.get(`${projectUrl}/members/all/${user.vcsUserId}`, { headers, validateStatus: definitive });
+            if (member.status === 200 && isActiveMembership(member.data)) level = Math.max(level, accessLevelOf(member.data));
+        }
+
+        return gitlabRoleFromAccessLevel(level);
     }
 
     private async checkProjectAccess(token: string, projectIdentifier: string): Promise<boolean> {
