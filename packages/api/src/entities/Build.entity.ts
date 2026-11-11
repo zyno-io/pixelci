@@ -4,7 +4,7 @@ import { BaseEntity, DatabaseField, HasDefault, UuidString } from '@zyno-io/ts-s
 @entity.name('builds')
 @entity.index(['appId', 'createdAt'])
 @entity.index(['branchId', 'id'])
-@entity.index(['branchId', 'commitHash'])
+@entity.index(['branchId', 'commitHash'], { unique: true })
 export class BuildEntity extends BaseEntity {
     id!: UuidString & PrimaryKey;
     appId!: UuidString;

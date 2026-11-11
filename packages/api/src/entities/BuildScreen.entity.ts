@@ -2,7 +2,7 @@ import { entity, PrimaryKey } from '@zyno-io/ts-server-foundation';
 import { BaseEntity, DatabaseField, UuidString } from '@zyno-io/ts-server-foundation';
 
 @entity.name('builds_screens')
-@entity.index(['buildId', 'screenId'])
+@entity.index(['buildId', 'screenId'], { unique: true })
 @entity.index(['screenId', 'id'])
 export class BuildScreenEntity extends BaseEntity {
     id!: UuidString & PrimaryKey;
