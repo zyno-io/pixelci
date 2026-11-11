@@ -857,7 +857,7 @@
                 "displayName": "Action Indigo (dark theme)",
                 "cssVar": "--accent",
                 "theme": "dark",
-                "canonical": "#7c74ff",
+                "canonical": "#5b52f0",
                 "oklch": "oklch(63.7% 0.200 282)",
                 "tonalRamp": [
                     "oklch(15% 0.090 282)",
@@ -875,7 +875,7 @@
                 "displayName": "Action Indigo Hover (dark theme)",
                 "cssVar": "--accent-hover",
                 "theme": "dark",
-                "canonical": "#918aff",
+                "canonical": "#675ff5",
                 "oklch": "oklch(69.2% 0.168 284)",
                 "tonalRamp": [
                     "oklch(15% 0.076 284)",
@@ -893,7 +893,7 @@
                 "displayName": "On Indigo (dark theme)",
                 "cssVar": "--accent-text",
                 "theme": "dark",
-                "canonical": "#0c0d10",
+                "canonical": "#ffffff",
                 "oklch": "oklch(15.9% 0.007 271)",
                 "tonalRamp": [
                     "oklch(15% 0.003 271)",
@@ -1657,8 +1657,8 @@
             "name": "Segmented Control",
             "kind": "custom",
             "refersTo": "segmented-button",
-            "description": "Joined toggle buttons in the review header: the screen filter and the zoom. The pressed option takes Screenshot Mat, not indigo; one resting shadow sits under the whole group.",
-            "html": "<div class=\"ds-seg-row\"><div class=\"ds-seg\" role=\"group\" aria-label=\"Screens to show\"><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"true\">Needs review (3)</button><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"false\">All screens (12)</button></div><div class=\"ds-seg\" role=\"group\" aria-label=\"Zoom\"><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"true\">Fit</button><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"false\">100%</button><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"false\">200%</button></div></div>",
+            "description": "Joined toggle buttons in the review header for the screen filter. The zoom beside it is a select. The pressed option takes Screenshot Mat, not indigo; one resting shadow sits under the whole group.",
+            "html": "<div class=\"ds-seg-row\"><div class=\"ds-seg\" role=\"group\" aria-label=\"Screens to show\"><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"true\">Needs review (3)</button><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"false\">All screens (12)</button></div></div>",
             "css": ".ds-seg-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; } .ds-seg { display: inline-flex; flex-shrink: 0; border-radius: var(--radius); box-shadow: var(--shadow-sm); } .ds-seg-btn { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 0; background: var(--surface); color: var(--text-2); font: inherit; font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; transition: background-color 0.12s, color 0.12s; } .ds-seg-btn + .ds-seg-btn { margin-left: -1px; } .ds-seg-btn:first-child { border-radius: var(--radius) 0 0 var(--radius); } .ds-seg-btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; } .ds-seg-btn:hover { background: var(--surface-2); color: var(--text); } .ds-seg-btn[aria-pressed='true'] { background: var(--surface-3); color: var(--text); } .ds-seg-btn:focus-visible { z-index: 1; outline: 2px solid var(--focus); outline-offset: 2px; }"
         },
         {

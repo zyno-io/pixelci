@@ -44,7 +44,9 @@
                         Diff
                     </label>
 
-                    <ScreensSegmented v-model="zoom" label="Zoom" :options="ZOOM_OPTIONS" />
+                    <select v-model="zoom" class="select" aria-label="Screenshot zoom" data-testid="zoom-select">
+                        <option v-for="option in ZOOM_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
+                    </select>
                 </div>
             </div>
 
@@ -307,7 +309,7 @@ const route = useRoute();
 const router = useRouter();
 
 type Filter = 'review' | 'all';
-type Zoom = 'fit' | '100' | '200';
+type Zoom = 'fit-width' | 'fit-height' | '25' | '50' | '100' | '200';
 
 interface IScreen extends IBuildScreenResponse {
     diffImageSrc?: string | false;
@@ -340,31 +342,42 @@ const activeScreenId = ref<string>();
 const announcement = ref('');
 
 // ── Zoom ──
-const ZOOM_OPTIONS: { value: Zoom; label: string; testId: string }[] = [
-    { value: 'fit', label: 'Fit', testId: 'zoom-fit' },
-    { value: '100', label: '100%', testId: 'zoom-100' },
-    { value: '200', label: '200%', testId: 'zoom-200' }
+const ZOOM_OPTIONS: { value: Zoom; label: string }[] = [
+    { value: 'fit-width', label: 'Fit width' },
+    { value: 'fit-height', label: 'Fit height' },
+    { value: '25', label: '25%' },
+    { value: '50', label: '50%' },
+    { value: '100', label: '100%' },
+    { value: '200', label: '200%' }
 ];
 
-// Stored as 'fit' / '100%' / '200%'. Older versions stored a bare number (a share of the column:
-// 25/50/75/100); those, and anything unrecognised, become Fit. A bare '100' must not read as 1:1.
-const zoomStorageKey = `pixelci:zoom:${appId}`;
-const ZOOM_STORED: Record<Zoom, string> = { fit: 'fit', '100': '100%', '200': '200%' };
+// The key is versioned because the meaning of the stored numbers changed. Before the rework, '25', '50',
+// '75' and '100' were shares of the column width (100 was "fit"); now '25'..'200' are true image scale.
+// The two can't be told apart, so new values go under ':v2' and the old key is only read as a fallback,
+// when no v2 value exists yet. Old values: '100%' and '200%' were true scale; anything else was a fit.
+const zoomStorageKey = `pixelci:zoom:${appId}:v2`;
+const legacyZoomStorageKey = `pixelci:zoom:${appId}`;
+const LEGACY_ZOOM: Record<string, Zoom> = { '100%': '100', '200%': '200' };
 function readSavedZoom(): Zoom {
     try {
         const saved = localStorage.getItem(zoomStorageKey);
-        return (Object.keys(ZOOM_STORED) as Zoom[]).find(z => ZOOM_STORED[z] === saved) ?? 'fit';
+        if (saved !== null) return ZOOM_OPTIONS.find(o => o.value === saved)?.value ?? 'fit-width';
+        return LEGACY_ZOOM[localStorage.getItem(legacyZoomStorageKey) ?? ''] ?? 'fit-width';
     } catch {
-        return 'fit';
+        return 'fit-width';
     }
 }
 const zoom = ref<Zoom>(readSavedZoom());
 watch(zoom, v => {
     try {
-        localStorage.setItem(zoomStorageKey, ZOOM_STORED[v]);
+        localStorage.setItem(zoomStorageKey, v);
     } catch {
         // storage unavailable; the choice just won't persist
     }
+    // Panes change size and scroll range; pull each one back to its sibling's offset.
+    nextTick(() => {
+        document.querySelectorAll<HTMLElement>('#screens .image-wrapper').forEach(syncPaneFromSibling);
+    });
 });
 
 // ── Derived state ──
@@ -552,7 +565,7 @@ function syncPaneFromSibling(pane: HTMLElement | null) {
         });
 }
 
-// Record the screenshot's intrinsic width (200% renders at twice it) and re-sync its pane.
+// Record the screenshot's intrinsic width (the percentage zooms scale it) and re-sync its pane.
 function onImageLoad(e: Event) {
     const img = e.target as HTMLImageElement;
     img.style.setProperty('--natural-width', `${img.naturalWidth}px`);
@@ -1305,28 +1318,33 @@ async function submitBuild() {
         align-items: center;
     }
 
-    // Zoom. Fit: scale down to the column, never above natural size. 100%: one image pixel per CSS
-    // pixel. 200%: twice that, kept crisp. In the pixel modes the content box grows to the image so the
-    // pane scrolls and the diff layer (inset: 0) matches the new screenshot exactly.
-    [data-zoom='fit'] img {
+    // Zoom. Fit width: scale down to the column, never above natural size. Fit height: scale down so the
+    // whole screenshot fits the pane's height cap (--pane-max-h, which tracks the measured sticky chrome) and
+    // the column, never above natural size, so the pane never scrolls vertically. 25-200%: true scale of the
+    // image's own pixels; the content box grows to the image so the pane scrolls and the diff layer
+    // (inset: 0) matches the new screenshot exactly. Only 200% is kept crisp.
+    [data-zoom='fit-width'] img {
         width: auto;
         max-width: 100%;
     }
-    [data-zoom='100'],
-    [data-zoom='200'] {
-        .pane-content {
-            width: max-content;
-            min-width: 100%;
-        }
-        img {
-            max-width: none;
-        }
-    }
-    [data-zoom='100'] img {
+    [data-zoom='fit-height'] img {
         width: auto;
+        max-width: 100%;
+        max-height: var(--pane-max-h);
+    }
+    @each $zoom, $scale in ('25': 0.25, '50': 0.5, '100': 1, '200': 2) {
+        [data-zoom='#{$zoom}'] {
+            .pane-content {
+                width: max-content;
+                min-width: 100%;
+            }
+            img {
+                width: calc(var(--natural-width) * #{$scale});
+                max-width: none;
+            }
+        }
     }
     [data-zoom='200'] img {
-        width: calc(var(--natural-width) * 2);
         image-rendering: pixelated;
     }
 

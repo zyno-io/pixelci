@@ -100,19 +100,58 @@ test.describe('Screen Comparisons', () => {
         await expect(unchanged.locator('.image-wrapper img')).toHaveCount(1);
     });
 
-    test('100% zoom renders the new build at its natural width', async ({ page }) => {
-        await page.locator('[data-testid="zoom-100"]').click();
-        await expect(page.locator('[data-testid="zoom-100"]')).toHaveAttribute('aria-pressed', 'true');
+    for (const [value, scale] of [
+        ['100', 1],
+        ['50', 0.5],
+        ['25', 0.25]
+    ] as const) {
+        test(`${value}% zoom renders the new build at ${value}% of its natural width`, async ({ page }) => {
+            await page.getByTestId('zoom-select').selectOption(value);
+            await expect(page.getByTestId('zoom-select')).toHaveValue(value);
 
-        const img = page.locator('.screen').first().locator('.image-wrapper.right img').first();
-        await expect(img).toBeVisible();
-        await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+            const img = page.locator('.screen').first().locator('.image-wrapper.right img').first();
+            await expect(img).toBeVisible();
+            await expect.poll(() => img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
 
-        const { rendered, natural } = await img.evaluate((el: HTMLImageElement) => ({
-            rendered: el.getBoundingClientRect().width,
-            natural: el.naturalWidth
-        }));
-        expect(Math.abs(rendered - natural)).toBeLessThanOrEqual(1);
+            const { rendered, natural } = await img.evaluate((el: HTMLImageElement) => ({
+                rendered: el.getBoundingClientRect().width,
+                natural: el.naturalWidth
+            }));
+            expect(Math.abs(rendered - natural * scale)).toBeLessThanOrEqual(1);
+        });
+    }
+
+    test('fit height shows the whole screenshot inside the pane without vertical scrolling', async ({ page }) => {
+        await page.getByTestId('zoom-select').selectOption('fit-height');
+        const screen = page.locator('.screen').first();
+        const left = screen.locator('.image-wrapper.left');
+        const right = screen.locator('.image-wrapper.right');
+        const leftImg = left.locator('img').first();
+        const rightImg = right.locator('img').first();
+        await expect(leftImg).toBeVisible();
+        await expect(rightImg).toBeVisible();
+        await expect.poll(() => rightImg.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+        await expect.poll(() => leftImg.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0);
+
+        const measure = (pane: typeof left, img: typeof leftImg) =>
+            Promise.all([pane.evaluate(el => ({ client: el.clientHeight, scroll: el.scrollHeight })), img.boundingBox()]);
+        const [leftPane, leftBox] = await measure(left, leftImg);
+        const [rightPane, rightBox] = await measure(right, rightImg);
+
+        expect(rightBox!.height).toBeLessThanOrEqual(rightPane.client + 1);
+        expect(leftBox!.height).toBeLessThanOrEqual(leftPane.client + 1);
+        expect(rightPane.scroll).toBeLessThanOrEqual(rightPane.client + 1);
+        expect(leftPane.scroll).toBeLessThanOrEqual(leftPane.client + 1);
+        expect(Math.abs(leftBox!.width - rightBox!.width)).toBeLessThanOrEqual(1);
+        expect(Math.abs(leftBox!.height - rightBox!.height)).toBeLessThanOrEqual(1);
+    });
+
+    test('zoom selection persists across a reload', async ({ page }) => {
+        const select = page.getByTestId('zoom-select');
+        await expect(select).toHaveValue('fit-width');
+        await select.selectOption('50');
+        await page.reload();
+        await expect(page.getByTestId('zoom-select')).toHaveValue('50');
     });
 
     test('decision bar tracks review progress', async ({ page }) => {

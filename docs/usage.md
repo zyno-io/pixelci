@@ -55,7 +55,13 @@ Enable **Diff** to highlight pixel differences between the reference and new scr
 
 ### Zoom
 
-Choose **Fit**, **100%** or **200%**. **Fit** scales screenshots down to the column; **100%** shows one image pixel per screen pixel; **200%** doubles that. At 100% and 200% each pane scrolls, and the reference and new panes pan together so the same region stays aligned. The choice is remembered per app.
+Pick a zoom from the select in the header: **Fit width**, **Fit height**, **25%**, **50%**, **100%** or **200%**.
+
+- **Fit width** scales each screenshot down to its column and never above its real size. This is the default.
+- **Fit height** scales each screenshot so the whole of it fits the pane's height, never above its real size. A very long page becomes small.
+- **25%** to **200%** are percentages of the screenshot's real size: 100% shows one image pixel per screen pixel, 25% a quarter of its width, 200% double.
+
+When a screenshot is larger than its pane, the pane scrolls, and the reference and new panes pan together so the same region stays aligned. The choice is remembered per app.
 
 ### Keyboard Shortcuts
 

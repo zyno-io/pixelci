@@ -49,9 +49,9 @@ colors:
     text-2-dark: '#aeb2bd'
     text-3-dark: '#8b909c'
     placeholder-dark: '#7a7f8c'
-    accent-dark: '#7c74ff'
-    accent-hover-dark: '#918aff'
-    accent-text-dark: '#0c0d10'
+    accent-dark: '#5b52f0'
+    accent-hover-dark: '#675ff5'
+    accent-text-dark: '#ffffff'
     accent-soft-dark: 'rgba(124, 116, 255, 0.14)'
     focus-dark: '#8b85ff'
     link-dark: '#a7a2ff'
@@ -381,9 +381,9 @@ A cool, near-neutral grey scale carries almost everything; one indigo family mar
 
 ### Primary
 
-- **Action Indigo** (`accent`: #4f46e5 / #7c74ff): fill of the primary button, the checked checkbox and the on state of the admin toggle, the loading spinner, the toast progress bar, the check beside the selected theme, and the skip link.
-- **Action Indigo Hover** (`accent-hover`: #4338ca / #918aff): primary button hover. Darker in light, lighter in dark.
-- **On Indigo** (`accent-text`: #ffffff / #0c0d10): text on the accent fill. White in light; the page black in dark, because the dark accent is light enough to need dark text.
+- **Action Indigo** (`accent`: #4f46e5 / #5b52f0): fill of the primary button, the checked checkbox and the on state of the admin toggle, the loading spinner, the toast progress bar, the check beside the selected theme, and the skip link.
+- **Action Indigo Hover** (`accent-hover`: #4338ca / #675ff5): primary button hover. Darker in light, lighter in dark.
+- **On Indigo** (`accent-text`: #ffffff / #ffffff): text on the accent fill. White in both themes; the dark accent is kept deep enough for white text to reach 4.5:1.
 - **Focus Halo** (`accent-soft`: rgba(79, 70, 229, 0.1) / rgba(124, 116, 255, 0.14)): the 3px ring around a focused input, select, or search field, and the faint glow at the top of the sign-in page.
 - **Focus Ring Indigo** (`focus`: #6366f1 / #8b85ff): the 2px keyboard focus outline on every focusable element, the border of a focused field, and the ring around the active card on the review screen.
 - **Link Indigo** (`link`: #3d37c9 / #a7a2ff): text links, and the hover colour of commit links.
@@ -474,9 +474,9 @@ The build mapping is shared by the build list and the review header. Once a scre
 
 A single column under a full-width top bar. The top bar is sticky, 46px tall (`--header-h`), with 16px side padding. Each page is a centred container (max 1120px, padding 28px 20px 48px) holding a page header and then cards. The page header (title left, actions right, wrapping when tight) is sticky directly under the top bar, with 12px vertical padding, a 20px gap below, and the page background behind it. Lists live inside one card as rows separated by hairlines, not as separate cards. Dialogs are a 520px column with 24px padding and a 16px gap between sections (440px for the submit confirm); form fields stack with a 12px gap and 6px between a label and its control.
 
-The review screen breaks the container: it always runs full width so the two screenshots get every pixel. Its sticky header has three groups on one row with 12px gaps. On the left, the back button and the app name. In the middle, a context line that takes the spare width: branch, short hash with commit subject, and the build's status tag. On the right, the tools: the filter segmented control, the Diff checkbox, and the zoom segmented control. The context line gives way first when space runs out: the commit subject truncates, then disappears once the line is narrower than 420px, then the branch truncates (never below 56px). At 1120px and below the context line moves to its own full-width row under the title and tools.
+The review screen breaks the container: it always runs full width so the two screenshots get every pixel. Its sticky header has three groups on one row with 12px gaps. On the left, the back button and the app name. In the middle, a context line that takes the spare width: branch, short hash with commit subject, and the build's status tag. On the right, the tools: the filter segmented control, the Diff checkbox, and the zoom select. The context line gives way first when space runs out: the commit subject truncates, then disappears once the line is narrower than 420px, then the branch truncates (never below 56px). At 1120px and below the context line moves to its own full-width row under the title and tools.
 
-Screenshot cards stack with a 16px gap. Inside a card the comparison is two equal columns with a 6px gap, each a pane that scrolls on its own. The two panes are locked: scrolling or panning either one moves the other to the same offset on both axes. A pane is never taller than the space between the sticky header and the decision bar (viewport height minus both, minus 196px for the card's own chrome, and never under 200px), so a card brought to the top shows its name, both screenshots, and its review bar at once. Both sticky heights are measured live, because the header and the bar change height as they wrap. Zoom has three modes, remembered per app: Fit scales the screenshot down to the column and never above its natural size; 100% shows one image pixel per CSS pixel; 200% doubles that with pixelated rendering. In the two pixel modes the pane scrolls instead of the image shrinking. An unchanged screen, when expanded, shows one pane with the new screenshot, centred and at most 1280px wide.
+Screenshot cards stack with a 16px gap. Inside a card the comparison is two equal columns with a 6px gap, each a pane that scrolls on its own. The two panes are locked: scrolling or panning either one moves the other to the same offset on both axes. A pane is never taller than the space between the sticky header and the decision bar (viewport height minus both, minus 196px for the card's own chrome, and never under 200px), so a card brought to the top shows its name, both screenshots, and its review bar at once. Both sticky heights are measured live, because the header and the bar change height as they wrap. Zoom is a select with six options, remembered per app: Fit width (the default) scales the screenshot down to the column and never above its natural size; Fit height scales it so the whole screenshot fits the pane's height cap, never above its natural size, so the pane does not scroll vertically; 25%, 50%, 100% and 200% are true scale of the image's own pixels, with pixelated rendering only at 200%. When a scaled screenshot is larger than its pane, the pane scrolls instead of the image shrinking. An unchanged screen, when expanded, shows one pane with the new screenshot, centred and at most 1280px wide.
 
 The decision bar is sticky at the bottom of the review screen (12px vertical padding, 16px above it, gaps of 8px by 20px): progress text on the left, the shortcut legend filling the middle, the one primary button pushed to the right. It appears only while the build is awaiting review and has screens to review. The review header and the decision bar each reach 4px past the content edge so the active card's ring slides under them instead of showing beside them. A card that is scrolled to lands 12px clear of the sticky header and the decision bar.
 
@@ -542,14 +542,14 @@ Controls are small, bordered, and even. They share a 32px height and a 13px medi
 
 ### Segmented control
 
-A row of joined toggle buttons for choosing one of a few views. Used twice, both in the review header: the filter ("Needs review" and "All screens", each with its count in brackets) and the zoom ("Fit", "100%", "200%").
+A row of joined toggle buttons for choosing one of a few views. Used once, in the review header, for the filter ("Needs review" and "All screens", each with its count in brackets). The zoom beside it is a select, not a segmented control, because it has six options.
 
 - **Shape:** one 32px tall, 8px box with the resting shadow under the whole group. Each option has 10px side padding and a Control Outline border; neighbours overlap by 1px so there is a single line between them.
 - **Rest:** Card White fill, Secondary Ink label in the Control type (13px medium).
 - **Hover:** Inset Grey fill, Ink label, over 0.12s.
 - **Pressed:** Screenshot Mat fill, Ink label. The same quiet grey as the active nav link; the chosen option is not indigo.
 - **Focus:** the global outward ring. The focused option is lifted above its neighbours so the ring is not covered by the next option's border.
-- **Semantics:** every option is a real button that reports its pressed state, and the group has a name ("Screens to show", "Zoom").
+- **Semantics:** every option is a real button that reports its pressed state, and the group has a name ("Screens to show").
 
 ### Inputs / Fields
 
