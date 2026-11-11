@@ -1,9 +1,9 @@
 import { appendFileSync } from 'fs';
 
-import type { IBuildStatus } from './api.js';
 import type { ICIJobInfo } from './ci.js';
 
 import { AppError } from './error.js';
+import { PASSING, outcomeFor } from './status.js';
 
 function isGitHubActions(): boolean {
     return process.env.GITHUB_ACTIONS === 'true';
@@ -57,11 +57,11 @@ function escapeAnnotation(message: string): string {
  * Surfaces the final build status in GitHub Actions: an error annotation for statuses that
  * fail the job, and a section in the job summary for every final status.
  */
-export function reportGitHubResult(status: IBuildStatus, buildUrl: string): void {
+export function reportGitHubResult(status: string, buildUrl: string): void {
     if (!isGitHubActions()) return;
 
-    if (status === 'needs review' || status === 'changes rejected' || status === 'failed') {
-        const msg = `Visual changes require review (status: ${status}). See ${buildUrl}`;
+    if (!PASSING.has(status)) {
+        const msg = `${outcomeFor(status).message} (status: ${status}). See ${buildUrl}`;
         console.log(`::error title=PixelCI::${escapeAnnotation(msg)}`);
     }
 

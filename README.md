@@ -68,6 +68,15 @@ jobs:
 
 See the [GitHub Integration Guide](https://docs.pixelci.dev/github-setup.html) for GitHub App setup and detailed configuration.
 
+### CLI options
+
+| Variable                  | Description                                                                                        |
+| ------------------------- | -------------------------------------------------------------------------------------------------- |
+| `PIXELCI_TIMEOUT_MINUTES` | How long to wait for the build result (default `15`, range 1-120)                                  |
+| `PIXELCI_SHARD`           | `<index>/<total>` (1-based) when the suite is split across parallel jobs; requires a recent server |
+
+The CLI exits `0` only for `no changes` and `changes approved`. Every other outcome (needs review, rejected, failed, timeout, API error, unknown status) exits `1`.
+
 ## Web UI
 
 PixelCI provides a web interface for reviewing builds, comparing screenshots, and approving changes. See the [Usage Guide](https://docs.pixelci.dev/usage.html) for a walkthrough with screenshots.

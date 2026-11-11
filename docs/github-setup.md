@@ -131,11 +131,15 @@ Pull requests from forks are not supported, because GitHub does not issue OIDC t
 
 ### 4. CLI Environment Variables
 
-| Variable              | Required | Description                                                            |
-| --------------------- | -------- | ---------------------------------------------------------------------- |
-| `PIXELCI_API_URL`     | Yes      | URL to your PixelCI server; must equal the integration's OIDC audience |
-| `PIXELCI_APP_ID`      | Yes      | App ID from the PixelCI web UI                                         |
-| `PIXELCI_IMAGES_PATH` | No       | Path to screenshots directory (alternative to passing as argument)     |
+| Variable                  | Required | Description                                                                                                                        |
+| ------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `PIXELCI_API_URL`         | Yes      | URL to your PixelCI server; must equal the integration's OIDC audience                                                             |
+| `PIXELCI_APP_ID`          | Yes      | App ID from the PixelCI web UI                                                                                                     |
+| `PIXELCI_IMAGES_PATH`     | No       | Path to screenshots directory (alternative to passing as argument)                                                                 |
+| `PIXELCI_TIMEOUT_MINUTES` | No       | How long to wait for the build result (default `15`, range 1-120)                                                                  |
+| `PIXELCI_SHARD`           | No       | `<index>/<total>` (1-based) when the suite is split across parallel jobs, e.g. `2/4`. Requires a server with sharded-build support |
+
+Exit code `0` only for `no changes` and `changes approved`. Every other outcome exits `1`: `needs review`, `changes rejected`, `failed`, a timeout, an API error, and any status this CLI version doesn't recognise. Transient API errors (network failures, HTTP 408/425/429/5xx) are retried with backoff before failing.
 
 ### 5. How It Works
 
@@ -146,8 +150,8 @@ The CLI then:
 1. Creates a build via the API (validates the OIDC token)
 2. Uploads all PNG files as screens
 3. Triggers build processing
-4. Polls for completion (5-minute timeout)
-5. Exits with code 0 (pass) or 1 (needs review), printing a direct link to the build in PixelCI
+4. Polls for completion (15-minute timeout by default; see `PIXELCI_TIMEOUT_MINUTES`)
+5. Exits with code 0 (pass) or 1 (anything else), printing a direct link to the build in PixelCI
 
 ### 6. Screenshot Naming
 

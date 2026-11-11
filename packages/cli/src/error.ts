@@ -6,5 +6,6 @@ export function handleError(err: unknown): never {
         process.exit(1);
     }
 
-    throw err;
+    console.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
+    process.exit(1);
 }
