@@ -13,6 +13,7 @@ import { IGitHubConfig, VcsIntegrationEntity } from '../../src/entities/VcsInteg
 import { RerunCiJobJob, RERUN_RETRY_DELAY_MS } from '../../src/jobs/RerunCiJob.job';
 import { AppAccessService } from '../../src/services/AppAccess.service';
 import { openVcsSession, sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
+import { createOAuthState, deriveStateKey, OAUTH_STATE_TTL_MS } from '../../src/services/OAuthState';
 import { VcsGitHubService } from '../../src/services/VcsGitHub.service';
 import { configureTestDatabase } from './db-defaults';
 
@@ -20,6 +21,7 @@ process.env.CI = 'true';
 const SETUP_TOKEN = 'gh-api-setup-token-0123456789';
 process.env.SETUP_TOKEN = SETUP_TOKEN;
 process.env.REDIS_PREFIX = 'pixelci_test';
+process.env.PUBLIC_URL = 'https://pixelci.test';
 
 configureTestDatabase();
 
@@ -521,23 +523,57 @@ async function run() {
 
     // 2. login
     test('login URL shape and encoding');
+    let validState: string;
     {
-        const redirect = 'https://pixelci.test/login?x=1&y=a b';
-        const res = await get(
-            facade,
-            `/api/session/providers/${GH_VCS_ID}/login-url?redirectUri=${encodeURIComponent(redirect)}&state=${encodeURIComponent('s t&a=te')}`
-        );
+        const res = await get(facade, `/api/session/providers/${GH_VCS_ID}/login-url?returnTo=${encodeURIComponent('/apps/x?y=1&z=a b')}`);
         status(res, 200, 'login-url');
         const url = new URL(res.json.url);
         assert(`${url.origin}${url.pathname}` === `${base}/login/oauth/authorize`, `bad authorize url ${res.json.url}`);
         assert(url.searchParams.get('client_id') === 'gh-client', 'client_id');
-        assert(url.searchParams.get('redirect_uri') === redirect, `redirect_uri round trip: ${url.searchParams.get('redirect_uri')}`);
-        assert(url.searchParams.get('state') === 's t&a=te', 'state round trip');
+        assert(url.searchParams.get('redirect_uri') === 'https://pixelci.test/login', `redirect_uri: ${url.searchParams.get('redirect_uri')}`);
+        assert(typeof res.json.state === 'string' && res.json.state.length > 0, 'state returned');
+        assert(url.searchParams.get('state') === res.json.state, 'state round trip');
+        assert(res.json.url.includes(`state=${encodeURIComponent(res.json.state)}`), 'state is URL-encoded in the authorize URL');
         assert(!url.searchParams.has('scope'), 'no scope expected');
+        validState = res.json.state;
+
+        status(await get(facade, '/api/session/providers/e3234567-aaaa-bbbb-cccc-00000000ffff/login-url'), 404, 'login-url unknown provider');
     }
 
-    const login = (code: string, setupToken?: string) =>
-        send(facade, 'POST', '/api/session/login', { providerId: GH_VCS_ID, redirectUri: 'https://pixelci.test/login', code, setupToken });
+    const freshState = async (returnTo?: string): Promise<string> => {
+        const q = returnTo === undefined ? '' : `?returnTo=${encodeURIComponent(returnTo)}`;
+        const res = await get(facade, `/api/session/providers/${GH_VCS_ID}/login-url${q}`);
+        status(res, 200, 'login-url (fresh state)');
+        return res.json.state as string;
+    };
+    const loginWithState = (state: string | undefined, code: string, setupToken?: string) =>
+        send(facade, 'POST', '/api/session/login', { code, state, setupToken });
+    const login = async (code: string, setupToken?: string) => loginWithState(await freshState(), code, setupToken);
+
+    test('login state: missing, tampered, expired → 400; valid state round-trips returnTo');
+    {
+        for (const [label, state] of [
+            ['missing', undefined],
+            ['garbage', 'garbage'],
+            ['tampered', `${validState.split('.')[0]}.${Buffer.from('x'.repeat(32)).toString('base64url')}`],
+            ['truncated signature', validState.slice(0, -4)]
+        ] as const) {
+            status(await loginWithState(state, 'good'), 400, `login with ${label} state`);
+        }
+        const key = deriveStateKey({ AUTH_JWT_SECRET: process.env.AUTH_JWT_SECRET ?? 'secret' });
+        const expired = createOAuthState({ providerId: GH_VCS_ID, returnTo: '/' }, key, Date.now() - OAUTH_STATE_TTL_MS - 1000);
+        status(await loginWithState(expired, 'good'), 400, 'login with expired state');
+        const wrongKey = createOAuthState({ providerId: GH_VCS_ID, returnTo: '/' }, 'not-the-key');
+        status(await loginWithState(wrongKey, 'good'), 400, 'login with wrong-key state');
+
+        const res = await loginWithState(await freshState('/apps/x?y=1'), 'good');
+        status(res, 200, 'login with valid state');
+        assert(res.json.returnTo === '/apps/x?y=1', `returnTo not round-tripped: ${res.json.returnTo}`);
+        const evil = await loginWithState(await freshState('//evil.example'), 'good');
+        status(evil, 200, 'login with hostile returnTo');
+        assert(evil.json.returnTo === '/', `hostile returnTo must be sanitised, got ${evil.json.returnTo}`);
+        await UserEntity.query().filter({ vcsId: GH_VCS_ID, vcsUserId: '4242' }).deleteMany();
+    }
 
     test('login without the setup token on a fresh install → user created, NOT admin; wrong token likewise');
     {

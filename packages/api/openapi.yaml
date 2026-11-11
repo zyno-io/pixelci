@@ -41,12 +41,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  url:
-                    type: string
-                required:
-                  - url
+                $ref: "#/components/schemas/ISessionLoginUrlResponse"
       parameters:
         - name: id
           in: path
@@ -55,12 +50,7 @@ paths:
             type: string
             format: uuid
             pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
-        - name: redirectUri
-          in: query
-          required: true
-          schema:
-            type: string
-        - name: state
+        - name: returnTo
           in: query
           required: false
           schema:
@@ -975,6 +965,16 @@ components:
         - id
         - name
         - platform
+    ISessionLoginUrlResponse:
+      type: object
+      properties:
+        url:
+          type: string
+        state:
+          type: string
+      required:
+        - url
+        - state
     IOnboardingStatusResponse:
       type: object
       properties:
@@ -1093,27 +1093,25 @@ components:
     ISessionLoginRequest:
       type: object
       properties:
-        providerId:
-          type: string
-          format: uuid
-          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
-        redirectUri:
-          type: string
         code:
+          type: string
+        state:
           type: string
         setupToken:
           type: string
       required:
-        - providerId
-        - redirectUri
         - code
+        - state
     ISessionLoginResponse:
       type: object
       properties:
         jwt:
           type: string
+        returnTo:
+          type: string
       required:
         - jwt
+        - returnTo
     IAppIndexResponse:
       type: object
       properties:

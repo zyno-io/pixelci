@@ -146,4 +146,23 @@ test.describe('GitHub UI', () => {
         await expect(page.getByRole('button', { name: /Login via Mock GitHub/ })).toBeVisible();
         expect(new URL(page.url()).pathname).toBe('/login');
     });
+
+    test('callback with a code but no stored state shows the error and never posts', async ({ page }) => {
+        const requests = await mockApi(page, { authenticated: false, providers: [GITHUB] });
+        await page.goto('/login?code=abc&state=forged');
+
+        await expect(page.getByRole('alert')).toContainText('Sign-in could not be verified');
+        await expect(page.getByRole('button', { name: /Login via Mock GitHub/ })).toBeVisible();
+        expect(requests.filter(r => r.method === 'POST' && r.path === '/api/session/login')).toHaveLength(0);
+        expect(new URL(page.url()).search).toBe('');
+    });
+
+    test('callback with a code and no state (GitHub install) shows the picker and never posts', async ({ page }) => {
+        const requests = await mockApi(page, { authenticated: false, providers: [GITHUB] });
+        await page.goto('/login?code=abc');
+
+        await expect(page.getByRole('alert')).toContainText('GitHub App installed — sign in to continue.');
+        await expect(page.getByRole('button', { name: /Login via Mock GitHub/ })).toBeVisible();
+        expect(requests.filter(r => r.method === 'POST' && r.path === '/api/session/login')).toHaveLength(0);
+    });
 });

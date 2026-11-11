@@ -14,7 +14,7 @@ Fill in:
 
 - **GitHub App name**: `PixelCI` (or any unique name)
 - **Homepage URL**: `https://<your-pixelci-domain>`
-- **Callback URL**: `https://<your-pixelci-domain>/login` (must match exactly)
+- **Callback URL**: `https://<your-pixelci-domain>/login` (must be exactly `${PUBLIC_URL}/login`, where `PUBLIC_URL` is the server's configured public origin)
 - **Expire user authorization tokens**: On
 - **Request user authorization (OAuth) during installation**: Off
 - **Enable Device Flow**: Off
