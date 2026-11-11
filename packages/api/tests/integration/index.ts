@@ -642,6 +642,23 @@ async function runScenario(facade: TestingFacade, scenarioId: string, scenario: 
         console.log(`Build status: ${buildStatus}`);
     }
 
+    if (scenario.expectedRemoved) {
+        const tombstones = await BuildScreenEntity.query().filter({ buildId, isRemoved: true }).find();
+        const names = await ScreenEntity.query()
+            .filter({ id: { $in: tombstones.map(t => t.screenId) } })
+            .find();
+        const actual = tombstones
+            .map(t => ({
+                name: names.find(n => n.id === t.screenId)?.name,
+                status: t.status
+            }))
+            .sort((x, y) => String(x.name).localeCompare(String(y.name)));
+        const expected = [...scenario.expectedRemoved].sort((x, y) => x.name.localeCompare(y.name));
+        if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            throw new Error(`Expected removed screens ${JSON.stringify(expected)}, but got ${JSON.stringify(actual)}`);
+        }
+    }
+
     if (scenario.shouldApprove) {
         const jwt = await JWT.generate({ subject: ZERO_ID });
 

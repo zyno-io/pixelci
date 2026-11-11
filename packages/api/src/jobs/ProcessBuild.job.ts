@@ -8,6 +8,7 @@ import { AppEntity } from '../entities/App.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
 import { PixelMatchService } from '../services/PixelMatch.service';
+import { computeRemovals } from '../services/RemovedScreens';
 import { S3Service } from '../services/S3.service';
 
 interface IProcessBuildJobData {
@@ -67,7 +68,14 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                   .orderBy('id', 'desc')
                   .findOneOrUndefined();
         const previousBuildScreens = previousBuild ? await BuildScreenEntity.query().filter({ appId, buildId: previousBuild.id }).find() : [];
-        const previousBuildScreensById = keyBy(previousBuildScreens, 'screenId');
+        const previousBuildScreensById = keyBy(
+            previousBuildScreens.filter(bs => !bs.isRemoved),
+            'screenId'
+        );
+        const previousTombstonesById = keyBy(
+            previousBuildScreens.filter(bs => bs.isRemoved),
+            'screenId'
+        );
 
         const referenceBuild = app.defaultBranchId
             ? await BuildEntity.query()
@@ -75,7 +83,9 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                   .orderBy('id', 'desc')
                   .findOneOrUndefined()
             : undefined;
-        const referenceBuildScreens = referenceBuild ? await BuildScreenEntity.query().filter({ appId, buildId: referenceBuild.id }).find() : [];
+        const referenceBuildScreens = referenceBuild
+            ? await BuildScreenEntity.query().filter({ appId, buildId: referenceBuild.id, isRemoved: false }).find()
+            : [];
         const referenceBuildScreensById = keyBy(referenceBuildScreens, 'screenId');
 
         if (previousBuild) logger.info('Found previous build', { id: previousBuild.id });
@@ -84,12 +94,14 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         if (referenceBuild) logger.info('Found reference build', { id: referenceBuild.id });
         else logger.info('No reference build found');
 
-        const screens = currentBuildScreens.map(currentBuildScreen => ({
-            screenId: currentBuildScreen.screenId,
-            currentBuildScreen,
-            previousBuildScreen: previousBuildScreensById[currentBuildScreen.screenId] as BuildScreenEntity | undefined,
-            referenceBuildScreen: referenceBuildScreensById[currentBuildScreen.screenId] as BuildScreenEntity | undefined
-        }));
+        const screens = currentBuildScreens
+            .filter(bs => !bs.isRemoved)
+            .map(currentBuildScreen => ({
+                screenId: currentBuildScreen.screenId,
+                currentBuildScreen,
+                previousBuildScreen: previousBuildScreensById[currentBuildScreen.screenId] as BuildScreenEntity | undefined,
+                referenceBuildScreen: referenceBuildScreensById[currentBuildScreen.screenId] as BuildScreenEntity | undefined
+            }));
 
         screenLoop: for (const screen of screens) {
             // if the previous screen has approved changes, compare the current screen with the already approved changes.
@@ -143,7 +155,9 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             const approvedBuildScreensSinceApprovedReferenceBuild = await BuildScreenEntity.query()
                 .filter({
                     ...(approvalBuildIdForReferenceScreen && { id: { $gt: approvalBuildIdForReferenceScreen } }),
+                    appId,
                     screenId: screen.screenId,
+                    isRemoved: false,
                     status: 'changes approved',
                     approvalBuildId: null // we want the explicitly approved changes, not the ones that inherited approval
                 })
@@ -204,6 +218,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                 .filter({
                     appId,
                     screenId: screen.screenId,
+                    isRemoved: false,
                     reviewStatus: { $ne: null },
                     buildId: { $ne: currentBuild.id },
                     ...(reviewWindowLowerBoundId && { id: { $gt: reviewWindowLowerBoundId } })
@@ -245,14 +260,22 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             }
         }
 
+        // screens in the reference build that this build no longer has get a tombstone (needs review until approved)
+        const tombstones = await computeRemovals({
+            appId,
+            buildId: currentBuild.id,
+            currentScreenIds: screens.map(screen => screen.screenId),
+            referenceRows: referenceBuildScreens,
+            previousTombstonesById
+        });
+        const statuses = [...screens.map(screen => screen.currentBuildScreen.status), ...tombstones.map(tombstone => tombstone.status)];
+
         // there no no changes if all screens are accounted for and have no changes
-        if (screens.every(screen => screen.currentBuildScreen.status === 'no changes')) {
+        if (statuses.every(status => status === 'no changes')) {
             currentBuild.status = 'no changes';
 
             // all changes are approved if the current build screen either has no changes or the changes are previously approved
-        } else if (
-            screens.every(screen => screen.currentBuildScreen.status === 'no changes' || screen.currentBuildScreen.status === 'changes approved')
-        ) {
+        } else if (statuses.every(status => status === 'no changes' || status === 'changes approved')) {
             currentBuild.status = 'changes approved';
         }
 
@@ -266,6 +289,10 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         await this.db.transaction(async txn => {
             txn.add(currentBuild);
             txn.add(...currentBuildScreens);
+            await txn.flush();
+            // replace any tombstones from an earlier processing run of this build
+            await txn.query(BuildScreenEntity).filter({ buildId: currentBuild.id, isRemoved: true }).deleteMany();
+            txn.add(...tombstones);
             await txn.flush();
             await txn
                 .query(BuildScreenEntity)

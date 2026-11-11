@@ -30,6 +30,7 @@ export type IExtBuildScreenResponse = {
     screenId: string;
     name: string;
     status: BuildScreenEntity['status'];
+    removed: boolean;
     reviewStatus: BuildScreenEntity['reviewStatus'];
     reviewComment: string | null;
     reviewedByName: string | null;
@@ -113,6 +114,7 @@ export class ExternalReadController {
                 screenId: buildScreen.screenId,
                 name: screensById[buildScreen.screenId]?.name ?? '',
                 status: buildScreen.status,
+                removed: buildScreen.isRemoved,
                 reviewStatus: buildScreen.reviewStatus,
                 reviewComment: buildScreen.reviewComment,
                 reviewedByName: buildScreen.reviewedById ? (reviewersById[buildScreen.reviewedById]?.name ?? null) : null,
@@ -138,7 +140,7 @@ export class ExternalReadController {
             .findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
 
-        const buildScreen = await BuildScreenEntity.query().filter({ appId, buildId, screenId }).findOneOrUndefined();
+        const buildScreen = await BuildScreenEntity.query().filter({ appId, buildId, screenId, isRemoved: false }).findOneOrUndefined();
         if (!buildScreen) throw new HttpNotFoundError();
 
         const storageBuildId = buildScreen.matchedBuildId ?? buildScreen.buildId;

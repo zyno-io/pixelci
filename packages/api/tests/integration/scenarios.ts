@@ -10,6 +10,8 @@ export interface IScenario {
     }[];
     expectedStatus: BuildEntity['status'];
     shouldApprove: boolean;
+    /** Tombstones (screens removed vs the reference build) expected on the build; checked when set. */
+    expectedRemoved?: { name: string; status: BuildScreenEntity['status'] }[];
 }
 
 export const TestScenarios: IScenario[] = [
@@ -122,7 +124,7 @@ export const TestScenarios: IScenario[] = [
         shouldApprove: false
     },
 
-    // 7: new branch, removes screen 1
+    // 7: new branch, removes screen 1 (a removal needs review)
     {
         branch: 'test-2',
         screens: [
@@ -132,11 +134,12 @@ export const TestScenarios: IScenario[] = [
                 expectedStatus: 'no changes'
             }
         ],
-        expectedStatus: 'no changes',
+        expectedStatus: 'needs review',
+        expectedRemoved: [{ name: 'finder-1', status: 'needs review' }],
         shouldApprove: false
     },
 
-    // 8: another build to the branch with no visual changes
+    // 8: another build to the branch with no visual changes (the removal is still unapproved)
     {
         branch: 'test-2',
         screens: [
@@ -146,11 +149,12 @@ export const TestScenarios: IScenario[] = [
                 expectedStatus: 'no changes'
             }
         ],
-        expectedStatus: 'no changes',
+        expectedStatus: 'needs review',
+        expectedRemoved: [{ name: 'finder-1', status: 'needs review' }],
         shouldApprove: false
     },
 
-    // 9: change screen 2 and approve
+    // 9: change screen 2 and approve (approving also accepts the removal of screen 1)
     {
         branch: 'test-2',
         screens: [
@@ -217,6 +221,72 @@ export const TestScenarios: IScenario[] = [
             }
         ],
         expectedStatus: 'needs review',
+        shouldApprove: false
+    },
+
+    // 14: main adds a screen (never seen before) and approves it
+    {
+        branch: 'main',
+        screens: [
+            {
+                name: 'finder-2',
+                file: 'finder-2-changed.png',
+                expectedStatus: 'no changes'
+            },
+            { name: 'finder-3', file: 'finder-1-changed.png', expectedStatus: 'new' }
+        ],
+        expectedStatus: 'needs review',
+        expectedRemoved: [],
+        shouldApprove: true
+    },
+
+    // 15: main drops that screen: needs review until approved; approving accepts the removal
+    {
+        branch: 'main',
+        screens: [
+            {
+                name: 'finder-2',
+                file: 'finder-2-changed.png',
+                expectedStatus: 'no changes'
+            }
+        ],
+        expectedStatus: 'needs review',
+        expectedRemoved: [{ name: 'finder-3', status: 'needs review' }],
+        shouldApprove: true
+    },
+
+    // 16: the next main build without it passes (the approved removal is not removed again)
+    {
+        branch: 'main',
+        screens: [
+            {
+                name: 'finder-2',
+                file: 'finder-2-changed.png',
+                expectedStatus: 'no changes'
+            }
+        ],
+        expectedStatus: 'no changes',
+        expectedRemoved: [],
+        shouldApprove: false
+    },
+
+    // 17: the screen reappears with a new image: it is new again
+    {
+        branch: 'main',
+        screens: [
+            {
+                name: 'finder-2',
+                file: 'finder-2-changed.png',
+                expectedStatus: 'no changes'
+            },
+            {
+                name: 'finder-3',
+                file: 'finder-2-changed-2.png',
+                expectedStatus: 'new'
+            }
+        ],
+        expectedStatus: 'needs review',
+        expectedRemoved: [],
         shouldApprove: false
     }
 ];
