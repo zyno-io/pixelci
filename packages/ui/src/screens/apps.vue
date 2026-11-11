@@ -5,21 +5,23 @@
         <template v-else>
             <div class="header">
                 <h1>Apps</h1>
-                <button v-if="store.isAdmin" class="btn primary" @click="showCreateForm">Add App</button>
+                <button v-if="store.isAdmin" type="button" class="btn primary" @click="showCreateForm">Add App</button>
             </div>
 
             <div v-if="apps?.length" class="search-bar">
-                <i class="fa fa-magnifying-glass" />
+                <i class="fa fa-magnifying-glass" aria-hidden="true" />
                 <input class="input" v-model="search" type="text" placeholder="Search apps..." aria-label="Search apps" />
             </div>
 
             <div class="app-list card">
                 <div v-if="!apps?.length" class="empty">
-                    <i class="fa fa-cube" />
+                    <i class="fa fa-cube" aria-hidden="true" />
                     <h2>No apps</h2>
+                    <p v-if="store.isAdmin">Add an app to start comparing screenshots.</p>
+                    <p v-else>An administrator needs to add an app, or you may not have access to any yet.</p>
                 </div>
                 <div v-else-if="!visibleApps.length" class="empty">
-                    <i class="fa fa-magnifying-glass" />
+                    <i class="fa fa-magnifying-glass" aria-hidden="true" />
                     <h2>No matching apps</h2>
                 </div>
                 <div
@@ -49,7 +51,7 @@
         </template>
 
         <!-- Create App Modal -->
-        <VfModal v-if="showCreate" @close="closeCreateModal">
+        <A11yModal v-if="showCreate" @close="closeCreateModal">
             <!-- Post-creation CI setup view -->
             <div v-if="createdApp" class="ci-setup">
                 <h2>App created!</h2>
@@ -60,7 +62,7 @@
 
                 <div class="ci-snippet-header">
                     <span />
-                    <button class="btn" type="button" @click="copyCiSnippet"><i class="fa fa-copy" /> Copy</button>
+                    <button class="btn" type="button" @click="copyCiSnippet"><i class="fa fa-copy" aria-hidden="true" /> Copy</button>
                 </div>
                 <pre><code>{{ ciSnippet }}</code></pre>
 
@@ -84,30 +86,38 @@
                         </select>
                     </label>
 
-                    <label>
-                        Project
-                        <input
-                            class="input"
-                            v-model="projectSearch"
-                            type="text"
-                            placeholder="Search by name or paste a GitHub/GitLab URL…"
-                            :disabled="!createForm.vcsId"
-                            @input="onProjectSearchInput"
-                        />
+                    <div class="field project-field">
+                        <label>
+                            Project
+                            <input
+                                class="input"
+                                v-model="projectSearch"
+                                type="text"
+                                placeholder="Search by name or paste a GitHub/GitLab URL…"
+                                :disabled="!createForm.vcsId"
+                                @input="onProjectSearchInput"
+                            />
+                        </label>
                         <p v-if="searchError" class="search-error" role="alert">{{ searchError }}</p>
                         <div v-if="projectResults.length" class="project-results">
-                            <div v-for="project in projectResults" :key="project.id" class="project-result" @click="selectProject(project)">
+                            <button
+                                v-for="project in projectResults"
+                                :key="project.id"
+                                type="button"
+                                class="project-result"
+                                @click="selectProject(project)"
+                            >
                                 <span class="project-name">{{ project.name }}</span>
                                 <span class="project-path">{{ project.projectPath }}</span>
-                            </div>
+                            </button>
                         </div>
                         <div v-if="selectedProject" class="selected-project">
                             <span>{{ selectedProject.projectPath }}</span>
-                            <button type="button" class="btn ghost icon sm clear-btn" @click="clearProject">
-                                <i class="fa fa-times" />
+                            <button type="button" class="btn ghost icon sm clear-btn" aria-label="Clear selected project" @click="clearProject">
+                                <i class="fa fa-times" aria-hidden="true" />
                             </button>
                         </div>
-                    </label>
+                    </div>
 
                     <label>
                         App Name
@@ -127,10 +137,10 @@
                     </div>
                 </form>
             </div>
-        </VfModal>
+        </A11yModal>
 
         <!-- Edit App Modal -->
-        <VfModal v-if="editApp" @close="closeEditModal">
+        <A11yModal v-if="editApp" @close="closeEditModal">
             <div class="form-modal">
                 <h2>App Settings</h2>
 
@@ -139,8 +149,8 @@
                         App ID
                         <div class="input-with-button">
                             <input class="input" :value="editApp.id" type="text" readonly />
-                            <button type="button" class="btn input-button" @click="copyAppId">
-                                <i class="fa fa-copy" />
+                            <button type="button" class="btn input-button" aria-label="Copy app ID" @click="copyAppId">
+                                <i class="fa fa-copy" aria-hidden="true" />
                             </button>
                         </div>
                     </label>
@@ -176,18 +186,18 @@
                 <div class="ci-snippet">
                     <div class="ci-snippet-header">
                         <span class="ci-snippet-label">{{ editCiFileName }}</span>
-                        <button class="btn" type="button" @click="copyEditCiSnippet"><i class="fa fa-copy" /> Copy</button>
+                        <button class="btn" type="button" @click="copyEditCiSnippet"><i class="fa fa-copy" aria-hidden="true" /> Copy</button>
                     </div>
                     <pre><code>{{ editCiSnippet }}</code></pre>
                 </div>
             </div>
-        </VfModal>
+        </A11yModal>
     </div>
 </template>
 
 <script lang="ts" setup>
 import { dataFrom, dataFromAsync } from '@zyno-io/openapi-client-codegen';
-import { handleErrorAndAlert, showConfirm, showToast, VfModal } from '@zyno-io/vue-foundation';
+import { handleErrorAndAlert, showConfirm, showToast } from '@zyno-io/vue-foundation';
 import { debounce } from 'lodash';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -202,6 +212,7 @@ import {
     type IVcsIntegrationListResponse,
     type IVcsProject
 } from '@/openapi-client-generated';
+import A11yModal from '@/shared/components/a11y-modal.vue';
 import LoaderModal from '@/shared/components/loader-modal.vue';
 import { useStore } from '@/store';
 
@@ -474,18 +485,19 @@ function closeEditModal() {
 
 async function submitEdit() {
     if (!editApp.value) return;
+    const appId = editApp.value.id!;
     try {
         isSubmitting.value = true;
         const updated = await dataFromAsync(
             AppsApi.putAppsUpdate({
-                path: { id: editApp.value.id! },
+                path: { id: appId },
                 body: {
                     name: editForm.name,
                     defaultBranchId: editForm.defaultBranchId || undefined
                 }
             })
         );
-        const idx = apps.value?.findIndex(a => a.id === editApp.value!.id);
+        const idx = apps.value?.findIndex(a => a.id === appId);
         if (idx !== undefined && idx >= 0 && apps.value) {
             apps.value[idx] = updated;
         }
@@ -562,6 +574,9 @@ async function deleteApp() {
     .app:hover {
         background: var(--surface-hover);
     }
+    .app:focus-visible {
+        outline-offset: -2px;
+    }
     .app-name {
         min-width: 0;
         overflow-wrap: anywhere;
@@ -575,6 +590,9 @@ async function deleteApp() {
         font-size: 12px;
         white-space: nowrap;
     }
+}
+.project-field {
+    position: relative;
 }
 .project-results {
     position: absolute;
@@ -598,9 +616,19 @@ async function deleteApp() {
 .project-result {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: 2px;
+    width: 100%;
     padding: 8px 10px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
     cursor: pointer;
+}
+.project-result:focus-visible {
+    outline-offset: -2px;
 }
 .project-result:hover {
     background: var(--surface-hover);

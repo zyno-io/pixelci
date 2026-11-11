@@ -96,7 +96,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
         await expect(screen.locator('.image-wrapper.right img')).toBeVisible();
         await page.getByTestId('diff-check').check();
         await expect(screen.locator('.diff img')).toBeVisible();
-        await page.getByTestId('zoom-select').selectOption('50');
+        await page.getByTestId('zoom-200').click();
+        await expect(page.getByTestId('zoom-200')).toHaveAttribute('aria-pressed', 'true');
         const widths = await screen.locator('.image-wrapper img').evaluateAll(images => images.map(image => image.getBoundingClientRect().width));
         expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(1);
         await screen.getByPlaceholder('Leave a comment (optional)').fill('Looks good');

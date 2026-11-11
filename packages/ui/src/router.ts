@@ -6,6 +6,7 @@ import AdminUsers from './screens/admin/users.vue';
 import AdminVcsIntegrations from './screens/admin/vcs-integrations.vue';
 import Builds from './screens/builds.vue';
 import Login from './screens/login.vue';
+import NotFound from './screens/not-found.vue';
 import Screens from './screens/screens.vue';
 
 const routes: RouteRecordRaw[] = [
@@ -41,12 +42,30 @@ const routes: RouteRecordRaw[] = [
         path: '/admin/users',
         name: 'admin-users',
         component: AdminUsers
+    },
+    {
+        path: '/:pathMatch(.*)*',
+        name: 'not-found',
+        component: NotFound
     }
 ];
 
 const router = createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
     routes
+});
+
+const TITLES: Record<string, string> = {
+    apps: 'Apps',
+    builds: 'Builds',
+    'admin-users': 'Users',
+    'admin-vcs-integrations': 'VCS Integrations',
+    'not-found': 'Not found'
+};
+
+router.afterEach(to => {
+    const title = typeof to.name === 'string' ? TITLES[to.name] : undefined;
+    document.title = title ? `${title} · PixelCI` : 'PixelCI';
 });
 
 export default router;

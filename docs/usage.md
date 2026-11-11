@@ -25,6 +25,7 @@ The build list shows all builds for an app, grouped by branch. Each build displa
 - **Needs Review** — new visual changes detected that need approval
 - **No Changes** — all screenshots match approved baselines
 - **Changes Approved** — all changes in this build have been approved
+- **Changes Rejected** — a reviewer rejected one or more screens
 
 <img src="/images/build-list-light.png" alt="Build list" class="light-only">
 <img src="/images/build-list-dark.png" alt="Build list" class="dark-only">
@@ -38,40 +39,55 @@ The screen comparison view shows screenshots from the new build alongside the re
 <img src="/images/screen-list-light.png" alt="Screen list" class="light-only">
 <img src="/images/screen-list-dark.png" alt="Screen list" class="dark-only">
 
-### Show Changes
+### Needs review / All screens
 
-Use the **Show Changes** toggle to filter the view to only screens that have visual differences. This helps you focus on what's changed without scrolling through unchanged screens.
-
-### Show Diff
-
-Enable **Show Diff** to highlight pixel differences between the reference and new screenshots. Changed pixels are overlaid on the image so you can see exactly what moved or changed.
-
-<img src="/images/screen-diff-light.png" alt="Screen list with diff mode" class="light-only">
-<img src="/images/screen-diff-dark.png" alt="Screen list with diff mode" class="dark-only">
-
-### All Screens
-
-Uncheck **Show Changes** to view every screen in the build, including unchanged ones.
+Use the **Needs review** and **All screens** buttons at the top to choose what's listed. **Needs review** shows only screens with visual differences (including new screens, and screens removed from the build), so you can focus on what's changed. It's the default whenever anything needs review. **All screens** lists every screen in the build; unchanged screens appear as collapsed one-line rows, and the chevron reveals their screenshot.
 
 <img src="/images/screen-all-light.png" alt="All screens" class="light-only">
 <img src="/images/screen-all-dark.png" alt="All screens" class="dark-only">
 
+### Diff
+
+Enable **Diff** to highlight pixel differences between the reference and new screenshots. Changed pixels are overlaid on the new screenshot so you can see exactly what moved or changed. Besides the checkbox, you can **Shift+click** a screenshot to toggle the diff for every screen, or **hold D** to flash it while you look. New screens have no reference, so they have no diff.
+
+<img src="/images/screen-diff-light.png" alt="Screen list with diff mode" class="light-only">
+<img src="/images/screen-diff-dark.png" alt="Screen list with diff mode" class="dark-only">
+
+### Zoom
+
+Choose **Fit**, **100%** or **200%**. **Fit** scales screenshots down to the column; **100%** shows one image pixel per screen pixel; **200%** doubles that. At 100% and 200% each pane scrolls, and the reference and new panes pan together so the same region stays aligned. The choice is remembered per app.
+
+### Keyboard Shortcuts
+
+| Key           | Action                    |
+| ------------- | ------------------------- |
+| **J** / **K** | Next / previous screen    |
+| **A**         | Approve the active screen |
+| **R**         | Reject the active screen  |
+| **D** (hold)  | Flash the diff            |
+
+Shortcuts are paused while you type in a comment box or have a dialog open.
+
 ## Reviewing Changes
 
-When a build needs review, every changed screen has its own controls beneath the comparison: a comment box and **Approve** / **Reject** buttons.
+When a build is in **Needs Review**, every screen that needs review has its own controls beneath the comparison: a comment box and **Approve** / **Reject** buttons. Builds in any other status are read-only.
 
-- **Approve** or **Reject** each screen to record your decision. Type an optional comment first — it's saved together with the decision.
+- **Approve** or **Reject** each screen to record your decision. Type an optional comment first; it's saved together with the decision.
 - Once you act on a screen it **collapses** so you can focus on what you haven't seen yet. Click it to expand again and change your decision.
 - Reviewed screens show an **Approved** or **Rejected** badge, and the comment appears in the collapsed summary.
+- Screens removed from the build are listed with a **Removed** tag. They have nothing to review.
 
 ### Approving the Build
 
-The **Approve** button at the bottom of the build is enabled only once **every changed screen has been approved** — a counter shows your progress (e.g. "3 of 5 screens approved"). A rejected screen blocks approval until you resolve it.
+The bar at the bottom of the screen shows your progress (e.g. "2 of 5 reviewed") and the submit button. You don't have to review every screen first: **any screen you haven't reviewed is approved when you submit**, and the confirmation tells you how many. The button reads **Approve build**, or **Submit review** once you've rejected a screen.
 
-Once the build is approved:
+If you've rejected any screen, submitting marks the build **Changes Rejected** and the CI check stays failed. Nothing is promoted to the baseline, and you're returned to the build list.
+
+Otherwise the build is approved:
 
 - The build status changes to **Changes Approved**
-- The failed CI job is automatically re-run via the GitLab or GitHub API, and you're redirected to the pipeline or workflow run page. (On GitHub, PixelCI re-runs the specific failed job using your token, so you need write access; see [GitHub Setup](/github-setup#_8-approve-and-re-run).)
+- The failed CI job is automatically re-run via the GitLab or GitHub API (approving re-runs the CI job), and you're redirected to the pipeline or workflow run page. (On GitHub, PixelCI re-runs the specific failed job using your token, so you need write access; see [GitHub Setup](/github-setup#_8-approve-and-re-run).)
+- Screens removed from the build leave the baseline
 - Future builds on the same branch will compare against this build
 - Other branches that produce the same visual changes will be automatically approved (cross-branch approval matching)
 
@@ -86,6 +102,7 @@ Every build moves through these statuses:
 ```
 draft → processing → no changes
                    → needs review → changes approved (after approval)
+                                  → changes rejected (a screen was rejected)
                    → changes approved (auto-approved)
 ```
 
@@ -96,6 +113,7 @@ draft → processing → no changes
 | **no changes**       | All screenshots match — nothing to review                    |
 | **needs review**     | Visual differences found — human review required             |
 | **changes approved** | All changes approved (manually or via cross-branch matching) |
+| **changes rejected** | A reviewer rejected one or more screens when submitting      |
 
 ## How Comparisons Work
 

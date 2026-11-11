@@ -70,13 +70,14 @@ colorSchemes.forEach(colorScheme => {
             await takeScreenshot(page, 'Screen List - Diff Mode');
 
             await page.locator('input[data-testid="diff-check"]').uncheck();
-            await page.locator('input[data-testid="changes-check"]').uncheck();
-            await page.locator('.screen').last().locator('.image-wrapper img').waitFor({ timeout: 10000 });
+            await page.locator('[data-testid="filter-all"]').click();
+            // Unchanged screens are collapsed one-line rows; wait for every screenshot to finish loading.
+            await expect(page.locator('.screen .loading')).toHaveCount(0, { timeout: 10000 });
             await takeFullPageScreenshot(page, 'Screen List - All Screens');
 
             // ── Review states ──
-            // Re-enable the changes view so the per-screen review controls are available.
-            await page.locator('input[data-testid="changes-check"]').check();
+            // Back to the Needs review filter so the per-screen review controls are available.
+            await page.locator('[data-testid="filter-review"]').click();
 
             // Submits a review for the named screen. A previous (retried) run may have left the
             // screen already reviewed and collapsed, so expand it first to reach the review bar.

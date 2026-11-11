@@ -2,6 +2,16 @@
     <div id="builds">
         <LoaderModal v-if="isLoading" />
 
+        <div v-else-if="!app && !isLoadingBuilds" class="load-error">
+            <div class="notice danger" role="alert">
+                <i class="fa fa-triangle-exclamation" aria-hidden="true" />
+                <div class="notice-body">This app couldn't be loaded. It may have been removed, or you may not have access.</div>
+                <div class="notice-actions">
+                    <RouterLink to="/apps" class="btn">Back to Apps</RouterLink>
+                </div>
+            </div>
+        </div>
+
         <template v-else>
             <div v-if="app" class="header">
                 <div class="flex gap-4 items-center">
@@ -10,16 +20,23 @@
                     </RouterLink>
                     <h1>{{ app.name }}</h1>
                 </div>
-                <select class="select" v-model="selectedBranchId" aria-label="Branch">
-                    <option value="">All Branches</option>
-                    <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
-                </select>
+                <div class="flex gap-4 items-center">
+                    <span v-if="branchesFailed" class="muted branches-failed" role="alert">Branches couldn't be loaded.</span>
+                    <select class="select" v-model="selectedBranchId" aria-label="Branch">
+                        <option value="">All Branches</option>
+                        <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>
+                    </select>
+                </div>
             </div>
 
             <div class="build-list card">
                 <LoaderModal v-if="isLoadingBuilds" />
+                <div v-else-if="buildsFailed" class="notice danger" role="alert">
+                    <i class="fa fa-triangle-exclamation" aria-hidden="true" />
+                    <div class="notice-body">Builds couldn't be loaded. Try again, or pick another branch.</div>
+                </div>
                 <div v-else-if="!builds.length" class="empty">
-                    <i class="fa fa-magnifying-glass" />
+                    <i class="fa fa-magnifying-glass" aria-hidden="true" />
                     <h2>No builds found{{ selectedBranchId && ' for this branch' }}</h2>
                 </div>
                 <div
@@ -32,7 +49,7 @@
                     @keydown.enter.self="viewBuild(build)"
                 >
                     <div>
-                        <label><i class="fa fa-code-branch fa-sm fa-fw" /></label>
+                        <i class="fa fa-code-branch fa-sm fa-fw meta-icon" aria-hidden="true" />
                         <span>{{ build.branchName }}</span>
                     </div>
                     <a
@@ -43,25 +60,25 @@
                         v-tooltip="build.commitSubject"
                         @click.stop
                     >
-                        <label><i class="fa fa-code-commit fa-sm fa-fw" /></label>
+                        <i class="fa fa-code-commit fa-sm fa-fw meta-icon" aria-hidden="true" />
                         <div class="flex flex-col w-full">
                             <span class="font-mono">{{ build.commitHash?.substring(0, 8) }}</span>
                             <span class="truncate">{{ build.commitSubject }}</span>
                         </div>
                     </a>
                     <div v-else class="pr-6" v-tooltip="build.commitSubject">
-                        <label><i class="fa fa-code-commit fa-sm fa-fw" /></label>
+                        <i class="fa fa-code-commit fa-sm fa-fw meta-icon" aria-hidden="true" />
                         <div class="flex flex-col w-full">
                             <span class="font-mono">{{ build.commitHash?.substring(0, 8) }}</span>
                             <span class="truncate">{{ build.commitSubject }}</span>
                         </div>
                     </div>
                     <div>
-                        <label><i class="fa fa-user fa-sm fa-fw" /></label>
+                        <i class="fa fa-user fa-sm fa-fw meta-icon" aria-hidden="true" />
                         <span>{{ build.commitAuthor.replace(/<.*?>/, '') }}</span>
                     </div>
                     <div>
-                        <label><i class="fa fa-calendar-days fa-sm fa-fw" /></label>
+                        <i class="fa fa-calendar-days fa-sm fa-fw meta-icon" aria-hidden="true" />
                         <div class="flex flex-col">
                             <span class="build-date">{{ $filters.dateTime(build.createdAt, 'M/d/yy H:mm') }}</span>
                         </div>
@@ -70,19 +87,23 @@
                         <div class="status tag" :class="getStatusStyle(build.status)">
                             <div class="flex items-center gap-2">
                                 <!-- approved -->
-                                <i class="fa fa-check fa-sm fa-fw" v-if="build.status === 'changes approved'" />
+                                <i class="fa fa-check fa-sm fa-fw" v-if="build.status === 'changes approved'" aria-hidden="true" />
                                 <!-- processing -->
-                                <i class="fa fa-stopwatch fa-sm fa-fw" v-if="build.status === 'processing'" />
+                                <i class="fa fa-stopwatch fa-sm fa-fw" v-if="build.status === 'processing'" aria-hidden="true" />
                                 <!-- needs review -->
-                                <i class="fa fa-magnifying-glass fa-sm fa-fw text-inherit" v-if="build.status === 'needs review'" />
+                                <i
+                                    class="fa fa-magnifying-glass fa-sm fa-fw text-inherit"
+                                    v-if="build.status === 'needs review'"
+                                    aria-hidden="true"
+                                />
                                 <!-- draft -->
-                                <i class="fa fa-pen-to-square fa-sm fa-fw" v-if="build.status === 'draft'" />
+                                <i class="fa fa-pen-to-square fa-sm fa-fw" v-if="build.status === 'draft'" aria-hidden="true" />
                                 <!-- no changes -->
-                                <i class="fa fa-check fa-sm fa-fw" v-if="build.status === 'no changes'" />
+                                <i class="fa fa-check fa-sm fa-fw" v-if="build.status === 'no changes'" aria-hidden="true" />
                                 <!-- failed -->
-                                <i class="fa fa-xmark fa-sm fa-fw" v-if="build.status === 'failed'" />
+                                <i class="fa fa-xmark fa-sm fa-fw" v-if="build.status === 'failed'" aria-hidden="true" />
                                 <!-- rejected -->
-                                <i class="fa fa-xmark fa-sm fa-fw" v-if="build.status === 'changes rejected'" />
+                                <i class="fa fa-xmark fa-sm fa-fw" v-if="build.status === 'changes rejected'" aria-hidden="true" />
                                 <span>{{ getStatusText(build.status) }}</span>
                             </div>
                         </div>
@@ -95,7 +116,7 @@
 
 <script lang="ts" setup>
 import { dataFrom } from '@zyno-io/openapi-client-codegen';
-import { handleErrorAndAlert } from '@zyno-io/vue-foundation';
+import { handleError } from '@zyno-io/vue-foundation';
 import { onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -109,17 +130,26 @@ const store = useStore();
 
 const app = ref<IAppShowResponse>();
 const branches = ref<IBranchResponse[]>();
+const branchesFailed = ref(false);
 const selectedBranchId = ref<string>('');
 
 const builds = ref<IBuildResponse[]>([]);
 const isLoading = ref(true);
 const isLoadingBuilds = ref(true);
+const buildsFailed = ref(false);
 
 onMounted(() => {
     if (store.selectedBranchId) selectedBranchId.value = store.selectedBranchId;
     loadBranches();
     loadBuilds();
 });
+
+watch(
+    () => app.value?.name,
+    name => {
+        if (name) document.title = `${name} · PixelCI`;
+    }
+);
 
 watch(selectedBranchId, () => {
     store.selectedBranchId = selectedBranchId.value;
@@ -131,7 +161,8 @@ async function loadBranches() {
         const branchesResponse = await BranchesApi.getBranchesIndex({ path: { appId: String(route.params.id) } });
         branches.value = dataFrom(branchesResponse);
     } catch (err) {
-        handleErrorAndAlert(err);
+        handleError(err);
+        branchesFailed.value = true;
     } finally {
         isLoading.value = false;
     }
@@ -140,6 +171,7 @@ async function loadBranches() {
 async function loadBuilds() {
     try {
         isLoadingBuilds.value = true;
+        buildsFailed.value = false;
 
         const appResponse = await AppsApi.getAppsShow({ path: { id: String(route.params.id) } });
         app.value = dataFrom(appResponse);
@@ -149,7 +181,9 @@ async function loadBuilds() {
         });
         builds.value = dataFrom(buildsResponse);
     } catch (err) {
-        handleErrorAndAlert(err);
+        handleError(err);
+        buildsFailed.value = true;
+        builds.value = [];
     } finally {
         isLoadingBuilds.value = false;
     }
@@ -182,7 +216,7 @@ function getStatusStyle(status: IBuildResponse['status']) {
 function getStatusText(status: IBuildResponse['status']) {
     switch (status) {
         case 'changes approved':
-            return 'Approved';
+            return 'Changes Approved';
         case 'processing':
             return 'Processing';
         case 'needs review':
@@ -194,7 +228,7 @@ function getStatusText(status: IBuildResponse['status']) {
         case 'failed':
             return 'Failed';
         case 'changes rejected':
-            return 'Rejected';
+            return 'Changes Rejected';
         default:
             return status;
     }
@@ -208,7 +242,7 @@ function getStatusText(status: IBuildResponse['status']) {
     }
     .build {
         display: grid;
-        grid-template-columns: minmax(100px, 0.8fr) minmax(0, 1.8fr) minmax(100px, 1fr) 130px 110px;
+        grid-template-columns: minmax(100px, 0.8fr) minmax(0, 1.8fr) minmax(100px, 1fr) 130px 140px;
         align-items: center;
         gap: 16px;
         min-height: 72px;
@@ -221,6 +255,18 @@ function getStatusText(status: IBuildResponse['status']) {
     }
     .build:hover {
         background: var(--surface-hover);
+    }
+    .build:focus-visible {
+        outline-offset: -2px;
+    }
+    .load-error .notice {
+        align-items: center;
+    }
+    .branches-failed {
+        font-size: 12px;
+    }
+    .build-list > .notice {
+        margin: 16px;
     }
     .build > div,
     .build > a {
@@ -236,7 +282,7 @@ function getStatusText(status: IBuildResponse['status']) {
         color: var(--text-2);
         font-size: 12px;
     }
-    .build label {
+    .build .meta-icon {
         color: var(--text-3);
     }
     .commit-link {

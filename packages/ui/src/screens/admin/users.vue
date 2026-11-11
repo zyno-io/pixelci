@@ -9,7 +9,7 @@
 
             <div class="list card admin-list">
                 <div v-if="!users?.length" class="empty">
-                    <i class="fa fa-users" />
+                    <i class="fa fa-users" aria-hidden="true" />
                     <h2>No users</h2>
                 </div>
                 <div v-for="user in users" :key="user.id" class="item">
@@ -33,6 +33,7 @@
                                 <span class="toggle-dot" />
                             </span>
                             <span class="toggle-label">Admin</span>
+                            <span v-if="user.id === currentUserId" class="sr-only">(you can't change your own access)</span>
                         </label>
                     </div>
                 </div>
@@ -101,8 +102,11 @@ async function toggleAdmin(user: IuserListResponse, event: Event) {
     position: relative;
 }
 .toggle.disabled {
-    opacity: 0.55;
     cursor: not-allowed;
+}
+// dim the control, not the label: the label still tells you whose row this is
+.toggle.disabled .toggle-track {
+    opacity: 0.55;
 }
 .toggle input {
     position: absolute;

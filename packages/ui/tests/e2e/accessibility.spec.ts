@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 
 test.describe('Accessibility', () => {
     test.beforeEach(async ({ page }) => {
@@ -82,4 +82,41 @@ test.describe('Accessibility', () => {
         const color = await buildElement.evaluate(el => window.getComputedStyle(el).color);
         expect(color).not.toBe('rgba(0, 0, 0, 0)');
     });
+
+    test('app row is reachable by Tab and Enter navigates', async ({ page }) => {
+        await page.waitForSelector('.app');
+        await tabTo(page, '.app');
+        await page.keyboard.press('Enter');
+        await expect(page).toHaveURL(/\/apps\/[^/]+$/);
+        await page.waitForSelector('.build');
+    });
+
+    test('build row is reachable by Tab and Enter navigates', async ({ page }) => {
+        await page.locator('.app').first().click();
+        await page.waitForSelector('.build');
+        await tabTo(page, '.build');
+        await page.keyboard.press('Enter');
+        await expect(page).toHaveURL(/\/apps\/[^/]+\/builds\/[^/]+$/);
+        await page.waitForSelector('.screen');
+    });
+
+    test('Escape closes the Add App modal and returns focus to the button', async ({ page }) => {
+        const addApp = page.getByRole('button', { name: 'Add App', exact: true });
+        await addApp.click();
+        const dialog = page.getByRole('dialog');
+        await expect(dialog).toBeVisible();
+
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeHidden();
+        await expect(addApp).toBeFocused();
+    });
 });
+
+// Presses Tab until the focused element matches the selector (the nav and toolbar controls come first).
+async function tabTo(page: Page, selector: string) {
+    for (let i = 0; i < 30; i++) {
+        await page.keyboard.press('Tab');
+        if (await page.evaluate(sel => !!document.activeElement?.matches(sel), selector)) return;
+    }
+    throw new Error(`Tab never reached ${selector}`);
+}

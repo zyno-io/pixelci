@@ -47,7 +47,7 @@
         <div class="redirect-url">
             <span class="redirect-label">Callback URL</span>
             <code>{{ redirectUrl }}</code>
-            <button type="button" class="btn copy-btn" @click="copyRedirectUrl"><i class="fa fa-copy" /> Copy</button>
+            <button type="button" class="btn copy-btn" @click="copyRedirectUrl"><i class="fa fa-copy" aria-hidden="true" /> Copy</button>
             <p class="hint">
                 Use this as the callback URL of your GitHub App. Repository permissions: Metadata read, Contents read, Actions read &amp; write (for
                 CI re-runs), Pull requests read (optional). See
@@ -81,7 +81,7 @@
         <div class="redirect-url">
             <span class="redirect-label">OAuth Redirect URI</span>
             <code>{{ redirectUrl }}</code>
-            <button type="button" class="btn copy-btn" @click="copyRedirectUrl"><i class="fa fa-copy" /> Copy</button>
+            <button type="button" class="btn copy-btn" @click="copyRedirectUrl"><i class="fa fa-copy" aria-hidden="true" /> Copy</button>
             <p class="hint">Use this URL as the redirect URI when configuring your GitLab OAuth application.</p>
         </div>
     </template>
