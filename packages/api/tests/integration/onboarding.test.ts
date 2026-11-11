@@ -5,6 +5,8 @@ import { generateKeyPairSync } from 'crypto';
 import { CoreAppOptions } from '../../src/app';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { SEALED_PREFIX } from '../../src/services/secrets/SecretBox';
+import { openIntegrationConfig } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
@@ -13,6 +15,12 @@ process.env.SETUP_TOKEN = SETUP_TOKEN;
 process.env.REDIS_PREFIX = 'pixelci_test';
 
 configureTestDatabase();
+
+function assertSealed(cfg: Record<string, string>, fields: string[]) {
+    for (const f of fields) {
+        if (!cfg[f]?.startsWith(SEALED_PREFIX)) throw new Error(`Expected ${f} to be stored sealed`);
+    }
+}
 
 const ZERO_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -144,7 +152,8 @@ async function testGitLabUpdateWithoutPlatform(facade: Facade, jwt: string) {
     );
     assertStatus(response, 200);
     const stored = await VcsIntegrationEntity.query().filter({ id: gl.id }).findOne();
-    const cfg = stored.config as { clientId: string; clientSecret: string };
+    assertSealed(stored.config as unknown as Record<string, string>, ['clientSecret']);
+    const cfg = openIntegrationConfig(stored) as { clientId: string; clientSecret: string };
     if (cfg.clientId !== 'new-client-id' || cfg.clientSecret !== 'test-client-secret') {
         throw new Error(`Unexpected stored GitLab config: ${JSON.stringify(stored.config)}`);
     }
@@ -161,7 +170,8 @@ async function testGitHubIntegrationLifecycle(facade: Facade, jwt: string) {
     if (created.platform !== 'github') throw new Error(`Expected github, got ${created.platform}`);
 
     const stored = await VcsIntegrationEntity.query().filter({ id: created.id }).findOne();
-    const cfg = stored.config as unknown as Record<string, string>;
+    assertSealed(stored.config as unknown as Record<string, string>, ['clientSecret', 'privateKey']);
+    const cfg = openIntegrationConfig(stored) as unknown as Record<string, string>;
     if (
         cfg.appId !== '12345' ||
         cfg.privateKey !== GITHUB_KEY.trim() ||
@@ -202,7 +212,7 @@ async function testGitHubIntegrationLifecycle(facade: Facade, jwt: string) {
         })
     );
     assertStatus(merge, 200);
-    const after = (await VcsIntegrationEntity.query().filter({ id: created.id }).findOne()).config as unknown as Record<string, string>;
+    const after = openIntegrationConfig(await VcsIntegrationEntity.query().filter({ id: created.id }).findOne()) as unknown as Record<string, string>;
     if (
         after.oidcAudience !== 'https://other.example.com' ||
         after.clientSecret !== 'gh-secret' ||
@@ -300,7 +310,8 @@ async function testOnboardingGitHubOnFreshDb() {
     const body = response.json as { id: string; platform: string };
     if (body.platform !== 'github') throw new Error(`Expected github, got ${response.body}`);
     const stored = await VcsIntegrationEntity.query().filter({ id: body.id }).findOne();
-    const cfg = stored.config as unknown as Record<string, string>;
+    assertSealed(stored.config as unknown as Record<string, string>, ['clientSecret', 'privateKey']);
+    const cfg = openIntegrationConfig(stored) as unknown as Record<string, string>;
     if (cfg.appId !== '12345' || !cfg.privateKey || cfg.oidcAudience !== 'https://pixelci.example.com' || 'url' in cfg) {
         throw new Error(`Stored onboarding GitHub config mismatch: ${JSON.stringify(stored.config)}`);
     }

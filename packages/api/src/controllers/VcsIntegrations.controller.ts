@@ -6,6 +6,7 @@ import { AdminAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
 import { AppEntity } from '../entities/App.entity';
 import { IGitLabConfig, VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
+import { openIntegrationConfig, sealIntegrationConfig } from '../services/secrets/VcsSecrets';
 import { mergeConfigUpdate, normalizeCreateConfig, redactConfig } from '../services/VcsConfig';
 
 type IVcsIntegrationListResponse = Pick<VcsIntegrationEntity, 'id' | 'name' | 'platform'>;
@@ -84,11 +85,12 @@ export class VcsIntegrationsController {
     async create(body: HttpBody<IVcsIntegrationCreateInput>): Promise<IVcsIntegrationListResponse> {
         const { platform, config } = normalizeCreateConfig(body);
 
+        const id = uuid();
         const integration = createEntity(VcsIntegrationEntity, {
-            id: uuid(),
+            id,
             name: body.name,
             platform,
-            config
+            config: sealIntegrationConfig(id, platform, config)
         });
         await integration.save();
 
@@ -111,7 +113,12 @@ export class VcsIntegrationsController {
             if (bodyPlatform !== integration.platform) {
                 throw new HttpBadRequestError(`Cannot apply ${bodyPlatform} config to a ${integration.platform} integration`);
             }
-            integration.config = mergeConfigUpdate(integration.platform, integration.config, body.config);
+            // Merge on plaintext (GitHub validation parses the PEM), then seal before it reaches the entity.
+            integration.config = sealIntegrationConfig(
+                integration.id,
+                integration.platform,
+                mergeConfigUpdate(integration.platform, openIntegrationConfig(integration), body.config)
+            );
         }
         await integration.save();
 

@@ -2,6 +2,7 @@ import { createApp, CreateAppOptions } from '@zyno-io/ts-server-foundation';
 import { compact } from 'lodash';
 
 import { AdminAuthMiddleware, BuildCiTokenMiddleware, UserAuthMiddleware, VcsTokenAuthMiddleware } from './accessories/AuthMiddleware.accessory';
+import { ReencryptSecretsCommand } from './commands/ReencryptSecrets.command';
 import { AppConfig } from './config';
 import { AppsController } from './controllers/Apps.controller';
 import { BranchesController } from './controllers/Branches.controller';
@@ -18,6 +19,7 @@ import { RerunCiJobJob } from './jobs/RerunCiJob.job';
 import { AppAccessService } from './services/AppAccess.service';
 import { PixelMatchService } from './services/PixelMatch.service';
 import { S3Service } from './services/S3.service';
+import { assertSecretsConfig } from './services/secrets/SecretBox';
 import { VcsService } from './services/Vcs.service';
 
 export const CoreAppOptions: CreateAppOptions<AppConfig> = {
@@ -44,6 +46,7 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         UsersController,
         ExternalReadController
     ],
+    commands: [ReencryptSecretsCommand],
     providers: [
         AdminAuthMiddleware,
         BuildCiTokenMiddleware,
@@ -59,4 +62,8 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
     ]
 };
 
-export const createPixelCIApp = () => createApp(CoreAppOptions);
+export const createPixelCIApp = () => {
+    const app = createApp(CoreAppOptions);
+    assertSecretsConfig(app.config);
+    return app;
+};

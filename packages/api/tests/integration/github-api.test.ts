@@ -11,6 +11,9 @@ import { BuildEntity } from '../../src/entities/Build.entity';
 import { IUserVcsSession, UserEntity } from '../../src/entities/User.entity';
 import { IGitHubConfig, VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { RerunCiJobJob, RERUN_RETRY_DELAY_MS } from '../../src/jobs/RerunCiJob.job';
+import { AppAccessService } from '../../src/services/AppAccess.service';
+import { SEALED_PREFIX } from '../../src/services/secrets/SecretBox';
+import { openVcsSession } from '../../src/services/secrets/VcsSecrets';
 import { VcsGitHubService } from '../../src/services/VcsGitHub.service';
 import { configureTestDatabase } from './db-defaults';
 
@@ -590,7 +593,14 @@ async function run() {
         userId = user.id;
         assert(user.name === 'octo', `name should be login, got ${user.name}`);
         assert(user.isAdmin === true, 'first user should be admin');
-        assert(user.vcsSession?.accessToken === 'ghu_login' && user.vcsSession.refreshToken === 'ghr_initial', 'session not stored');
+        const rawSession = JSON.stringify(user.vcsSession);
+        assert(
+            user.vcsSession?.accessToken.startsWith(SEALED_PREFIX) && !rawSession.includes('ghu_login') && !rawSession.includes('ghr_initial'),
+            'session not sealed at rest'
+        );
+        assert(user.vcsSession, 'session missing');
+        const opened = openVcsSession(user.id, user.vcsSession);
+        assert(opened.accessToken === 'ghu_login' && opened.refreshToken === 'ghr_initial', 'session not stored');
         assert(user.vcsSession.expiresAt > Date.now() + 7 * 3600_000, 'expiresAt should reflect expires_in');
     }
 
@@ -613,7 +623,7 @@ async function run() {
         status(await login('forever'), 200, 'forever login');
         const user = await UserEntity.query().filter({ id: userId }).findOne();
         assert(
-            user.vcsSession?.expiresAt === Number.MAX_SAFE_INTEGER && user.vcsSession.refreshToken === '',
+            user.vcsSession?.expiresAt === Number.MAX_SAFE_INTEGER && openVcsSession(user.id, user.vcsSession).refreshToken === '',
             `unexpected session ${JSON.stringify(user.vcsSession)}`
         );
     }
@@ -625,6 +635,21 @@ async function run() {
     await createApp(APP_HIDDEN, 'Hidden App', HIDDEN_ID, 'acme/hidden');
     const readApp = await AppEntity.query().filter({ id: APP1 }).findOne();
     assert(readApp.vcsProjectId === REPO_ID, `BIGINT repo id round trip failed: ${readApp.vcsProjectId}`);
+
+    test('sealed session at rest: later GitHub calls still carry the opened access token');
+    {
+        status(await login('good', SETUP_TOKEN), 200, 'relogin');
+        const accessCaches = facade.get(AppAccessService) as unknown as { cache: Map<string, unknown>; roleCache: Map<string, unknown> };
+        const clearAccessCaches = () => (accessCaches.cache.clear(), accessCaches.roleCache.clear());
+        clearAccessCaches();
+        const logStartSealed = log.length;
+        status(await get(facade, '/api/apps', userJwt), 200, 'apps index after login');
+        clearAccessCaches(); // later tests expect to observe their own VCS calls
+        assert(
+            log.slice(logStartSealed).some(e => e.auth === 'Bearer ghu_login'),
+            'GitHub mock should receive Bearer ghu_login'
+        );
+    }
 
     // 3. refresh coalescing
     test('expired session + 4 apps → GET /api/apps triggers exactly 1 refresh');
@@ -643,10 +668,10 @@ async function run() {
         assert(refreshRequests - requestsBefore === 1, `expected exactly 1 refresh request (coalesced), got ${refreshRequests - requestsBefore}`);
         assert(res.json.length === 3, `expected 3 accessible apps, got ${res.body}`);
         const user = await UserEntity.query().filter({ id: userId }).findOne();
-        assert(
-            user.vcsSession?.accessToken === `ghu_rot${refreshCounter}` && user.vcsSession.refreshToken === validRefreshToken,
-            'rotated session not saved'
-        );
+        assert(user.vcsSession?.accessToken.startsWith(SEALED_PREFIX), 'rotated session must be stored sealed');
+        assert(user.vcsSession, 'session missing');
+        const openedRot = openVcsSession(user.id, user.vcsSession);
+        assert(openedRot.accessToken === `ghu_rot${refreshCounter}` && openedRot.refreshToken === validRefreshToken, 'rotated session not saved');
     }
 
     test('refresh adopt path: bad_refresh_token but the DB already has a fresh session → still 200');

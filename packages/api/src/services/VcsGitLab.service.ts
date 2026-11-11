@@ -20,6 +20,7 @@ import type {
 import { AppEntity } from '../entities/App.entity';
 import { UserEntity } from '../entities/User.entity';
 import { IGitLabConfig } from '../entities/VcsIntegration.entity';
+import { vcsAccessToken } from './secrets/VcsSecrets';
 import { ensureFreshVcsSession } from './VcsSessionRefresh';
 
 /** GitLab access levels (https://docs.gitlab.com/api/members/#roles). */
@@ -198,7 +199,7 @@ export class VcsGitLabService implements IVcsServiceImpl {
             {},
             {
                 headers: {
-                    Authorization: `Bearer ${user.vcsSession!.accessToken}`
+                    Authorization: `Bearer ${vcsAccessToken(user)}`
                 }
             }
         );
@@ -218,7 +219,7 @@ export class VcsGitLabService implements IVcsServiceImpl {
 
         const response = await axios.get(`${this.config.url}/api/v4/projects/${encodeURIComponent(projectPath)}`, {
             headers: {
-                Authorization: `Bearer ${user.vcsSession!.accessToken}`
+                Authorization: `Bearer ${vcsAccessToken(user)}`
             }
         });
 
@@ -264,7 +265,7 @@ export class VcsGitLabService implements IVcsServiceImpl {
                 per_page: 20
             },
             headers: {
-                Authorization: `Bearer ${user.vcsSession!.accessToken}`
+                Authorization: `Bearer ${vcsAccessToken(user)}`
             }
         });
 
@@ -292,7 +293,7 @@ export class VcsGitLabService implements IVcsServiceImpl {
 
         const response = await axios.get(`${this.config.url}/api/v4/projects/${encodeURIComponent(projectPath)}`, {
             headers: {
-                Authorization: `Bearer ${user.vcsSession!.accessToken}`
+                Authorization: `Bearer ${vcsAccessToken(user)}`
             }
         });
 
@@ -317,7 +318,7 @@ export class VcsGitLabService implements IVcsServiceImpl {
             return false;
         }
 
-        return this.checkProjectAccess(user.vcsSession.accessToken, projectIdentifier);
+        return this.checkProjectAccess(vcsAccessToken(user), projectIdentifier);
     }
 
     async tokenCanAccessProject(token: string, projectIdentifier: string): Promise<boolean> {
@@ -335,7 +336,7 @@ export class VcsGitLabService implements IVcsServiceImpl {
         await this.renewToken(user);
 
         const projectUrl = `${this.config.url}/api/v4/projects/${encodeURIComponent(projectIdentifier)}`;
-        const headers = { Authorization: `Bearer ${user.vcsSession.accessToken}` };
+        const headers = { Authorization: `Bearer ${vcsAccessToken(user)}` };
         const definitive = (status: number) => status === 200 || status === 401 || status === 403 || status === 404;
 
         const project = await axios.get(projectUrl, { headers, validateStatus: definitive });

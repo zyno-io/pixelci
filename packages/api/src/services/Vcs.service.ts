@@ -3,6 +3,8 @@ import { HttpBadRequestError, HttpUnauthorizedError, ScopedLogger } from '@zyno-
 import { AppEntity } from '../entities/App.entity';
 import { IUserVcsSession, UserEntity } from '../entities/User.entity';
 import { IGitHubConfig, IGitLabConfig, VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
+import { SecretKeyUnavailableError } from './secrets/SecretBox';
+import { openIntegrationConfig } from './secrets/VcsSecrets';
 import { VcsGitHubService } from './VcsGitHub.service';
 import { VcsGitLabService } from './VcsGitLab.service';
 
@@ -247,11 +249,22 @@ export class VcsService {
     }
 
     private createProvider(provider: VcsIntegrationEntity): IVcsServiceImpl {
+        let config: IGitLabConfig | IGitHubConfig;
+        try {
+            config = openIntegrationConfig(provider);
+        } catch (err) {
+            if (err instanceof SecretKeyUnavailableError) {
+                this.logger.error(
+                    `VCS integration ${provider.id} has secrets sealed with key "${err.keyId}", which is not configured (SECRETS_ENCRYPTION_KEYS)`
+                );
+            }
+            throw err;
+        }
         if (provider.platform === 'gitlab') {
-            return new VcsGitLabService(provider.config as IGitLabConfig, this.logger);
+            return new VcsGitLabService(config as IGitLabConfig, this.logger);
         }
         if (provider.platform === 'github') {
-            return new VcsGitHubService(provider.config as IGitHubConfig, this.logger);
+            return new VcsGitHubService(config as IGitHubConfig, this.logger);
         }
 
         throw new Error(`VCS provider with ID ${provider.id} is not supported`);
