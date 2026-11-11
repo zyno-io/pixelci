@@ -5,12 +5,12 @@
         <template v-else>
             <div class="header">
                 <h1>VCS Integrations</h1>
-                <button class="btn primary" @click="showCreateForm">Add Integration</button>
+                <button type="button" class="btn primary" @click="showCreateForm">Add Integration</button>
             </div>
 
             <div class="list card admin-list">
                 <div v-if="!integrations?.length" class="empty">
-                    <i class="fa fa-plug" />
+                    <i class="fa fa-plug" aria-hidden="true" />
                     <h2>No VCS integrations</h2>
                 </div>
                 <div v-for="integration in integrations" :key="integration.id" class="item">
@@ -19,14 +19,14 @@
                         <span class="platform tag">{{ integration.platform }}</span>
                     </div>
                     <div class="item-actions">
-                        <button class="btn" @click="editIntegration(integration)">Edit</button>
-                        <button class="btn danger" @click="deleteIntegration(integration)">Delete</button>
+                        <button type="button" class="btn" @click="editIntegration(integration)">Edit</button>
+                        <button type="button" class="btn danger" @click="deleteIntegration(integration)">Delete</button>
                     </div>
                 </div>
             </div>
         </template>
 
-        <VfModal v-if="showForm" @close="closeForm">
+        <A11yModal v-if="showForm" @close="closeForm">
             <div class="form-modal">
                 <h2>{{ editingId ? 'Edit' : 'Add' }} VCS Integration</h2>
 
@@ -60,16 +60,17 @@
                     </div>
                 </form>
             </div>
-        </VfModal>
+        </A11yModal>
     </div>
 </template>
 
 <script lang="ts" setup>
 import { dataFrom, dataFromAsync } from '@zyno-io/openapi-client-codegen';
-import { handleErrorAndAlert, showConfirm, VfModal } from '@zyno-io/vue-foundation';
+import { handleErrorAndAlert, showConfirm } from '@zyno-io/vue-foundation';
 import { onMounted, reactive, ref } from 'vue';
 
 import { VcsIntegrationsApi, type IVcsIntegrationListResponse } from '@/openapi-client-generated';
+import A11yModal from '@/shared/components/a11y-modal.vue';
 import LoaderModal from '@/shared/components/loader-modal.vue';
 import VcsIntegrationFields, { buildVcsCreateBody, buildVcsUpdateBody, emptyVcsConfig } from '@/shared/components/vcs-integration-fields.vue';
 

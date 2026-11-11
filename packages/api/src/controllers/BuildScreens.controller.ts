@@ -76,9 +76,13 @@ export class BuildScreensController {
                   .findOneOrUndefined()
             : undefined;
 
-        const currentBuildScreens = await BuildScreenEntity.query().filter({ appId, buildId: build.id }).find();
+        // Ordered by id (UUID7, so upload order). Postgres returns unordered rows in heap order, which
+        // changes whenever a row is updated — without this the list reshuffles after each review.
+        const currentBuildScreens = await BuildScreenEntity.query().filter({ appId, buildId: build.id }).orderBy('id', 'asc').find();
 
-        const referenceBuildScreens = referenceBuild ? await BuildScreenEntity.query().filter({ appId, buildId: referenceBuild.id }).find() : [];
+        const referenceBuildScreens = referenceBuild
+            ? await BuildScreenEntity.query().filter({ appId, buildId: referenceBuild.id }).orderBy('id', 'asc').find()
+            : [];
 
         const currentBuildScreensById = keyBy(currentBuildScreens, 'screenId');
         const referenceBuildScreensById = keyBy(referenceBuildScreens, 'screenId');

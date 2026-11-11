@@ -141,6 +141,7 @@ async function loadSession() {
     try {
         const identityResponse = await SessionApi.getSessionGetIdentity();
         store.sessionUser = dataFrom(identityResponse);
+        store.showProviderPicker = false;
         if (route.path === '/login') {
             router.replace(targetPath.value ?? '/');
         }
@@ -158,7 +159,7 @@ async function loadSession() {
     }
 
     // with a single provider, skip the picker and go straight to it
-    if (providers.value.length === 1 && !suppressAutoLogin.value) {
+    if (providers.value.length === 1 && !suppressAutoLogin.value && !store.showProviderPicker) {
         return login(providers.value[0]);
     }
 

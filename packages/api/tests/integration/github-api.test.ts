@@ -691,6 +691,15 @@ async function run() {
         assert(log.length === callsBefore, 'mock must not receive any request');
     }
 
+    test('show by a user of another integration → 403 naming the provider to sign in with');
+    {
+        const callsBefore = log.length;
+        const res = await get(facade, `/api/apps/${APP1}`, await JWT.generate({ subject: USER_C_ID }));
+        status(res, 403, 'cross-provider show');
+        assert(/Sign in with GH API Test/.test(String(res.body)), `expected the provider name in the message, got ${res.body}`);
+        assert(log.length === callsBefore, 'mock must not receive any request');
+    }
+
     // 6. resolve
     test('resolve: PR URL → repo; not installed / host mismatch / malformed → 400');
     {
