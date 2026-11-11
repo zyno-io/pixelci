@@ -11,16 +11,12 @@ import { BuildEntity } from '../../src/entities/Build.entity';
 import { BuildScreenEntity } from '../../src/entities/BuildScreen.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
 process.env.REDIS_PREFIX = 'pixelci_test';
 
-TestingHelpers.setDefaultDatabaseConfig({
-    MYSQL_HOST: '127.0.0.1',
-    MYSQL_PORT: 3306,
-    MYSQL_USER: 'root',
-    MYSQL_PASSWORD_SECRET: 'secret'
-});
+configureTestDatabase();
 
 const APP_ID = 'e2234567-aaaa-bbbb-cccc-000000000001';
 const BRANCH_ID = 'e2234567-aaaa-bbbb-cccc-000000000002';
@@ -139,7 +135,12 @@ async function getBuild(id: string) {
 
 async function run() {
     await startMock();
-    const facade = TestingHelpers.createTestingFacade(CoreAppOptions, { enableDatabase: true, databasePrefix: 'pixelci_concurrenttest' });
+    const facade = TestingHelpers.createTestingFacade(CoreAppOptions, {
+        enableDatabase: true,
+        databasePrefix: 'pixelci_concurrenttest',
+        // Real, independent connections/transactions are required to exercise concurrency (savepoint mode serializes on one)
+        useSavepoints: false
+    });
     await facade.start();
 
     await createPersistedEntity(UserEntity, {
@@ -184,6 +185,7 @@ async function run() {
     await testDraftActiveAtGovernsCancel(facade);
     await testFailedRevivalAndEmptyProcess(facade);
     await testNoHashLeaks(facade);
+    await testConcurrentFirstBuildsOnNewBranch(facade);
 
     mockServer.close();
 }
@@ -420,6 +422,38 @@ async function testNoHashLeaks(f: Facade) {
     for (const body of bodies) {
         assert(!/ciTokenHash|ciReadTokenHashes/.test(body), `field names absent in ${body}`);
         for (const s of secrets) assert(!body.includes(s), 'hash value absent');
+    }
+    console.log('  PASS');
+}
+
+async function testConcurrentFirstBuildsOnNewBranch(f: Facade) {
+    console.log('\nTest (h): concurrent first builds on a brand-new branch create exactly one branch and build');
+    const CONCURRENCY = 5;
+    for (let round = 1; round <= 3; round++) {
+        const ref = `branch-race-${round}`;
+        // Several jobs (distinct tokens) for the same new branch and commit, all created at once
+        counter++;
+        const sha = counter.toString(16).padStart(40, '0');
+        const tokens = Array.from({ length: CONCURRENCY }, (_, i) => {
+            const token = `tok-r${round}-${i}`;
+            jobs.set(token, { id: counter * 100 + i, ref, sha });
+            return token;
+        });
+        const results = await Promise.all(tokens.map(t => create(f, t)));
+        for (const r of results) assert(r.statusCode === 200, `round ${round}: create returned ${r.statusCode}: ${r.body}`);
+
+        const branches = await BranchEntity.query().filter({ appId: APP_ID, name: ref }).find();
+        assert(branches.length === 1, `round ${round}: expected 1 branch, got ${branches.length}`);
+        const builds = await BuildEntity.query().filter({ appId: APP_ID, branchId: branches[0].id }).find();
+        assert(builds.length === 1, `round ${round}: expected 1 build, got ${builds.length}`);
+        const ids = new Set(results.map(r => r.json.id));
+        assert(ids.size === 1 && ids.has(builds[0].id), `round ${round}: all requests resolve to the same build`);
+        const uploaders = results.filter(r => r.json.status === 'draft');
+        assert(uploaders.length === 1, `round ${round}: expected 1 uploader, got ${uploaders.length}`);
+        assert(
+            builds[0].ciReadTokenHashes.length === CONCURRENCY - 1,
+            `round ${round}: expected ${CONCURRENCY - 1} readers, got ${builds[0].ciReadTokenHashes.length}`
+        );
     }
     console.log('  PASS');
 }

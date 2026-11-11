@@ -8,16 +8,12 @@ import { AppEntity } from '../../src/entities/App.entity';
 import { BranchEntity } from '../../src/entities/Branch.entity';
 import { BuildEntity } from '../../src/entities/Build.entity';
 import { IGitHubConfig, VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
 process.env.REDIS_PREFIX = 'pixelci_test';
 
-TestingHelpers.setDefaultDatabaseConfig({
-    MYSQL_HOST: '127.0.0.1',
-    MYSQL_PORT: 3306,
-    MYSQL_USER: 'root',
-    MYSQL_PASSWORD_SECRET: 'secret'
-});
+configureTestDatabase();
 
 const VCS_ID = 'e2234567-aaaa-bbbb-cccc-000000000001';
 const VCS_ROUNDTRIP_ID = 'e2234567-aaaa-bbbb-cccc-000000000002';

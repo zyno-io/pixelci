@@ -6,16 +6,12 @@ import { CoreAppOptions } from '../../src/app';
 import { AppEntity } from '../../src/entities/App.entity';
 import { BranchEntity } from '../../src/entities/Branch.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
 process.env.REDIS_PREFIX = 'pixelci_test';
 
-TestingHelpers.setDefaultDatabaseConfig({
-    MYSQL_HOST: '127.0.0.1',
-    MYSQL_PORT: 3306,
-    MYSQL_USER: 'root',
-    MYSQL_PASSWORD_SECRET: 'secret'
-});
+configureTestDatabase();
 
 const APP_ID = 'e1234567-aaaa-bbbb-cccc-000000000001';
 const BRANCH_ID = 'e1234567-aaaa-bbbb-cccc-000000000002';
