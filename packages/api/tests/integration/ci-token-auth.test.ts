@@ -263,7 +263,7 @@ async function testMalformedBuildId(facade: Facade) {
 }
 
 async function testGitLabJobEndpointDown(facade: Facade) {
-    console.log('\nTest: GitLab /api/v4/job returns 500 → 401');
+    console.log('\nTest: GitLab /api/v4/job returns 500 → 503 (retryable)');
     mockOverride = (req, res) => {
         if (req.url === '/api/v4/job') {
             res.writeHead(500);
@@ -276,8 +276,8 @@ async function testGitLabJobEndpointDown(facade: Facade) {
     const response = await facade.request(HttpRequest.POST(`/api/apps/${APP_ID}/builds`).header('authorization', `Bearer ${TEST_CI_TOKEN}`));
     mockOverride = null;
 
-    if (response.statusCode !== 401) {
-        throw new Error(`Expected 401 but got ${response.statusCode}: ${response.body}`);
+    if (response.statusCode !== 503) {
+        throw new Error(`Expected 503 but got ${response.statusCode}: ${response.body}`);
     }
     console.log('  PASS');
 }

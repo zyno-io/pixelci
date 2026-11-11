@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { crc32 } from 'node:zlib';
 
-import { MAX_CHUNKS, parseScreenName, readPngHeader as readPngHeaderSync, repairLatin1Filename } from '../../src/services/ScreenUpload';
+import {
+    MAX_CHUNKS,
+    parseScreenName,
+    readPngHeader as readPngHeaderSync,
+    repairLatin1Filename,
+    validateScreenName
+} from '../../src/services/ScreenUpload';
 
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -73,6 +79,20 @@ describe('parseScreenName', () => {
 
     it('allows ordinary unicode', () => {
         assert.equal(parseScreenName('日本語 screen/💥.png'), '日本語 screen/💥');
+    });
+});
+
+describe('validateScreenName', () => {
+    it('keeps the exact name, including a .png the CLI left after stripping one', () => {
+        assert.equal(validateScreenName('logo.png'), 'logo.png');
+        assert.equal(validateScreenName('icon.PNG'), 'icon.PNG');
+        assert.equal(validateScreenName('say "hi"'), 'say "hi"');
+    });
+
+    it('applies the same rules as parseScreenName', () => {
+        assert.throws(() => validateScreenName(''));
+        assert.throws(() => validateScreenName('a'.repeat(201)));
+        assert.throws(() => validateScreenName('a\nb'));
     });
 });
 
