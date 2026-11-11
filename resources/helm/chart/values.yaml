@@ -32,11 +32,14 @@ env:
   REDIS_SENTINEL_NAME: redis
   REDIS_PREFIX: pixelci
 
-  # TODO: PG_HOST is a placeholder; set the real production Postgres host before merging.
-  # PG_PASSWORD_SECRET must also exist in the secret named by `secret.name` before deploy.
-  PG_HOST: TODO-pg-host
+  # CNPG pg-production via its PgBouncer pooler (transaction mode). The CNPG CA
+  # isn't in Node's trust store, so TLS is on without certificate verification.
+  PG_HOST: pg-production-pooler.db.svc.cluster.local
+  PG_PORT: '5432'
   PG_USER: pixelci
   PG_DATABASE: pixelci
+  PG_SSL: 'true'
+  PG_SSL_REJECT_UNAUTHORIZED: 'false'
 
   S3_ENDPOINT: https://s3.us-east-va.io.cloud.ovh.us
   S3_REGION: us-east-va
@@ -45,7 +48,10 @@ env:
 # Environment variables sourced from Secret or ConfigMap keys, e.g.
 #   REDIS_PASSWORD_SECRET:
 #     secretKeyRef: { name: pixelci-redis-auth, key: password }
-envValueFrom: {}
+envValueFrom:
+  # Hemlig-imported CNPG role credential (workloads/trusted/database/pixelci-postgres-role).
+  PG_PASSWORD_SECRET:
+    secretKeyRef: { name: pixelci-postgres-role, key: password }
 
 secret:
   # Name of the Kubernetes Secret to mount into the containers as env vars.
