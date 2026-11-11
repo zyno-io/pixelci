@@ -918,7 +918,7 @@ async function run() {
         queued.length = 0;
         let before = log.length;
         await rerunJob.handle({ buildId: deferredBuildId, userId, ciJobId: '8800:9999', attempt: 2 });
-        await rerunJob.handle({ buildId: 'does-not-exist', userId, ciJobId: '8800:8801', attempt: 2 });
+        await rerunJob.handle({ buildId: '00000000-0000-0000-0000-00000000dead', userId, ciJobId: '8800:8801', attempt: 2 });
         await BuildEntity.query().filter({ id: deferredBuildId }).patchMany({ status: 'needs review' });
         await rerunJob.handle({ buildId: deferredBuildId, userId, ciJobId: '8800:8801', attempt: 2 });
         assert(log.length === before && queued.length === 0, `unexpected GitHub calls/queue: ${log.length - before}/${queued.length}`);
