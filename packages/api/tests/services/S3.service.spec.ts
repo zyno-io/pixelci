@@ -1,5 +1,9 @@
 import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { mkdtempSync, ReadStream, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, mock } from 'node:test';
 import { Readable } from 'stream';
 
@@ -46,6 +50,27 @@ describe('S3Service', () => {
             assert.equal(sendMock.mock.callCount(), 1);
             const command = sendMock.mock.calls[0].arguments[0];
             assert.ok(command instanceof PutObjectCommand);
+        });
+
+        it('should stream a path input with an explicit ContentLength', async () => {
+            const dir = mkdtempSync(join(tmpdir(), 's3-spec-'));
+            const file = join(dir, 'a.png');
+            writeFileSync(file, Buffer.alloc(1234, 1));
+            const service = new S3Service(createMockConfig());
+            const sendMock = mock.method(service['s3Client'], 'send', async () => ({}));
+
+            try {
+                await service.uploadFile(file, 'test/path.png', 'image/png');
+                const command = sendMock.mock.calls[0].arguments[0] as PutObjectCommand;
+                assert.ok(command instanceof PutObjectCommand);
+                assert.ok(command.input.Body instanceof ReadStream);
+                assert.equal(command.input.ContentLength, 1234);
+                const stream = command.input.Body as ReadStream;
+                stream.destroy();
+                await once(stream, 'close');
+            } finally {
+                rmSync(dir, { recursive: true, force: true });
+            }
         });
 
         it('should propagate upload errors', async () => {

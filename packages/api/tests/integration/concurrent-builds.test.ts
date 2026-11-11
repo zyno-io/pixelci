@@ -2,6 +2,8 @@ import { HttpRequest } from '@zyno-io/ts-server-foundation';
 import { createPersistedEntity, JWT, TestingHelpers } from '@zyno-io/ts-server-foundation';
 import { readdirSync, readFileSync } from 'fs';
 import { createServer, IncomingMessage, Server, ServerResponse } from 'http';
+import { mock } from 'node:test';
+import { crc32 } from 'zlib';
 
 import { CoreAppOptions } from '../../src/app';
 import { STALE_DRAFT_MS } from '../../src/controllers/Builds.controller';
@@ -9,8 +11,10 @@ import { AppEntity } from '../../src/entities/App.entity';
 import { BranchEntity } from '../../src/entities/Branch.entity';
 import { BuildEntity } from '../../src/entities/Build.entity';
 import { BuildScreenEntity } from '../../src/entities/BuildScreen.entity';
+import { ScreenEntity } from '../../src/entities/Screen.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { S3Service } from '../../src/services/S3.service';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
@@ -119,6 +123,25 @@ const upload = (f: Facade, id: string, token: string, name: string) =>
         ])
     );
 
+const uploadRaw = (f: Facade, id: string, token: string, file: Buffer, fileName: string) =>
+    f.request(auth(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${id}/screens`), token).multiPart([{ name: 'image', file, fileName }]));
+
+/** A PNG-looking buffer: a valid signature + IHDR (correct CRC) claiming the given dimensions, padded to `size` bytes. */
+function fakePng(width: number, height: number, size = 64) {
+    const ihdr = Buffer.alloc(17);
+    ihdr.write('IHDR', 0, 'latin1');
+    ihdr.writeUInt32BE(width, 4);
+    ihdr.writeUInt32BE(height, 8);
+    ihdr[12] = 8;
+    ihdr[13] = 6;
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(13);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(ihdr));
+    const head = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), len, ihdr, crc]);
+    return Buffer.concat([head, Buffer.alloc(Math.max(0, size - head.length))]);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function expectCode(p: Promise<{ statusCode: number; body: unknown; json: any }>, code: number, label: string) {
     const r = await p;
@@ -186,6 +209,10 @@ async function run() {
     await testFailedRevivalAndEmptyProcess(facade);
     await testNoHashLeaks(facade);
     await testConcurrentFirstBuildsOnNewBranch(facade);
+    await testUploadValidation(facade);
+    await testConcurrentUploads(facade);
+    await testTakeoverDuringUpload(facade);
+    await testS3FailureLeavesNoRow(facade);
 
     mockServer.close();
 }
@@ -454,6 +481,115 @@ async function testConcurrentFirstBuildsOnNewBranch(f: Facade) {
             builds[0].ciReadTokenHashes.length === CONCURRENCY - 1,
             `round ${round}: expected ${CONCURRENCY - 1} readers, got ${builds[0].ciReadTokenHashes.length}`
         );
+    }
+    console.log('  PASS');
+}
+
+async function testUploadValidation(f: Facade) {
+    console.log('\nTest (i): upload validation');
+    const t = newJob('branch-validate');
+    const id = (await expectCode(create(f, t), 200, 'create')).json.id;
+
+    await expectCode(uploadRaw(f, id, t, Buffer.from('definitely not a png, but long enough to have a header'), 'bad.png'), 400, 'bad signature');
+    await expectCode(uploadRaw(f, id, t, fakePng(100000, 100000), 'huge.png'), 400, 'IHDR claims 100000x100000');
+    await expectCode(uploadRaw(f, id, t, fakePng(100, 100, 17 * 1024 * 1024), 'big.png'), 413, '17MB file');
+    await expectCode(uploadRaw(f, id, t, fakePng(10, 10), '.png'), 400, 'empty name');
+    await expectCode(uploadRaw(f, id, t, fakePng(10, 10), 'bad\u0001name.png'), 400, 'control character in name');
+    await expectCode(uploadRaw(f, id, t, fakePng(10, 10), `${'a'.repeat(201)}.png`), 400, 'name too long');
+    assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 0, 'rejected uploads leave no rows');
+    assert((await ScreenEntity.query().filter({ appId: APP_ID, name: 'bad' }).find()).length === 0, 'rejected uploads leave no screens');
+    // A header-valid image that is not truncated passes validation (the real fixture, and a bare header)
+    await expectCode(upload(f, id, t, 'ok-fixture'), 200, 'fixture');
+    await expectCode(uploadRaw(f, id, t, fakePng(5000, 5000), 'max.png'), 200, 'exactly at the pixel cap');
+    console.log('  PASS');
+}
+
+async function testConcurrentUploads(f: Facade) {
+    console.log('\nTest (j): concurrent uploads');
+    const t = newJob('branch-conc-upload');
+    const id = (await expectCode(create(f, t), 200, 'create')).json.id;
+    const names = Array.from({ length: 16 }, (_, i) => `conc-${i}`);
+    const results = await Promise.all(names.map(n => upload(f, id, t, n)));
+    for (const r of results) assert(r.statusCode === 200, `concurrent upload returned ${r.statusCode}: ${r.body}`);
+    const rows = await BuildScreenEntity.query().filter({ buildId: id }).find();
+    assert(rows.length === 16, `expected 16 rows, got ${rows.length}`);
+    assert(new Set(rows.map(r => r.screenId)).size === 16, '16 distinct screens');
+
+    // The same brand-new screen name uploaded from two builds at once creates exactly one screen
+    for (let round = 0; round < 3; round++) {
+        const t1 = newJob(`branch-same-${round}-1`);
+        const t2 = newJob(`branch-same-${round}-2`);
+        const id1 = (await expectCode(create(f, t1), 200, 'create 1')).json.id;
+        const id2 = (await expectCode(create(f, t2), 200, 'create 2')).json.id;
+        const name = `shared-new-${round}`;
+        const [r1, r2] = await Promise.all([upload(f, id1, t1, name), upload(f, id2, t2, name)]);
+        assert(r1.statusCode === 200 && r2.statusCode === 200, `same-name uploads: ${r1.statusCode}/${r2.statusCode}: ${r1.body} ${r2.body}`);
+        assert(r1.json.screenId === r2.json.screenId, 'both builds use the same screen');
+        const screens = await ScreenEntity.query().filter({ appId: APP_ID, name }).find();
+        assert(screens.length === 1, `round ${round}: expected 1 screen, got ${screens.length}`);
+    }
+    console.log('  PASS');
+}
+
+async function testTakeoverDuringUpload(f: Facade) {
+    console.log('\nTest (k): takeover during the S3 upload');
+    const { a, b } = newJobPair('branch-takeover-upload');
+    const id = (await expectCode(create(f, a), 200, 'A create')).json.id;
+
+    const s3 = f.get<S3Service>(S3Service);
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>(r => (release = r));
+    const reachedS3 = new Promise<void>(r => (entered = r));
+    const m = mock.method(
+        s3,
+        'uploadFile',
+        async () => {
+            entered();
+            await gate;
+        },
+        { times: 1 }
+    );
+    try {
+        const pending = upload(f, id, a, 'gated');
+        await reachedS3;
+        await BuildEntity.query()
+            .filter({ id })
+            .patchMany({ draftActiveAt: new Date(Date.now() - STALE_DRAFT_MS - 60_000) });
+        const rb = await expectCode(create(f, b), 200, 'B takes over');
+        assert(rb.json.status === 'draft', 'B is the uploader now');
+        release();
+        const ra = await pending;
+        assert(ra.statusCode === 401, `A upload after takeover: expected 401, got ${ra.statusCode}: ${ra.body}`);
+        assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 0, 'no row left by A');
+    } finally {
+        release();
+        m.mock.restore();
+    }
+    console.log('  PASS');
+}
+
+async function testS3FailureLeavesNoRow(f: Facade) {
+    console.log('\nTest (l): S3 failure leaves no row; retry succeeds');
+    const t = newJob('branch-s3-fail');
+    const id = (await expectCode(create(f, t), 200, 'create')).json.id;
+    const s3 = f.get<S3Service>(S3Service);
+    const m = mock.method(
+        s3,
+        'uploadFile',
+        async () => {
+            throw new Error('simulated S3 outage');
+        },
+        { times: 1 }
+    );
+    try {
+        const r = await upload(f, id, t, 'flaky');
+        assert(r.statusCode >= 500, `expected 5xx, got ${r.statusCode}: ${r.body}`);
+        assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 0, 'no row after failed upload');
+        await expectCode(upload(f, id, t, 'flaky'), 200, 'retry');
+        assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 1, 'one row after retry');
+    } finally {
+        m.mock.restore();
     }
     console.log('  PASS');
 }

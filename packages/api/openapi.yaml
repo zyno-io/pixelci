@@ -472,14 +472,7 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/IBuildScreenCreateResponse"
-                  - type: object
-                    properties:
-                      status:
-                        type: string
-                    required:
-                      - status
+                $ref: "#/components/schemas/IBuildScreenCreateResponse"
       parameters:
         - name: appId
           in: path
@@ -505,6 +498,7 @@ paths:
                 image:
                   type: string
                   format: binary
+                  x-maxSizeBytes: 16777216
               required:
                 - image
   /api/apps/{appId}/builds/{id}/screens/{screenId}/image:

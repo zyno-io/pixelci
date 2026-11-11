@@ -13,4 +13,7 @@ export class AppConfig extends BaseAppConfig {
     // When true (default), reads are filtered/gated by whether the caller can access the app's
     // project in the VCS provider. Set false for environments without a reachable VCS (e.g. e2e).
     ENFORCE_VCS_PROJECT_ACCESS: boolean = true;
+
+    // Maximum width*height of an uploaded screenshot (checked from the PNG header before decoding)
+    SCREEN_MAX_PIXELS = 25_000_000;
 }

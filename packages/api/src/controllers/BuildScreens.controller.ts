@@ -1,9 +1,21 @@
-import { http, HttpBadRequestError, HttpBody, HttpNotFoundError, Redirect, FileUpload, UuidString } from '@zyno-io/ts-server-foundation';
+import {
+    http,
+    HttpBadRequestError,
+    HttpBody,
+    HttpNotFoundError,
+    HttpRequest,
+    HttpUnauthorizedError,
+    isUniqueConstraintError,
+    Redirect,
+    FileUpload,
+    UuidString
+} from '@zyno-io/ts-server-foundation';
 import { AnyResponse, createPersistedEntity, uuid7 } from '@zyno-io/ts-server-foundation';
 import { keyBy, uniq } from 'lodash';
 
-import { BuildCiTokenMiddleware, UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
+import { BuildCiTokenMiddleware, hashCiToken, UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
+import { AppConfig } from '../config';
 import { Db } from '../database';
 import { AppEntity } from '../entities/App.entity';
 import { BuildEntity } from '../entities/Build.entity';
@@ -12,6 +24,7 @@ import { ScreenEntity } from '../entities/Screen.entity';
 import { UserEntity } from '../entities/User.entity';
 import { AppAccessService } from '../services/AppAccess.service';
 import { S3Service } from '../services/S3.service';
+import { parseScreenName, readPngHeader } from '../services/ScreenUpload';
 
 export type IAppScreenResponse = Pick<ScreenEntity, 'id' | 'name'>;
 export type IBuildScreenResponse = {
@@ -56,7 +69,8 @@ export class BuildScreensController {
     constructor(
         private db: Db,
         private s3Svc: S3Service,
-        private appAccessSvc: AppAccessService
+        private appAccessSvc: AppAccessService,
+        private appConfig: AppConfig
     ) {}
 
     @http.GET('screens')
@@ -109,35 +123,35 @@ export class BuildScreensController {
     @http.POST('screens')
     @http.middleware(BuildCiTokenMiddleware)
     async uploadScreen(
+        request: HttpRequest,
         appId: UuidString,
         id: UuidString,
-        body: HttpBody<{ image: FileUpload }>
-    ): Promise<IBuildScreenCreateResponse | { status: string }> {
+        body: HttpBody<{ image: FileUpload<{ maxSize: '16MB' }> }>
+    ): Promise<IBuildScreenCreateResponse> {
+        const callerHash = hashCiToken((request.headers.authorization ?? '').slice(7));
+
+        const screenName = parseScreenName(body.image.name);
+        await readPngHeader(body.image.path, this.appConfig.SCREEN_MAX_PIXELS);
+
         const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
         if (build.status !== 'draft') throw new HttpBadRequestError('build is not in draft state');
 
-        return this.db.transaction(async txn => {
-            const screenName = body.image.name?.replace(/\.[^.]+$/, '');
+        const screen = await this.findOrCreateScreen(appId, screenName);
 
-            let screen = await txn.query(ScreenEntity).filter({ appId, name: screenName }).findOneOrUndefined();
+        // The S3 PUT happens outside any transaction so a slow upload never holds a DB connection or row locks.
+        await this.s3Svc.uploadFile(body.image.path, this.s3Svc.getPathForScreen(appId, id, screen.id), 'image/png');
 
-            if (!screen) {
-                screen = await createPersistedEntity(
-                    ScreenEntity,
-                    {
-                        id: uuid7(),
-                        appId,
-                        name: screenName
-                    },
-                    txn
-                );
-            } else {
-                const buildScreen = await txn.query(BuildScreenEntity).filter({ buildId: id, screenId: screen.id }).findOneOrUndefined();
-                // Re-upload (e.g. a re-run after a partial failure): replace the earlier upload
-                if (buildScreen) await txn.query(BuildScreenEntity).filter({ id: buildScreen.id }).deleteOne();
-            }
+        // Returned (not thrown) from the transaction, like `process`, so a rejection doesn't roll back anything.
+        const result = await this.db.transaction(async txn => {
+            // Re-check under lock: a takeover or process may have happened while the image was uploading.
+            const locked = await txn.query(BuildEntity).filter({ id, appId }).forUpdate().findOneOrUndefined();
+            if (!locked) return new HttpNotFoundError();
+            if (locked.status !== 'draft') return new HttpBadRequestError('build is not in draft state');
+            if (locked.ciTokenHash !== callerHash) return new HttpUnauthorizedError();
 
+            // Re-upload (e.g. a re-run after a partial failure): replace the earlier upload
+            await txn.query(BuildScreenEntity).filter({ buildId: id, screenId: screen.id }).deleteMany();
             const buildScreen = await createPersistedEntity(
                 BuildScreenEntity,
                 {
@@ -150,15 +164,24 @@ export class BuildScreensController {
                 },
                 txn
             );
-
-            await this.s3Svc.uploadFile(body.image.path, this.s3Svc.getPathForScreen(appId, id, screen.id), 'image/png');
             await txn.query(BuildEntity).filter({ id }).patchMany({ draftActiveAt: new Date() });
 
-            return {
-                ...buildScreen,
-                name: screen.name
-            };
+            return { id: buildScreen.id, screenId: buildScreen.screenId, status: buildScreen.status, name: screen.name };
         });
+        if (result instanceof Error) throw result;
+        return result;
+    }
+
+    /** Autocommit create; on a unique-constraint violation (a concurrent upload won the race) re-select the winner. */
+    private async findOrCreateScreen(appId: string, name: string): Promise<ScreenEntity> {
+        const existing = await ScreenEntity.query().filter({ appId, name }).findOneOrUndefined();
+        if (existing) return existing;
+        try {
+            return await createPersistedEntity(ScreenEntity, { id: uuid7(), appId, name });
+        } catch (err) {
+            if (!isUniqueConstraintError(err)) throw err;
+            return await ScreenEntity.query().filter({ appId, name }).findOne();
+        }
     }
 
     // TEST for getting images
