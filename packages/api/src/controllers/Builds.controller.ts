@@ -1,6 +1,9 @@
 import {
     http,
     HttpBadRequestError,
+    HttpBody,
+    HttpConflictError,
+    HttpError,
     HttpNotFoundError,
     HttpQueries,
     HttpRequest,
@@ -23,12 +26,21 @@ import { ProcessBuildJob } from '../jobs/ProcessBuild.job';
 import { RERUN_DEFERRED_NOTICE, RERUN_RETRY_DELAY_MS, RerunCiJobJob } from '../jobs/RerunCiJob.job';
 import { IBuildResponse, toBuildResponse } from '../responses/build.response';
 import { AppAccessService } from '../services/AppAccess.service';
+import { screenManifestHash, uploadedScreenNames } from '../services/ScreenManifest';
 import { VcsService } from '../services/Vcs.service';
 
+interface IScreenManifest {
+    count: number;
+    hash: string;
+}
 type IBuildBasicResponse = Pick<BuildEntity, 'status'>;
 
 /** A draft older than this is considered abandoned: it may be taken over by a new job or canceled by another build's processing. */
 export const STALE_DRAFT_MS = 15 * 60 * 1000;
+/** CI session tokens (uploader and readers) stop working this long after the last create/upload, so final-status polls can be repeated safely. */
+export const CI_TOKEN_TTL_MS = 4 * 60 * 60 * 1000;
+const MAX_MANIFEST_COUNT = 100_000;
+const MANIFEST_HASH_RE = /^[0-9a-f]{64}$/;
 const MAX_READ_TOKEN_HASHES = 20;
 const MAX_DEADLOCK_ATTEMPTS = 3;
 
@@ -53,6 +65,17 @@ export interface IBuildApprovalResponse {
     vcsError?: string;
     /** Informational (non-error) message, e.g. the re-run was deferred until the workflow finishes. */
     vcsNotice?: string;
+}
+
+function validateManifest(screens: IScreenManifest | undefined): IScreenManifest | undefined {
+    if (screens === undefined) return undefined;
+    if (!screens || !Number.isInteger(screens.count) || screens.count < 0 || screens.count > MAX_MANIFEST_COUNT) {
+        throw new HttpBadRequestError(`screens.count must be an integer between 0 and ${MAX_MANIFEST_COUNT}`);
+    }
+    if (typeof screens.hash !== 'string' || !MANIFEST_HASH_RE.test(screens.hash)) {
+        throw new HttpBadRequestError('screens.hash must be a 64-character lowercase hex string');
+    }
+    return { count: screens.count, hash: screens.hash };
 }
 
 /** Adds a read-only (status polling) token hash, de-duplicated and capped to the most recent entries. */
@@ -124,7 +147,7 @@ export class BuildsController {
 
     @http.GET(':id/status')
     @http.middleware(BuildCiTokenMiddleware)
-    async show(request: HttpRequest, appId: UuidString, id: UuidString): Promise<IBuildBasicResponse> {
+    async show(appId: UuidString, id: UuidString): Promise<IBuildBasicResponse> {
         const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
 
@@ -133,25 +156,25 @@ export class BuildsController {
         // The CLI doesn't know `canceled`; report it as a clean failure
         const reportedStatus: BuildEntity['status'] = build.status === 'canceled' ? 'failed' : build.status;
 
-        // Final status: revoke only the calling session's access (other concurrent jobs may still be polling)
-        if (build.status !== 'processing') {
-            const callerHash = hashCiToken(request.headers.authorization!.slice(7));
-            if (build.ciTokenHash === callerHash) build.ciTokenHash = null;
-            else build.ciReadTokenHashes = (build.ciReadTokenHashes ?? []).filter(h => h !== callerHash);
-            await build.save();
-        }
-
         return { status: reportedStatus };
     }
 
     @http.POST()
-    async create(request: HttpRequest, appId: UuidString): Promise<IBuildResponse> {
+    async create(
+        request: HttpRequest,
+        appId: UuidString,
+        body?: HttpBody<{
+            projectUrl?: string;
+            screens?: { count: number; hash: string };
+        }>
+    ): Promise<IBuildResponse> {
         const authHeader = request.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             this.logger.warn('Build creation failed: missing or malformed Authorization header');
             throw new HttpUnauthorizedError();
         }
         const ciToken = authHeader.slice(7);
+        const manifest = validateManifest(body?.screens);
 
         const app = await AppEntity.query().filter({ id: appId, deletedAt: null }).findOneOrUndefined();
         if (!app) throw new HttpBadRequestError('invalid appId');
@@ -164,7 +187,18 @@ export class BuildsController {
         // Creation is serialized per (app, branch) by an advisory lock, but retry the whole transaction on a deadlock anyway
         for (let attempt = 1; ; attempt++) {
             try {
-                return await this.createInTransaction(appId, branchName, commitHash, commitSubject, commitAuthor, ciJobId, ciTokenHash);
+                const result = await this.createInTransaction(
+                    appId,
+                    branchName,
+                    commitHash,
+                    commitSubject,
+                    commitAuthor,
+                    ciJobId,
+                    ciTokenHash,
+                    manifest
+                );
+                if (result instanceof HttpError) throw result;
+                return result;
             } catch (err) {
                 if (attempt >= MAX_DEADLOCK_ATTEMPTS || !isDeadlockError(err)) throw err;
                 this.logger.warn(`Build creation deadlocked (attempt ${attempt}); retrying`);
@@ -180,8 +214,9 @@ export class BuildsController {
         commitSubject: string,
         commitAuthor: string,
         ciJobId: string,
-        ciTokenHash: string
-    ): Promise<IBuildResponse> {
+        ciTokenHash: string,
+        manifest: IScreenManifest | undefined
+    ): Promise<IBuildResponse | HttpError> {
         return this.db.transaction(async txn => {
             // Serialize concurrent creates for the same branch. Locking the branch row alone is not enough: under READ COMMITTED,
             // SELECT ... FOR UPDATE on a branch that does not exist yet locks nothing, so two first builds would both insert it.
@@ -202,6 +237,7 @@ export class BuildsController {
 
             const existingBuild = await txn.query(BuildEntity).filter({ appId, branchId: branch.id, commitHash }).forUpdate().findOneOrUndefined();
             if (existingBuild) {
+                existingBuild.ciTokensExpireAt = new Date(Date.now() + CI_TOKEN_TTL_MS);
                 const now = new Date();
                 const isDraft = existingBuild.status === 'draft';
                 const isStaleDraft = isDraft && now.getTime() - existingBuild.draftActiveAt.getTime() > STALE_DRAFT_MS;
@@ -215,13 +251,27 @@ export class BuildsController {
                     existingBuild.ciReadTokenHashes = (existingBuild.ciReadTokenHashes ?? []).filter(h => h !== ciTokenHash);
                     existingBuild.ciJobId = ciJobId;
                     existingBuild.draftActiveAt = now;
+                    existingBuild.manifestCount = manifest?.count ?? null;
+                    existingBuild.manifestHash = manifest?.hash ?? null;
                     reportedStatus = 'draft';
                 } else if (isDraft && (existingBuild.ciTokenHash === ciTokenHash || (isPerJobId(ciJobId) && existingBuild.ciJobId === ciJobId))) {
                     // The uploader itself re-creating (a new CLI run may carry a new token within the same job)
                     existingBuild.ciTokenHash = ciTokenHash;
                     existingBuild.ciReadTokenHashes = (existingBuild.ciReadTokenHashes ?? []).filter(h => h !== ciTokenHash);
                     existingBuild.draftActiveAt = now;
+                    // Each CLI run is a clean slate: drop what a previous run of this job uploaded
+                    await txn.query(BuildScreenEntity).filter({ buildId: existingBuild.id }).deleteMany();
+                    existingBuild.manifestCount = manifest?.count ?? null;
+                    existingBuild.manifestHash = manifest?.hash ?? null;
                 } else {
+                    if (manifest && existingBuild.manifestHash && manifest.hash !== existingBuild.manifestHash) {
+                        // Divergent duplicate: same commit but a different screen set and no shard declared. No read access is granted.
+                        return new HttpConflictError(
+                            `This job's screenshots (${manifest.count}, ${manifest.hash.slice(0, 12)}) differ from the ones already uploaded for this commit ` +
+                                `(${existingBuild.manifestCount}, ${existingBuild.manifestHash.slice(0, 12)}). ` +
+                                `If the suite is split across jobs, set PIXELCI_SHARD (see docs).`
+                        );
+                    }
                     // Never overwrite the uploader's hash; additional jobs only get status-polling access
                     addReadTokenHash(existingBuild, ciTokenHash);
                     if (isDraft) {
@@ -250,7 +300,10 @@ export class BuildsController {
                     ciReadTokenHashes: [],
                     status: 'draft',
                     createdAt: new Date(),
-                    draftActiveAt: new Date()
+                    draftActiveAt: new Date(),
+                    ciTokensExpireAt: new Date(Date.now() + CI_TOKEN_TTL_MS),
+                    manifestCount: manifest?.count ?? null,
+                    manifestHash: manifest?.hash ?? null
                 },
                 txn
             );
@@ -261,18 +314,30 @@ export class BuildsController {
 
     @http.POST(':id/process')
     @http.middleware(BuildCiTokenMiddleware)
-    async process(request: HttpRequest, appId: UuidString, id: UuidString): OkResponse {
+    async process(
+        request: HttpRequest,
+        appId: UuidString,
+        id: UuidString,
+        body?: HttpBody<{ screens?: { count: number; hash: string } }>
+    ): OkResponse {
         const callerHash = hashCiToken((request.headers.authorization ?? '').slice(7));
+        const manifest = validateManifest(body?.screens);
 
         // Validation failures are returned from the transaction (not thrown inside it) so a rejected request doesn't roll back anything.
-        const rejection = await this.db.transaction(async txn => {
+        const outcome = await this.db.transaction(async txn => {
             // Re-check under lock: a takeover may have replaced the uploader (and its screens) since the middleware ran.
             const build = await txn.query(BuildEntity).filter({ id, appId }).forUpdate().findOneOrUndefined();
             if (!build) return new HttpNotFoundError();
-            if (build.status !== 'draft') return new HttpBadRequestError('Build is not in draft status');
             if (build.ciTokenHash !== callerHash) return new HttpUnauthorizedError();
-            const screenCount = await txn.query(BuildScreenEntity).filter({ buildId: id }).count();
-            if (screenCount === 0) return new HttpBadRequestError('Build has no screens');
+            if (build.status === 'canceled' || build.status === 'failed') return new HttpBadRequestError('Build is not in draft status');
+            // Retry-safe: a repeated process call (lost response) succeeds without re-enqueueing
+            if (build.status !== 'draft') return 'already' as const;
+
+            const names = await uploadedScreenNames(txn, id);
+            if (names.length === 0) return new HttpBadRequestError('Build has no screens');
+            if (manifest && (manifest.count !== names.length || manifest.hash !== screenManifestHash(names))) {
+                return new HttpBadRequestError(`Upload incomplete: the server has ${names.length} screens, the CLI uploaded ${manifest.count}`);
+            }
 
             await txn
                 .query(BuildEntity)
@@ -283,7 +348,8 @@ export class BuildsController {
             txn.add(build);
             return undefined;
         });
-        if (rejection) throw rejection;
+        if (outcome === 'already') return { ok: true };
+        if (outcome) throw outcome;
 
         await this.workerSvc.queueJob(ProcessBuildJob, { buildId: id });
 

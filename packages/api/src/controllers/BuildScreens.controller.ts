@@ -26,6 +26,7 @@ import { UserEntity } from '../entities/User.entity';
 import { AppAccessService } from '../services/AppAccess.service';
 import { S3Service } from '../services/S3.service';
 import { parseScreenName, readPngHeader } from '../services/ScreenUpload';
+import { CI_TOKEN_TTL_MS } from './Builds.controller';
 
 export type IAppScreenResponse = Pick<ScreenEntity, 'id' | 'name'>;
 export type IBuildScreenResponse = {
@@ -169,7 +170,10 @@ export class BuildScreensController {
                 },
                 txn
             );
-            await txn.query(BuildEntity).filter({ id }).patchMany({ draftActiveAt: new Date() });
+            await txn
+                .query(BuildEntity)
+                .filter({ id })
+                .patchMany({ draftActiveAt: new Date(), ciTokensExpireAt: new Date(Date.now() + CI_TOKEN_TTL_MS) });
 
             return { id: buildScreen.id, screenId: buildScreen.screenId, status: buildScreen.status, name: screen.name };
         });

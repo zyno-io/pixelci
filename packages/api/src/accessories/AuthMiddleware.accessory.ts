@@ -63,7 +63,9 @@ export class BuildCiTokenMiddleware extends HttpMiddleware {
         // Uploads/process require the creator's token; status polling also accepts read-only tokens of concurrent jobs
         const allowed =
             !!build && (build.ciTokenHash === tokenHash || (request.method === 'GET' && (build.ciReadTokenHashes ?? []).includes(tokenHash)));
-        if (!build || !allowed) {
+        // Sessions expire (refreshed on create/upload); a null expiry counts as expired
+        const expired = !build?.ciTokensExpireAt || build.ciTokensExpireAt.getTime() <= Date.now();
+        if (!build || !allowed || expired) {
             this.logger.warn(`CI token auth failed: build not found or token hash mismatch for buildId=${buildId}`);
             throw new HttpUnauthorizedError();
         }
