@@ -8,7 +8,8 @@ import { ProcessBuildJob } from './ProcessBuild.job';
  * Cluster-wide, once a minute: fails builds that exceeded the processing cap or attempt limit, and re-enqueues builds whose
  * processing attempt died (or whose enqueue was lost). Every state change is a single-row compare-and-set (patchOne).
  */
-@WorkerJob({ cronSchedule: '* * * * *' })
+// Own queue: the default queue's worker runs one job at a time, so a hung ProcessBuildJob must not be able to starve the reaper.
+@WorkerJob({ cronSchedule: '* * * * *', queueName: 'maintenance' })
 export class ReapStuckBuildsJob extends BaseJob<void> {
     constructor(
         private logger: ScopedLogger,

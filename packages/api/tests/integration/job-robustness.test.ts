@@ -1,10 +1,11 @@
-import { HttpRequest } from '@zyno-io/ts-server-foundation';
+import { HttpRequest, ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { createPersistedEntity, TestingHelpers, uuid7, WorkerService } from '@zyno-io/ts-server-foundation';
 import { readdirSync, readFileSync } from 'fs';
 import { createServer, IncomingMessage, Server, ServerResponse } from 'http';
 import { mock } from 'node:test';
 
 import { CoreAppOptions } from '../../src/app';
+import { Db } from '../../src/database';
 import { AppEntity } from '../../src/entities/App.entity';
 import { BranchEntity } from '../../src/entities/Branch.entity';
 import { BuildEntity } from '../../src/entities/Build.entity';
@@ -12,7 +13,7 @@ import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { ProcessBuildJob } from '../../src/jobs/ProcessBuild.job';
 import { ReapStuckBuildsJob } from '../../src/jobs/ReapStuckBuilds.job';
-import { Lease } from '../../src/services/BuildProcessingLease';
+import { claimBuildLease, Lease } from '../../src/services/BuildProcessingLease';
 import { S3Service } from '../../src/services/S3.service';
 import { configureTestDatabase } from './db-defaults';
 
@@ -215,6 +216,7 @@ async function run() {
     await testNullStartedAtIgnored(facade, reaper);
     await testConcurrentClaims(facade, runProcess);
     await testNotClaimable(facade, runProcess);
+    await testClaimBackfillsStartedAt(facade, runProcess);
 
     mockServer.close();
 }
@@ -246,12 +248,21 @@ async function testDeadAttempt(f: Facade, runProcess: RunProcess, reaper: ReapSt
     console.log('  PASS');
 }
 
-async function testFencing(f: Facade, runProcess: RunProcess, reaper: ReapStuckBuildsJob) {
-    console.log('\nTest 2: a revoked attempt cannot write or fail the build');
+/**
+ * Runs attempt A of a fresh build until its first S3 read (gated), then has the reaper revoke A's lease, lets `takeover` change
+ * the build, and finally releases A (resolving, or rejecting with a non-lease error). Returns the build id and A's outcome.
+ */
+async function gatedAttempt(
+    f: Facade,
+    runProcess: RunProcess,
+    reaper: ReapStuckBuildsJob,
+    finish: 'resolve' | 'reject',
+    takeover: (id: string) => Promise<void>
+) {
     const { id } = await newBuildWithScreen(f);
     await startProcessing(id);
 
-    const heartbeat = mock.method(Lease.prototype, 'startHeartbeat', () => undefined);
+    const heartbeat = mock.method(Lease.prototype, 'startHeartbeat', () => undefined); // A "stalls": no heartbeats
     let release!: () => void;
     const gate = new Promise<void>(r => (release = r));
     let entered = false;
@@ -263,18 +274,22 @@ async function testFencing(f: Facade, runProcess: RunProcess, reaper: ReapStuckB
             gated = true;
             entered = true;
             await gate;
+            if (finish === 'reject') throw new Error('simulated S3 failure in revoked attempt');
         }
         return original.apply(this, args);
     });
 
+    let outcome: { threw: boolean } | undefined;
     try {
-        const pA = runProcess(id);
+        const pA = runProcess(id).then(
+            () => ({ threw: false }),
+            () => ({ threw: true })
+        );
         for (let i = 0; i < 200 && !entered; i++) await new Promise(r => setTimeout(r, 25));
         assert(entered, 'attempt A reached the gated S3 read');
         const a = await getBuild(id);
         assert(a.processingAttemptId !== null && a.processingAttempts === 1, 'A holds the lease');
 
-        // A stops heartbeating (stalled); the lease goes stale and is handed to B.
         await patch(id, { processingHeartbeatAt: ago(5 * MIN) });
         queued = [];
         await reaper.handle();
@@ -282,19 +297,63 @@ async function testFencing(f: Facade, runProcess: RunProcess, reaper: ReapStuckB
             queued.some(q => q.data.buildId === id),
             'reaper re-enqueued the build'
         );
-        await runProcess(id); // attempt B
-        const afterB = await getBuild(id);
-        assert(afterB.status === 'no changes' && afterB.processingAttempts === 2, `B completed: ${afterB.status}/${afterB.processingAttempts}`);
+        await takeover(id);
 
         release();
-        await pA; // A must neither throw nor mark the build failed
-        const afterA = await getBuild(id);
-        assert(afterA.status === 'no changes', `A did not change status: ${afterA.status}`);
-        assert(afterA.processingAttempts === 2, 'A did not touch the lease columns');
+        outcome = await pA;
     } finally {
         release();
         getBuffer.mock.restore();
         heartbeat.mock.restore();
+    }
+    return { id, outcome };
+}
+
+async function testFencing(f: Facade, runProcess: RunProcess, reaper: ReapStuckBuildsJob) {
+    console.log('\nTest 2a: a revoked attempt cannot overwrite a build that attempt B already finished');
+    {
+        const { id, outcome } = await gatedAttempt(f, runProcess, reaper, 'resolve', async id => {
+            await runProcess(id); // attempt B completes
+            const b = await getBuild(id);
+            assert(b.status === 'no changes' && b.processingAttempts === 2, `B completed: ${b.status}/${b.processingAttempts}`);
+            // Make the state distinguishable from anything A would write.
+            await patch(id, { status: 'changes rejected' });
+        });
+        assert(outcome && !outcome.threw, 'A returns quietly');
+        const after = await getBuild(id);
+        assert(after.status === 'changes rejected', `A must not write the final status, got ${after.status}`);
+        assert(after.processingAttempts === 2, 'A did not touch the lease columns');
+    }
+
+    console.log('Test 2b: a revoked attempt cannot write while a newer attempt holds the lease');
+    {
+        let bAttempt = '';
+        const { id, outcome } = await gatedAttempt(f, runProcess, reaper, 'resolve', async id => {
+            const lease = await claimBuildLease(f.get(Db), id, f.get(ScopedLogger));
+            assert(lease, 'B claimed');
+            bAttempt = lease.attemptId;
+        });
+        assert(outcome && !outcome.threw, 'A returns quietly');
+        const after = await getBuild(id);
+        assert(
+            after.status === 'processing' && after.processingAttemptId === bAttempt,
+            `A must not write (status ${after.status}, attempt ${after.processingAttemptId})`
+        );
+        await patch(id, { status: 'canceled' });
+    }
+
+    console.log('Test 2c: a revoked attempt that errors cannot mark the build failed');
+    {
+        let bAttempt = '';
+        const { id, outcome } = await gatedAttempt(f, runProcess, reaper, 'reject', async id => {
+            const lease = await claimBuildLease(f.get(Db), id, f.get(ScopedLogger));
+            assert(lease, 'B claimed');
+            bAttempt = lease.attemptId;
+        });
+        assert(outcome?.threw === true, 'A rethrows its non-lease error');
+        const after = await getBuild(id);
+        assert(after.status === 'processing' && after.processingAttemptId === bAttempt, `A must not fail the build (status ${after.status})`);
+        await patch(id, { status: 'canceled' });
     }
     console.log('  PASS');
 }
@@ -370,7 +429,13 @@ async function testConcurrentClaims(f: Facade, runProcess: RunProcess) {
     console.log('\nTest 6: two concurrent runs claim once');
     const { id } = await newBuildWithScreen(f);
     await startProcessing(id);
-    await Promise.all([runProcess(id), runProcess(id)]);
+    const heartbeat = mock.method(Lease.prototype, 'startHeartbeat'); // pass-through spy: one call per successful claim
+    try {
+        await Promise.all([runProcess(id), runProcess(id)]);
+        assert(heartbeat.mock.callCount() === 1, `exactly one claim, got ${heartbeat.mock.callCount()}`);
+    } finally {
+        heartbeat.mock.restore();
+    }
     const row = await getBuild(id);
     assert(row.status === 'no changes', `completed: ${row.status}`);
     assert(row.processingAttempts === 1, `exactly one claim, got ${row.processingAttempts}`);
@@ -391,5 +456,24 @@ async function testNotClaimable(f: Facade, runProcess: RunProcess) {
     await runProcess(id);
     const row = await getBuild(id);
     assert(row.status === 'draft' && row.processingAttempts === 0 && row.processingAttemptId === null, 'draft untouched');
+    console.log('  PASS');
+}
+
+async function testClaimBackfillsStartedAt(f: Facade, runProcess: RunProcess) {
+    console.log('\nTest 8: claiming a build set to processing by an old pod backfills processingStartedAt');
+    const { id } = await newBuildWithScreen(f);
+    await patch(id, {
+        status: 'processing',
+        processingStartedAt: null,
+        processingHeartbeatAt: null,
+        processingAttemptId: null,
+        processingAttempts: 0
+    });
+    const lease = await claimBuildLease(f.get(Db), id, f.get(ScopedLogger));
+    assert(lease, 'claimed');
+    assert((await getBuild(id)).processingStartedAt !== null, 'processingStartedAt set');
+    await patch(id, { processingAttemptId: null });
+    await runProcess(id);
+    assert((await getBuild(id)).status === 'no changes', 'completed');
     console.log('  PASS');
 }

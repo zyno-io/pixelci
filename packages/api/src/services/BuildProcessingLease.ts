@@ -27,21 +27,44 @@ export class Lease {
     /** Set once a heartbeat finds the lease revoked. */
     lost = false;
     private timer?: NodeJS.Timeout;
+    private deadlineTimer?: NodeJS.Timeout;
+    private stopped = false;
+    private signalLost!: (err: LeaseLostError) => void;
+    /** Rejects with LeaseLostError once the lease is lost or the processing time cap is reached; race the work against it. */
+    readonly lostSignal: Promise<never>;
 
     constructor(
         readonly buildId: string,
         readonly attemptId: string,
+        private readonly startedAt: Date,
         private readonly logger: ScopedLogger
-    ) {}
+    ) {
+        this.lostSignal = new Promise<never>((_, reject) => (this.signalLost = reject));
+        this.lostSignal.catch(() => undefined); // never an unhandled rejection if nobody is racing it
+    }
 
     startHeartbeat() {
         this.timer = setInterval(() => void this.beat(), HEARTBEAT_MS);
         this.timer.unref();
+        // Hard cap: stop waiting on a hung attempt so the worker slot is freed (its later writes are fenced out by the reaper's revocation).
+        const remaining = Math.max(0, MAX_PROCESSING_MS - (Date.now() - this.startedAt.getTime()));
+        this.deadlineTimer = setTimeout(() => this.markLost('Processing time cap reached'), remaining);
+        this.deadlineTimer.unref();
     }
 
     stopHeartbeat() {
+        this.stopped = true;
         if (this.timer) clearInterval(this.timer);
+        if (this.deadlineTimer) clearTimeout(this.deadlineTimer);
         this.timer = undefined;
+        this.deadlineTimer = undefined;
+    }
+
+    private markLost(reason: string) {
+        if (this.stopped || this.lost) return;
+        this.lost = true;
+        this.logger.warn(reason, { buildId: this.buildId, attemptId: this.attemptId });
+        this.signalLost(new LeaseLostError());
     }
 
     private async beat() {
@@ -49,10 +72,7 @@ export class Lease {
             const res = await BuildEntity.query()
                 .filter({ id: this.buildId, status: 'processing', processingAttemptId: this.attemptId })
                 .patchOne({ processingHeartbeatAt: new Date() });
-            if (res.affectedRows === 0) {
-                this.lost = true;
-                this.logger.warn('Processing lease lost', { buildId: this.buildId, attemptId: this.attemptId });
-            }
+            if (res.affectedRows === 0) this.markLost('Processing lease lost');
         } catch (err) {
             // A transient DB error must not abort the attempt; if it persists the lease goes stale and is handed off.
             this.logger.error('Processing heartbeat failed', err as Error);
@@ -94,11 +114,12 @@ export async function claimBuildLease(db: Db, buildId: string, logger: ScopedLog
             return undefined;
         }
 
+        const startedAt = (build.processingStartedAt ??= new Date(now)); // old pods set `processing` without a start time
         const attemptId = uuid7();
         build.processingAttemptId = attemptId;
         build.processingHeartbeatAt = new Date(now);
         build.processingAttempts += 1;
         txn.add(build);
-        return new Lease(buildId, attemptId, logger);
+        return new Lease(buildId, attemptId, startedAt, logger);
     });
 }

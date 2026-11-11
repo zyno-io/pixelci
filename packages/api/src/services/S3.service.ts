@@ -14,6 +14,8 @@ export class S3Service {
             endpoint: appConfig.S3_ENDPOINT,
             region: appConfig.S3_REGION,
             forcePathStyle: true,
+            // Bound hung connections/sockets so a stuck S3 call fails instead of hanging a build forever
+            requestHandler: { connectionTimeout: 10_000, requestTimeout: 60_000 },
             // Only compute/validate checksums when an operation requires them (SDK defaults break some S3-compatible stores)
             requestChecksumCalculation: 'WHEN_REQUIRED',
             responseChecksumValidation: 'WHEN_REQUIRED',

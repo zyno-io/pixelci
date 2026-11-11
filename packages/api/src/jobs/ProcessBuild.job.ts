@@ -43,7 +43,9 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         lease.startHeartbeat();
 
         try {
-            await this.processScreens(data.buildId, lease);
+            const work = this.processScreens(data.buildId, lease);
+            work.catch(() => undefined); // if the race below is lost, the orphaned attempt's rejection is irrelevant
+            await Promise.race([work, lease.lostSignal]);
         } catch (err) {
             if (err instanceof LeaseLostError) {
                 logger.warn('Processing lease lost; abandoning attempt', { id: data.buildId });
@@ -122,6 +124,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             }));
 
         screenLoop: for (const screen of screens) {
+            if (lease.lost) throw new LeaseLostError();
             // if the previous screen has approved changes, compare the current screen with the already approved changes.
             // if the current build's screen matches, then it's automatically approved too.
             if (screen.previousBuildScreen?.status === 'changes approved') {
