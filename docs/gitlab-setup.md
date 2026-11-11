@@ -59,6 +59,8 @@ You can find the app ID in the PixelCI web UI on the app settings page.
 
 Authentication uses GitLab's built-in `CI_JOB_TOKEN` — no API keys needed.
 
+Every app is bound to a single GitLab project (its numeric project ID, set automatically when you pick the project in **Add App**). PixelCI only accepts job tokens from that project. An app without a bound project rejects all CI tokens with a 401; recreate it from the web UI to bind it.
+
 ### 3. CLI Environment Variables
 
 | Variable              | Required | Description                                                        |

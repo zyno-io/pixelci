@@ -78,8 +78,8 @@ export class AppsController {
     async create(body: HttpBody<IAppCreateInput>): Promise<IAppIndexResponse> {
         const integration = await VcsIntegrationEntity.query().filterField('id', body.vcsId).findOneOrUndefined();
         if (!integration) throw new HttpBadRequestError('Unknown vcsId');
-        if (integration.platform === 'github' && !(Number.isSafeInteger(body.vcsProjectId) && body.vcsProjectId! > 0)) {
-            throw new HttpBadRequestError('vcsProjectId (the GitHub repository id) is required for GitHub apps');
+        if (!(Number.isSafeInteger(body.vcsProjectId) && body.vcsProjectId! > 0)) {
+            throw new HttpBadRequestError('vcsProjectId (the VCS project or repository id) is required');
         }
 
         const appId = uuid();
