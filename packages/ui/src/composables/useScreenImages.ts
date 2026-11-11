@@ -3,7 +3,8 @@ import { onBeforeUnmount, reactive } from 'vue';
 
 import { BuildScreensApi } from '@/openapi-client-generated';
 
-export type ScreenImageKind = 'image' | 'diff';
+/** `thumb` is a scaled-down screenshot for gallery tiles; `image` is the full-size one. */
+export type ScreenImageKind = 'image' | 'thumb' | 'diff';
 
 /** A loaded object URL, `false` when the image could not be loaded, `undefined` while pending. */
 export type ScreenImageSrc = string | false | undefined;
@@ -50,7 +51,9 @@ export function useScreenImages(appId: () => string) {
                 const response =
                     kind === 'diff'
                         ? await BuildScreensApi.getBuildScreensGetScreenDiff({ path })
-                        : await BuildScreensApi.getBuildScreensGetScreenImage({ path });
+                        : kind === 'thumb'
+                          ? await BuildScreensApi.getBuildScreensGetScreenThumbnail({ path })
+                          : await BuildScreensApi.getBuildScreensGetScreenImage({ path });
                 if (disposed) return;
                 const url = URL.createObjectURL(response.data as Blob);
                 objectUrls.add(url);

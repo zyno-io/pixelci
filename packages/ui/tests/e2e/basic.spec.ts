@@ -49,6 +49,20 @@ colorSchemes.forEach(colorScheme => {
             await page.locator('.build-date').evaluateAll(els => els.forEach(el => (el.textContent = '1/1/25 12:32 PM')));
             await takeScreenshot(page, 'Build List');
 
+            // ── Screen gallery and lightbox ──
+            await page.locator('[data-testid="browse-screens"]').click();
+            await page.waitForSelector('[data-testid="gallery-tile"] img');
+            // Every tile is on screen with the seeded app, so every thumbnail loads.
+            await expect(page.locator('[data-testid="gallery-tile"] .tile-loading')).toHaveCount(0, { timeout: 10000 });
+            await takeScreenshot(page, 'Screen Gallery');
+
+            await page.locator('[data-testid="gallery-tile"]').first().click();
+            await page.waitForSelector('[data-testid="lightbox-stage"] img');
+            await takeScreenshot(page, 'Screen Lightbox');
+            await page.locator('[data-testid="lightbox-close"]').click();
+            await page.goBack();
+            await page.waitForSelector('.build');
+
             await page.route(/\/image$/, async route => {
                 await new Promise(resolve => setTimeout(resolve, 1500));
                 await route.continue();

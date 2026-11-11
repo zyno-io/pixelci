@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import assert from 'assert';
 import { readFile } from 'fs/promises';
@@ -9,6 +9,13 @@ import { AppConfig } from '../config';
 // Bounds a whole S3 call, body included, so a stalled socket fails the call instead of hanging a build.
 // (requestTimeout/socketTimeout on the smithy handler only warn, or stop applying once headers arrive.)
 const S3_CALL_TIMEOUT_MS = 60_000;
+
+/** True for the errors S3 gives when the requested object does not exist. */
+export function isNotFound(err: unknown): boolean {
+    // by name, not status: a missing bucket is also a 404 and must not pass for a missing object
+    const name = (err as { name?: string } | undefined)?.name;
+    return name === 'NotFound' || name === 'NoSuchKey';
+}
 
 export class S3Service {
     private s3Client: S3Client;
@@ -55,6 +62,17 @@ export class S3Service {
         );
     }
 
+    /** Whether an object is in the bucket. Only "not found" answers false; any other failure throws. */
+    async exists(path: string): Promise<boolean> {
+        try {
+            await this.s3Client.send(new HeadObjectCommand({ Bucket: this.appConfig.S3_BUCKET, Key: path }));
+            return true;
+        } catch (err) {
+            if (isNotFound(err)) return false;
+            throw err;
+        }
+    }
+
     async getSignedUrl(path: string): Promise<string> {
         const command = new GetObjectCommand({
             Bucket: this.appConfig.S3_BUCKET,
@@ -87,6 +105,10 @@ export class S3Service {
 
     getPathForScreen(appId: string, buildId: string, screenId: string): string {
         return `screens/${appId}/${buildId}/${screenId}.png`;
+    }
+    /** Keyed by the upload (build screen id): a re-upload to the same build gets a new thumbnail, never a stale one. */
+    getPathForThumbnail(appId: string, buildId: string, screenId: string, buildScreenId: string): string {
+        return `screens/${appId}/${buildId}/${screenId}.${buildScreenId}.thumb.png`;
     }
     getPathForDiff(appId: string, buildId: string, screenId: string): string {
         return `screens/${appId}/${buildId}/${screenId}.diff.png`;

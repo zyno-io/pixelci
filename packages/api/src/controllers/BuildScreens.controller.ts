@@ -27,9 +27,10 @@ import { ScreenEntity } from '../entities/Screen.entity';
 import { UserEntity } from '../entities/User.entity';
 import { AppAccessService } from '../services/AppAccess.service';
 import { PixelMatchService } from '../services/PixelMatch.service';
-import { S3Service } from '../services/S3.service';
+import { isNotFound, S3Service } from '../services/S3.service';
 import { parseScreenName, validateScreenName, readPngHeader, repairLatin1Filename } from '../services/ScreenUpload';
 import { CI_TOKEN_TTL_MS } from './Builds.controller';
+import { ThumbnailService } from '../services/Thumbnail.service';
 import { ITolerances, IToleranceOverrides, validateTolerances } from '../services/Tolerance';
 
 const SHARD_NAME_CLASH = 'screen names must be unique across shards';
@@ -118,7 +119,8 @@ export class BuildScreensController {
         private s3Svc: S3Service,
         private appAccessSvc: AppAccessService,
         private appConfig: AppConfig,
-        private pixelMatch: PixelMatchService
+        private pixelMatch: PixelMatchService,
+        private thumbnails: ThumbnailService
     ) {}
 
     /** The latest approved build on the app's default branch that precedes the given build. */
@@ -348,6 +350,22 @@ export class BuildScreensController {
         return Redirect.toUrl(url);
     }
 
+    /** A scaled-down copy of the screenshot for gallery tiles, generated on first request and kept in storage. */
+    @http.GET('screens/:screenId/thumbnail')
+    @http.middleware(UserAuthMiddleware)
+    async getScreenThumbnail(appId: UuidString, id: UuidString, screenId: UuidString, user: UserEntity): AnyResponse {
+        await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
+        const buildScreen = await this.findStoredImage(appId, id, screenId);
+        let path: string;
+        try {
+            path = await this.thumbnails.ensure(appId, id, screenId, buildScreen.id);
+        } catch (err) {
+            if (isNotFound(err)) throw new HttpNotFoundError();
+            throw err;
+        }
+        return Redirect.toUrl(await this.s3Svc.getSignedUrl(path));
+    }
+
     @http.GET('screens/:screenId/diff')
     @http.middleware(UserAuthMiddleware)
     async getScreenDiff(appId: UuidString, id: UuidString, screenId: UuidString, user: UserEntity): AnyResponse {
@@ -400,13 +418,13 @@ export class BuildScreensController {
         return result;
     }
 
-    /** 404s unless the build belongs to the app (and isn't a draft/canceled) and has a row for the screen. */
+    /** 404s unless the build belongs to the app (and isn't a draft/canceled) and has an image row (not a removal marker) for the screen. */
     private async findStoredImage(appId: string, buildId: string, screenId: string): Promise<BuildScreenEntity> {
         const build = await BuildEntity.query()
             .filter({ id: buildId, appId, status: { $nin: ['draft', 'canceled'] } })
             .findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
-        const row = await BuildScreenEntity.query().filter({ appId, buildId, screenId }).findOneOrUndefined();
+        const row = await BuildScreenEntity.query().filter({ appId, buildId, screenId, isRemoved: false }).findOneOrUndefined();
         if (!row) throw new HttpNotFoundError();
         return row;
     }

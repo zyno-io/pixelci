@@ -2,6 +2,7 @@ import { HttpRequest } from '@zyno-io/ts-server-foundation';
 import { createPersistedEntity, JWT, sleepSecs, TestingHelpers } from '@zyno-io/ts-server-foundation';
 import { readFileSync } from 'fs';
 import { createServer, IncomingMessage, Server, ServerResponse } from 'http';
+import { PNG } from 'pngjs/browser';
 
 import type { IBuildScreenCompareResponse, IBuildScreenResponse } from '../../src/controllers/BuildScreens.controller';
 import type { IAppGalleryResponse } from '../../src/controllers/Screens.controller';
@@ -27,8 +28,6 @@ const PROJECT_PATH = 'group/tolerance-test';
 let mockJob = { id: 0, ref: 'main', sha: '' };
 let mockServer: Server;
 let mockPort: number;
-
-type Facade = ReturnType<typeof TestingHelpers.createTestingFacade>;
 
 run()
     .then(() => {
@@ -294,6 +293,22 @@ async function run() {
     );
     console.log('  PASS');
 
+    // --- thumbnails
+    console.log('\nTest: thumbnail is generated on first request and served from storage');
+    const thumbUrl = `/api/apps/${APP_ID}/builds/${base.id}/screens/${f1}/thumbnail`;
+    for (const attempt of ['first', 'second']) {
+        const res = await facade.request(user(HttpRequest.GET(thumbUrl)));
+        assertEq(res.statusCode, 302, `${attempt} thumbnail request status`);
+        const fetched = await fetch(String(res.getHeader('location')));
+        assertEq(fetched.status, 200, `${attempt} thumbnail fetch status`);
+        const thumb = PNG.sync.read(Buffer.from(await fetched.arrayBuffer()));
+        const full = PNG.sync.read(readFileSync(`${__dirname}/fixtures/finder-1.png`));
+        assertEq(thumb.width, Math.min(full.width, 640), `${attempt} thumbnail width`);
+        assertTrue(thumb.height <= full.height, `${attempt} thumbnail height`);
+    }
+    await call(user(HttpRequest.GET(`/api/apps/${APP_ID}/builds/${base.id}/screens/${APP_ID}/thumbnail`)), 404);
+    console.log('  PASS');
+
     // --- ProcessBuild honours per-screen override
     console.log('\nTest: ProcessBuild honours a per-screen diffPctTolerance override');
     const feat2 = await runBuild('feature-2', [
@@ -310,6 +325,5 @@ async function run() {
     console.log('  PASS');
 
     await call(user(HttpRequest.PUT(putUrl)).json({ colorTolerance: null, shiftTolerance: null, diffPctTolerance: null }));
-    void f1;
     mockServer.close();
 }

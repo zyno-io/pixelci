@@ -144,7 +144,7 @@ export function createDesignApi(
                 return json(screen.currentBuildScreen);
             }
         }
-        if (path.endsWith('/image') || path.endsWith('/diff')) {
+        if (path.endsWith('/image') || path.endsWith('/thumbnail') || path.endsWith('/diff')) {
             const diff = path.endsWith('/diff');
             return {
                 status: 200,

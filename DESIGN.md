@@ -595,7 +595,7 @@ Screens as thumbnails, outside the review flow: an app's baseline screens, or on
 - **Tile:** a button. Card White, Hairline border, 12px radius, resting shadow, 8px padding. Inside, the screenshot on a Screenshot Mat with 5px corners, then the screen name (13px semibold, two lines at most) with its tags on the right. Hover moves the fill to Row Hover and the border to Control Outline; the cursor is zoom-in. Nothing is laid over the screenshot.
 - **Shape:** tiles take the aspect ratio of the app's screenshots, read from the first screen in the list (clamped between 1:2 and 1.9:1) and remembered per app. A screenshot much taller than its tile shows its top and fades out over its last 28px.
 - **Grid:** auto-fill columns of at least 180px, 260px or 400px (small, medium, large; remembered), 16px gaps (12px when small).
-- **Loading:** an unloaded thumbnail is the skeleton shimmer across the whole mat. Thumbnails load as their tiles approach the viewport.
+- **Loading:** an unloaded thumbnail is the skeleton shimmer across the whole mat. Thumbnails load as their tiles approach the viewport. They are scaled-down copies, 640px wide at most and cropped to 2.5 times their width, so a tile never downloads the full screenshot; the lightbox does.
 - **Tags:** the screen's status in a build; "Not in baseline" (release tone) for a screen uploaded since the baseline; and a neutral "Custom" tag with a sliders icon when the screen has its own tolerances.
 
 ### Lightbox

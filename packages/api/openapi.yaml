@@ -628,6 +628,41 @@ paths:
             type: string
             format: uuid
             pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+  /api/apps/{appId}/builds/{id}/screens/{screenId}/thumbnail:
+    get:
+      operationId: getBuildScreensGetScreenThumbnail
+      tags:
+        - buildScreens
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      summary: A scaled-down copy of the screenshot for gallery tiles, generated on
+        first request and kept in storage.
+      parameters:
+        - name: appId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        - name: screenId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/apps/{appId}/builds/{id}/screens/{screenId}/diff:
     get:
       operationId: getBuildScreensGetScreenDiff

@@ -21,6 +21,7 @@ import { AppAccessService } from './services/AppAccess.service';
 import { PixelMatchService } from './services/PixelMatch.service';
 import { S3Service } from './services/S3.service';
 import { assertSecretsConfig } from './services/secrets/SecretBox';
+import { ThumbnailService } from './services/Thumbnail.service';
 import { VcsService } from './services/Vcs.service';
 
 export const CoreAppOptions: CreateAppOptions<AppConfig> = {
@@ -60,7 +61,8 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         PixelMatchService,
         VcsService,
         AppAccessService,
-        S3Service
+        S3Service,
+        ThumbnailService
     ]
 };
 

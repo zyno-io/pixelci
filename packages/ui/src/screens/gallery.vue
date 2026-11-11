@@ -355,7 +355,7 @@ function onThumbLoad(e: Event, tile: ITile) {
 }
 
 function thumbSrc(tile: ITile) {
-    return tile.thumb ? images.get('image', tile.thumb.buildId, tile.screenId) : false;
+    return tile.thumb ? images.get('thumb', tile.thumb.buildId, tile.screenId) : false;
 }
 
 // Only fetch thumbnails as their tiles come near the viewport.
@@ -366,7 +366,7 @@ const observer = new IntersectionObserver(
         for (const entry of entries) {
             if (!entry.isIntersecting) continue;
             const tile = tileByElement.get(entry.target);
-            if (tile?.thumb) images.request('image', tile.thumb.buildId, tile.screenId);
+            if (tile?.thumb) images.request('thumb', tile.thumb.buildId, tile.screenId);
             observer.unobserve(entry.target);
         }
     },

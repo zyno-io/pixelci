@@ -11,7 +11,9 @@
 - Comparison tolerances (color tolerance, shift tolerance, changed pixels allowed) can be set per app by administrators and
   per screen by anyone who can review the app, each falling back to the level above. The tolerance panel previews proposed
   values against the build you are looking at before you save
-- Screen gallery: browse an app's baseline screens, or one build's screens, as thumbnails and open any of them at full size
+- Screen gallery: browse an app's baseline screens, or one build's screens, as thumbnails and open any of them at full size.
+  Thumbnails are scaled-down copies made the first time a screen is shown and kept in storage beside the screenshot
+  (`<screen>.<upload>.thumb.png`)
 - License updated to the PixelCI Source Available License, Version 1.2
     - Anything you mark “Not a Contribution” (for example, code from your own app pasted into an issue) is excluded from
       the contribution terms, matching the CLA
