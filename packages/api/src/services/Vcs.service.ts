@@ -67,7 +67,7 @@ export interface IVcsServiceImpl {
      * `expectedProjectId` is the app's bound project; providers that make further outbound calls after verifying
      * the token (e.g. GitHub commit metadata) must reject a mismatch before doing so. VcsService re-checks binding.
      */
-    validateCiToken(ciToken: string, expectedProjectId: number | null): Promise<ICiJobData>;
+    validateCiToken(ciToken: string, expectedProjectId: number): Promise<ICiJobData>;
     getProviderLoginUrl(redirectUri: string, state?: string): Promise<string>;
     exchangeProviderCode(redirectUri: string, code: string): Promise<IVcsLoginSessionResponse>;
     rerunCiJob(
@@ -101,12 +101,17 @@ export class VcsService {
             throw new HttpUnauthorizedError();
         }
 
-        const provider = this.createProvider(integration);
-        const ciJobData = await provider.validateCiToken(ciToken, app.vcsProjectId);
+        // An unbound app would accept any job token from the instance; refuse before the token reaches the provider.
+        const expectedProjectId = app.vcsProjectId;
+        if (expectedProjectId == null || !Number.isSafeInteger(expectedProjectId) || expectedProjectId <= 0) {
+            this.logger.warn(`CI token validation failed: app is not bound to a VCS project (appId=${app.id})`);
+            throw new HttpUnauthorizedError('App is not bound to a VCS project');
+        }
 
-        // Legacy GitLab apps without a bound project are allowed; everything else must match.
-        const legacyUnbound = !app.vcsProjectId && integration.platform === 'gitlab';
-        if (!legacyUnbound && ciJobData.vcsProjectId !== app.vcsProjectId) {
+        const provider = this.createProvider(integration);
+        const ciJobData = await provider.validateCiToken(ciToken, expectedProjectId);
+
+        if (ciJobData.vcsProjectId !== app.vcsProjectId) {
             this.logger.warn(`Build creation failed: vcsProjectId mismatch (expected=${app.vcsProjectId}, got=${ciJobData.vcsProjectId})`);
             throw new HttpUnauthorizedError();
         }

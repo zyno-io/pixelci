@@ -166,7 +166,7 @@ export class VcsGitHubService implements IVcsServiceImpl {
 
     // ---------------------------------------------------------------- CI auth
 
-    async validateCiToken(ciToken: string, expectedProjectId: number | null): Promise<ICiJobData> {
+    async validateCiToken(ciToken: string, expectedProjectId: number): Promise<ICiJobData> {
         // jose skips the aud check entirely when `audience` is undefined — never let that happen.
         const rawAudience = this.config.oidcAudience;
         if (typeof rawAudience !== 'string' || !rawAudience.trim()) {

@@ -70,6 +70,7 @@ async function run() {
     await testGitHubValidation(facade, adminJwt);
     await testLegacyGitHubRowPartialUpdate(facade, adminJwt);
     await testSessionIncludesVcsId(facade, adminJwt);
+    await testAppCreateRequiresVcsProjectId(facade, adminJwt);
     await testOnboardingGitHubOnFreshDb();
 }
 
@@ -384,6 +385,28 @@ async function createNonAdminUser(id: string) {
         vcsId: ZERO_ID,
         vcsUserId: 'regular-vcs-user'
     });
+}
+
+async function testAppCreateRequiresVcsProjectId(facade: Facade, jwt: string) {
+    console.log('\nTest: POST /api/apps for a GitLab integration without vcsProjectId → 400');
+    const integrations = (await facade.request(HttpRequest.GET('/api/admin/vcs-integrations').header('authorization', `Bearer ${jwt}`)))
+        .json as Array<{
+        id: string;
+        platform: string;
+    }>;
+    const gitlab = integrations.find(i => i.platform === 'gitlab');
+    if (!gitlab) throw new Error('No GitLab integration available');
+    const post = (extra: Record<string, unknown>) =>
+        facade.request(
+            HttpRequest.POST('/api/apps')
+                .header('authorization', `Bearer ${jwt}`)
+                .json({ name: 'Unbound', vcsId: gitlab.id, projectPath: 'group/unbound', defaultBranchName: 'main', ...extra })
+        );
+    assertStatus(await post({}), 400);
+    assertStatus(await post({ vcsProjectId: 0 }), 400);
+    assertStatus(await post({ vcsProjectId: -5 }), 400);
+    assertStatus(await post({ vcsProjectId: 1.5 }), 400);
+    console.log('  PASS');
 }
 
 async function testAdminCanListVcsIntegrations(facade: ReturnType<typeof TestingHelpers.createTestingFacade>, jwt: string) {
