@@ -1,8 +1,11 @@
 import { CreateBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import fs from 'fs';
-import { createConnection } from 'mysql2/promise';
 import path from 'path';
+import pg from 'pg';
 import { fileURLToPath } from 'url';
+
+// Timestamps are `timestamp without time zone` holding UTC wall-clock values; bind JS Dates as UTC, not local time.
+pg.defaults.parseInputDatesAsUTC = true;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, '..', 'integration', 'fixtures');
@@ -50,14 +53,28 @@ const FINDER_2_CHANGED = fs.readFileSync(path.join(fixturesDir, 'finder-2-change
 const FINDER_2_CHANGED_2 = fs.readFileSync(path.join(fixturesDir, 'finder-2-changed-2.png'));
 const FINDER_1_DIFF = fs.readFileSync(path.join(fixturesDir, 'finder-1-diff.png'));
 
-function connect() {
-    return createConnection({
-        host: process.env.MYSQL_HOST || '127.0.0.1',
-        port: parseInt(process.env.MYSQL_PORT || '3306'),
-        user: process.env.MYSQL_USER || 'root',
-        password: process.env.MYSQL_PASSWORD_SECRET || 'secret',
-        database: process.env.MYSQL_DATABASE || 'pixelci'
+async function connect() {
+    const conn = new pg.Client({
+        host: process.env.PG_HOST || '127.0.0.1',
+        port: parseInt(process.env.PG_PORT || '5432'),
+        user: process.env.PG_USER || 'root',
+        password: process.env.PG_PASSWORD_SECRET || 'secret',
+        database: process.env.PG_DATABASE || 'pixelci'
     });
+    await conn.connect();
+    return conn;
+}
+
+// Inserts a row (keys are column names), ignoring it when the id already exists.
+async function insertIgnore(conn, table, row) {
+    const columns = Object.keys(row);
+    const placeholders = columns.map((_, i) => '$' + (i + 1));
+    await conn.query(
+        `INSERT INTO "${table}" (${columns.map(c => `"${c}"`).join(', ')})
+         VALUES (${placeholders.join(', ')})
+         ON CONFLICT ("id") DO NOTHING`,
+        Object.values(row)
+    );
 }
 
 // Clears any per-screen review decisions, returning the seeded builds to their pristine
@@ -66,230 +83,152 @@ function connect() {
 async function resetReviews(conn) {
     await conn.query(
         `UPDATE builds_screens
-         SET reviewStatus = NULL, reviewComment = NULL, reviewedById = NULL, reviewedAt = NULL
-         WHERE appId = ?`,
+         SET "reviewStatus" = NULL, "reviewComment" = NULL, "reviewedById" = NULL, "reviewedAt" = NULL
+         WHERE "appId" = $1`,
         [APP_ID]
     );
+}
+
+function buildRow(id, branchId, createdAt, commitHash, commitSubject, ciJobId, status, approvedById, approvedAt) {
+    return {
+        id,
+        appId: APP_ID,
+        branchId,
+        createdAt: new Date(createdAt),
+        commitHash,
+        commitSubject,
+        commitAuthor: 'Test User',
+        ciJobId,
+        ciReadTokenHashes: '[]',
+        status,
+        approvedById,
+        approvedAt: approvedAt ? new Date(approvedAt) : null
+    };
+}
+
+function buildScreenRow(id, buildId, screenId, matchedBuildId, approvalBuildId, status) {
+    return { id, appId: APP_ID, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus: 'stored' };
 }
 
 async function seedDatabase() {
     const conn = await connect();
 
-    // VCS Integration
-    await conn.query(
-        `INSERT IGNORE INTO vcsIntegrations (id, name, platform, config)
-         VALUES (?, ?, ?, ?)`,
-        [ZERO_ID, 'Test VCS', 'gitlab', JSON.stringify({ url: 'https://git.example', clientId: 'client-id', clientSecret: 'client-secret' })]
-    );
+    await insertIgnore(conn, 'vcsIntegrations', {
+        id: ZERO_ID,
+        name: 'Test VCS',
+        platform: 'gitlab',
+        config: JSON.stringify({ url: 'https://git.example', clientId: 'client-id', clientSecret: 'client-secret' })
+    });
 
-    // User
-    await conn.query(
-        `INSERT IGNORE INTO users (id, vcsId, vcsUserId, name, isAdmin, createdAt, lastLoginAt)
-         VALUES (?, ?, ?, ?, ?, NOW(), NOW())`,
-        [ZERO_ID, ZERO_ID, ZERO_ID, 'E2E Test User', true]
-    );
+    await insertIgnore(conn, 'users', {
+        id: ZERO_ID,
+        vcsId: ZERO_ID,
+        vcsUserId: ZERO_ID,
+        name: 'E2E Test User',
+        isAdmin: true,
+        createdAt: new Date(),
+        lastLoginAt: new Date()
+    });
 
-    // App
-    await conn.query(
-        `INSERT IGNORE INTO apps (id, vcsId, projectPath, defaultBranchId, name)
-         VALUES (?, ?, ?, ?, ?)`,
-        [APP_ID, ZERO_ID, 'test/project', MAIN_BRANCH_ID, 'E2E Test App']
-    );
+    await insertIgnore(conn, 'apps', {
+        id: APP_ID,
+        vcsId: ZERO_ID,
+        projectPath: 'test/project',
+        defaultBranchId: MAIN_BRANCH_ID,
+        name: 'E2E Test App'
+    });
 
-    // Branches
-    await conn.query(
-        `INSERT IGNORE INTO branches (id, appId, name)
-         VALUES (?, ?, ?)`,
-        [MAIN_BRANCH_ID, APP_ID, 'main']
-    );
-    await conn.query(
-        `INSERT IGNORE INTO branches (id, appId, name)
-         VALUES (?, ?, ?)`,
-        [FEAT_BRANCH_ID, APP_ID, 'feature/redesign']
-    );
+    await insertIgnore(conn, 'branches', { id: MAIN_BRANCH_ID, appId: APP_ID, name: 'main' });
+    await insertIgnore(conn, 'branches', { id: FEAT_BRANCH_ID, appId: APP_ID, name: 'feature/redesign' });
 
-    // Screens
-    await conn.query(`INSERT IGNORE INTO screens (id, appId, name) VALUES (?, ?, ?)`, [SCREEN_HOMEPAGE_ID, APP_ID, 'Homepage']);
-    await conn.query(`INSERT IGNORE INTO screens (id, appId, name) VALUES (?, ?, ?)`, [SCREEN_DASHBOARD_ID, APP_ID, 'Dashboard']);
-    await conn.query(`INSERT IGNORE INTO screens (id, appId, name) VALUES (?, ?, ?)`, [SCREEN_SETTINGS_ID, APP_ID, 'Settings']);
-    await conn.query(`INSERT IGNORE INTO screens (id, appId, name) VALUES (?, ?, ?)`, [SCREEN_LOGIN_ID, APP_ID, 'Login']);
+    await insertIgnore(conn, 'screens', { id: SCREEN_HOMEPAGE_ID, appId: APP_ID, name: 'Homepage' });
+    await insertIgnore(conn, 'screens', { id: SCREEN_DASHBOARD_ID, appId: APP_ID, name: 'Dashboard' });
+    await insertIgnore(conn, 'screens', { id: SCREEN_SETTINGS_ID, appId: APP_ID, name: 'Settings' });
+    await insertIgnore(conn, 'screens', { id: SCREEN_LOGIN_ID, appId: APP_ID, name: 'Login' });
 
-    // ── Build 003: main, "changes approved", Jan 10 ──
-    // First build, just Homepage
-    await conn.query(
-        `INSERT IGNORE INTO builds (id, appId, branchId, createdAt, commitHash, commitSubject, commitAuthor, ciJobId, status, approvedById, approvedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
+    // ── Build 003: main, "changes approved", Jan 10 ── first build, just Homepage
+    await insertIgnore(
+        conn,
+        'builds',
+        buildRow(
             BUILD_003_ID,
-            APP_ID,
             MAIN_BRANCH_ID,
-            new Date('2025-01-10T10:00:00Z'),
+            '2025-01-10T10:00:00Z',
             'a1b2c3d',
             'Initial layout',
-            'Test User',
             '100',
             'changes approved',
             ZERO_ID,
-            new Date('2025-01-10T10:30:00Z')
-        ]
+            '2025-01-10T10:30:00Z'
+        )
     );
-    // Build 003 screens: Homepage (no changes - baseline)
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_020, APP_ID, BUILD_003_ID, SCREEN_HOMEPAGE_ID, null, null, 'no changes', 'stored']
-    );
+    // Homepage (no changes - baseline)
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_020, BUILD_003_ID, SCREEN_HOMEPAGE_ID, null, null, 'no changes'));
 
-    // ── Build 004: main, "changes approved", Jan 15 ──
-    // Adds Dashboard and Settings
-    await conn.query(
-        `INSERT IGNORE INTO builds (id, appId, branchId, createdAt, commitHash, commitSubject, commitAuthor, ciJobId, status, approvedById, approvedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
+    // ── Build 004: main, "changes approved", Jan 15 ── adds Dashboard and Settings
+    await insertIgnore(
+        conn,
+        'builds',
+        buildRow(
             BUILD_004_ID,
-            APP_ID,
             MAIN_BRANCH_ID,
-            new Date('2025-01-15T14:00:00Z'),
+            '2025-01-15T14:00:00Z',
             'e4f5a6b',
             'Add dashboard and settings',
-            'Test User',
             '101',
             'changes approved',
             ZERO_ID,
-            new Date('2025-01-15T14:30:00Z')
-        ]
+            '2025-01-15T14:30:00Z'
+        )
     );
-    // Build 004 screens: Homepage (no changes), Dashboard (no changes), Settings (no changes)
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_021, APP_ID, BUILD_004_ID, SCREEN_HOMEPAGE_ID, BUILD_003_ID, null, 'no changes', 'stored']
-    );
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_022, APP_ID, BUILD_004_ID, SCREEN_DASHBOARD_ID, null, null, 'no changes', 'stored']
-    );
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_023, APP_ID, BUILD_004_ID, SCREEN_SETTINGS_ID, null, null, 'no changes', 'stored']
-    );
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_021, BUILD_004_ID, SCREEN_HOMEPAGE_ID, BUILD_003_ID, null, 'no changes'));
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_022, BUILD_004_ID, SCREEN_DASHBOARD_ID, null, null, 'no changes'));
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_023, BUILD_004_ID, SCREEN_SETTINGS_ID, null, null, 'no changes'));
 
-    // ── Build 005: feature/redesign, "changes approved", Jan 18 ──
-    // Homepage changed, Dashboard and Settings unchanged
-    await conn.query(
-        `INSERT IGNORE INTO builds (id, appId, branchId, createdAt, commitHash, commitSubject, commitAuthor, ciJobId, status, approvedById, approvedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
+    // ── Build 005: feature/redesign, "changes approved", Jan 18 ── Homepage changed, Dashboard and Settings unchanged
+    await insertIgnore(
+        conn,
+        'builds',
+        buildRow(
             BUILD_005_ID,
-            APP_ID,
             FEAT_BRANCH_ID,
-            new Date('2025-01-18T09:00:00Z'),
+            '2025-01-18T09:00:00Z',
             'c7d8e9f',
             'Update homepage styles',
-            'Test User',
             '102',
             'changes approved',
             ZERO_ID,
-            new Date('2025-01-18T09:30:00Z')
-        ]
+            '2025-01-18T09:30:00Z'
+        )
     );
-    // Build 005 screens: Homepage (approved after review), Dashboard (no changes), Settings (no changes)
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_024, APP_ID, BUILD_005_ID, SCREEN_HOMEPAGE_ID, null, BUILD_005_ID, 'approved', 'stored']
-    );
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_025, APP_ID, BUILD_005_ID, SCREEN_DASHBOARD_ID, BUILD_004_ID, null, 'no changes', 'stored']
-    );
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_026, APP_ID, BUILD_005_ID, SCREEN_SETTINGS_ID, BUILD_004_ID, null, 'no changes', 'stored']
-    );
+    // Homepage (approved after review), Dashboard (no changes), Settings (no changes)
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_024, BUILD_005_ID, SCREEN_HOMEPAGE_ID, null, BUILD_005_ID, 'changes approved'));
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_025, BUILD_005_ID, SCREEN_DASHBOARD_ID, BUILD_004_ID, null, 'no changes'));
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_026, BUILD_005_ID, SCREEN_SETTINGS_ID, BUILD_004_ID, null, 'no changes'));
 
     // ── Build 006: main, "no changes", Jan 20 ──
-    await conn.query(
-        `INSERT IGNORE INTO builds (id, appId, branchId, createdAt, commitHash, commitSubject, commitAuthor, ciJobId, status, approvedById, approvedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-            BUILD_006_ID,
-            APP_ID,
-            MAIN_BRANCH_ID,
-            new Date('2025-01-20T16:00:00Z'),
-            'b2c3d4e',
-            'Fix responsive breakpoints',
-            'Test User',
-            '103',
-            'no changes',
-            null,
-            null
-        ]
+    await insertIgnore(
+        conn,
+        'builds',
+        buildRow(BUILD_006_ID, MAIN_BRANCH_ID, '2025-01-20T16:00:00Z', 'b2c3d4e', 'Fix responsive breakpoints', '103', 'no changes', null, null)
     );
-    // Build 006 screens: Homepage (no changes), Dashboard (no changes), Settings (no changes)
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_027, APP_ID, BUILD_006_ID, SCREEN_HOMEPAGE_ID, BUILD_004_ID, null, 'no changes', 'stored']
-    );
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_028, APP_ID, BUILD_006_ID, SCREEN_DASHBOARD_ID, BUILD_004_ID, null, 'no changes', 'stored']
-    );
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_029, APP_ID, BUILD_006_ID, SCREEN_SETTINGS_ID, BUILD_004_ID, null, 'no changes', 'stored']
-    );
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_027, BUILD_006_ID, SCREEN_HOMEPAGE_ID, BUILD_004_ID, null, 'no changes'));
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_028, BUILD_006_ID, SCREEN_DASHBOARD_ID, BUILD_004_ID, null, 'no changes'));
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_029, BUILD_006_ID, SCREEN_SETTINGS_ID, BUILD_004_ID, null, 'no changes'));
 
-    // ── Build 007: feature/redesign, "needs review", Jan 22 ──
-    // Homepage changed, Dashboard/Settings unchanged, Login is new
-    await conn.query(
-        `INSERT IGNORE INTO builds (id, appId, branchId, createdAt, commitHash, commitSubject, commitAuthor, ciJobId, status, approvedById, approvedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-            BUILD_007_ID,
-            APP_ID,
-            FEAT_BRANCH_ID,
-            new Date('2025-01-22T11:00:00Z'),
-            'f0a1b2c',
-            'Redesign login page',
-            'Test User',
-            '104',
-            'needs review',
-            null,
-            null
-        ]
+    // ── Build 007: feature/redesign, "needs review", Jan 22 ── Homepage changed, Dashboard/Settings unchanged, Login is new
+    await insertIgnore(
+        conn,
+        'builds',
+        buildRow(BUILD_007_ID, FEAT_BRANCH_ID, '2025-01-22T11:00:00Z', 'f0a1b2c', 'Redesign login page', '104', 'needs review', null, null)
     );
-    // Build 007 screens: Homepage (needs review), Dashboard (no changes), Settings (no changes), Login (new)
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_02A, APP_ID, BUILD_007_ID, SCREEN_HOMEPAGE_ID, null, null, 'needs review', 'stored']
-    );
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_02B, APP_ID, BUILD_007_ID, SCREEN_DASHBOARD_ID, BUILD_004_ID, null, 'no changes', 'stored']
-    );
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_02C, APP_ID, BUILD_007_ID, SCREEN_SETTINGS_ID, BUILD_004_ID, null, 'no changes', 'stored']
-    );
-    await conn.query(
-        `INSERT IGNORE INTO builds_screens (id, appId, buildId, screenId, matchedBuildId, approvalBuildId, status, storageStatus)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [BS_02D, APP_ID, BUILD_007_ID, SCREEN_LOGIN_ID, null, null, 'new', 'stored']
-    );
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_02A, BUILD_007_ID, SCREEN_HOMEPAGE_ID, null, null, 'needs review'));
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_02B, BUILD_007_ID, SCREEN_DASHBOARD_ID, BUILD_004_ID, null, 'no changes'));
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_02C, BUILD_007_ID, SCREEN_SETTINGS_ID, BUILD_004_ID, null, 'no changes'));
+    await insertIgnore(conn, 'builds_screens', buildScreenRow(BS_02D, BUILD_007_ID, SCREEN_LOGIN_ID, null, null, 'new'));
 
     // Make re-seeding idempotent w.r.t. reviews: a persisted local DB may retain decisions
-    // from a prior run, and INSERT IGNORE above won't overwrite them.
+    // from a prior run, and ON CONFLICT DO NOTHING above won't overwrite them.
     await resetReviews(conn);
 
     await conn.end();
