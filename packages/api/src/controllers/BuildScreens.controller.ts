@@ -304,7 +304,8 @@ export class BuildScreensController {
             if (!build) return new HttpNotFoundError();
             if (build.status !== 'needs review') return new HttpBadRequestError('Build is not in needs review status');
 
-            const buildScreen = await txn.query(BuildScreenEntity).filter({ appId, buildId: id, screenId }).findOneOrUndefined();
+            // Removals are accepted only by approving the build, never reviewed one by one
+            const buildScreen = await txn.query(BuildScreenEntity).filter({ appId, buildId: id, screenId, isRemoved: false }).findOneOrUndefined();
             if (!buildScreen) return new HttpNotFoundError();
             if (buildScreen.status !== 'new' && buildScreen.status !== 'needs review') {
                 return new HttpBadRequestError('Screen is not awaiting review');
