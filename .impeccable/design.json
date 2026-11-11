@@ -1,0 +1,1785 @@
+{
+    "schemaVersion": 2,
+    "generatedAt": "2026-11-11T03:27:07.858Z",
+    "title": "Design System: PixelCI",
+    "extensions": {
+        "colorMeta": {
+            "bg": {
+                "role": "neutral",
+                "displayName": "Desk Grey",
+                "cssVar": "--bg",
+                "theme": "light",
+                "canonical": "#f6f7f9",
+                "oklch": "oklch(97.6% 0.003 265)",
+                "tonalRamp": [
+                    "oklch(15% 0.001 265)",
+                    "oklch(27% 0.002 265)",
+                    "oklch(39% 0.003 265)",
+                    "oklch(51% 0.003 265)",
+                    "oklch(63% 0.003 265)",
+                    "oklch(75% 0.002 265)",
+                    "oklch(86% 0.001 265)",
+                    "oklch(95% 0.001 265)"
+                ]
+            },
+            "surface": {
+                "role": "neutral",
+                "displayName": "Card White",
+                "cssVar": "--surface",
+                "theme": "light",
+                "canonical": "#ffffff",
+                "oklch": "oklch(100.0% 0.000 90)",
+                "tonalRamp": [
+                    "oklch(15% 0.000 90)",
+                    "oklch(27% 0.000 90)",
+                    "oklch(39% 0.000 90)",
+                    "oklch(51% 0.000 90)",
+                    "oklch(63% 0.000 90)",
+                    "oklch(75% 0.000 90)",
+                    "oklch(86% 0.000 90)",
+                    "oklch(95% 0.000 90)"
+                ]
+            },
+            "surface-2": {
+                "role": "neutral",
+                "displayName": "Inset Grey",
+                "cssVar": "--surface-2",
+                "theme": "light",
+                "canonical": "#f3f4f6",
+                "oklch": "oklch(96.7% 0.003 265)",
+                "tonalRamp": [
+                    "oklch(15% 0.001 265)",
+                    "oklch(27% 0.002 265)",
+                    "oklch(39% 0.003 265)",
+                    "oklch(51% 0.003 265)",
+                    "oklch(63% 0.003 265)",
+                    "oklch(75% 0.002 265)",
+                    "oklch(86% 0.001 265)",
+                    "oklch(95% 0.001 265)"
+                ]
+            },
+            "surface-3": {
+                "role": "neutral",
+                "displayName": "Screenshot Mat",
+                "cssVar": "--surface-3",
+                "theme": "light",
+                "canonical": "#eceef2",
+                "oklch": "oklch(94.9% 0.006 265)",
+                "tonalRamp": [
+                    "oklch(15% 0.003 265)",
+                    "oklch(27% 0.004 265)",
+                    "oklch(39% 0.005 265)",
+                    "oklch(51% 0.006 265)",
+                    "oklch(63% 0.005 265)",
+                    "oklch(75% 0.004 265)",
+                    "oklch(86% 0.002 265)",
+                    "oklch(95% 0.001 265)"
+                ]
+            },
+            "surface-hover": {
+                "role": "neutral",
+                "displayName": "Row Hover",
+                "cssVar": "--surface-hover",
+                "theme": "light",
+                "canonical": "#f7f8fa",
+                "oklch": "oklch(97.9% 0.003 265)",
+                "tonalRamp": [
+                    "oklch(15% 0.001 265)",
+                    "oklch(27% 0.002 265)",
+                    "oklch(39% 0.003 265)",
+                    "oklch(51% 0.003 265)",
+                    "oklch(63% 0.003 265)",
+                    "oklch(75% 0.002 265)",
+                    "oklch(86% 0.001 265)",
+                    "oklch(95% 0.001 265)"
+                ]
+            },
+            "border": {
+                "role": "neutral",
+                "displayName": "Hairline",
+                "cssVar": "--border",
+                "theme": "light",
+                "canonical": "#e3e5ea",
+                "oklch": "oklch(92.2% 0.007 269)",
+                "tonalRamp": [
+                    "oklch(15% 0.003 269)",
+                    "oklch(27% 0.005 269)",
+                    "oklch(39% 0.007 269)",
+                    "oklch(51% 0.007 269)",
+                    "oklch(63% 0.006 269)",
+                    "oklch(75% 0.005 269)",
+                    "oklch(86% 0.003 269)",
+                    "oklch(95% 0.001 269)"
+                ]
+            },
+            "border-strong": {
+                "role": "neutral",
+                "displayName": "Control Outline",
+                "cssVar": "--border-strong",
+                "theme": "light",
+                "canonical": "#cfd3db",
+                "oklch": "oklch(86.6% 0.012 265)",
+                "tonalRamp": [
+                    "oklch(15% 0.005 265)",
+                    "oklch(27% 0.009 265)",
+                    "oklch(39% 0.011 265)",
+                    "oklch(51% 0.012 265)",
+                    "oklch(63% 0.011 265)",
+                    "oklch(75% 0.008 265)",
+                    "oklch(86% 0.005 265)",
+                    "oklch(95% 0.002 265)"
+                ]
+            },
+            "text": {
+                "role": "neutral",
+                "displayName": "Ink",
+                "cssVar": "--text",
+                "theme": "light",
+                "canonical": "#15171c",
+                "oklch": "oklch(20.5% 0.010 268)",
+                "tonalRamp": [
+                    "oklch(15% 0.005 268)",
+                    "oklch(27% 0.008 268)",
+                    "oklch(39% 0.010 268)",
+                    "oklch(51% 0.010 268)",
+                    "oklch(63% 0.009 268)",
+                    "oklch(75% 0.007 268)",
+                    "oklch(86% 0.004 268)",
+                    "oklch(95% 0.002 268)"
+                ]
+            },
+            "text-2": {
+                "role": "neutral",
+                "displayName": "Secondary Ink",
+                "cssVar": "--text-2",
+                "theme": "light",
+                "canonical": "#4f5562",
+                "oklch": "oklch(44.9% 0.023 266)",
+                "tonalRamp": [
+                    "oklch(15% 0.010 266)",
+                    "oklch(27% 0.017 266)",
+                    "oklch(39% 0.021 266)",
+                    "oklch(51% 0.023 266)",
+                    "oklch(63% 0.020 266)",
+                    "oklch(75% 0.015 266)",
+                    "oklch(86% 0.009 266)",
+                    "oklch(95% 0.004 266)"
+                ]
+            },
+            "text-3": {
+                "role": "neutral",
+                "displayName": "Meta Grey",
+                "cssVar": "--text-3",
+                "theme": "light",
+                "canonical": "#646a78",
+                "oklch": "oklch(52.4% 0.023 267)",
+                "tonalRamp": [
+                    "oklch(15% 0.010 267)",
+                    "oklch(27% 0.017 267)",
+                    "oklch(39% 0.022 267)",
+                    "oklch(51% 0.023 267)",
+                    "oklch(63% 0.021 267)",
+                    "oklch(75% 0.015 267)",
+                    "oklch(86% 0.009 267)",
+                    "oklch(95% 0.004 267)"
+                ]
+            },
+            "placeholder": {
+                "role": "neutral",
+                "displayName": "Placeholder Grey",
+                "cssVar": "--placeholder",
+                "theme": "light",
+                "canonical": "#6f7583",
+                "oklch": "oklch(56.2% 0.023 267)",
+                "tonalRamp": [
+                    "oklch(15% 0.010 267)",
+                    "oklch(27% 0.017 267)",
+                    "oklch(39% 0.022 267)",
+                    "oklch(51% 0.023 267)",
+                    "oklch(63% 0.021 267)",
+                    "oklch(75% 0.015 267)",
+                    "oklch(86% 0.009 267)",
+                    "oklch(95% 0.004 267)"
+                ],
+                "contrast": "4.62:1 on --surface (#ffffff)"
+            },
+            "accent": {
+                "role": "primary",
+                "displayName": "Action Indigo",
+                "cssVar": "--accent",
+                "theme": "light",
+                "canonical": "#4f46e5",
+                "oklch": "oklch(51.1% 0.230 277)",
+                "tonalRamp": [
+                    "oklch(15% 0.104 277)",
+                    "oklch(27% 0.173 277)",
+                    "oklch(39% 0.219 277)",
+                    "oklch(51% 0.230 277)",
+                    "oklch(63% 0.207 277)",
+                    "oklch(75% 0.150 277)",
+                    "oklch(86% 0.092 277)",
+                    "oklch(95% 0.041 277)"
+                ]
+            },
+            "accent-hover": {
+                "role": "primary",
+                "displayName": "Action Indigo Hover",
+                "cssVar": "--accent-hover",
+                "theme": "light",
+                "canonical": "#4338ca",
+                "oklch": "oklch(45.7% 0.215 277)",
+                "tonalRamp": [
+                    "oklch(15% 0.097 277)",
+                    "oklch(27% 0.161 277)",
+                    "oklch(39% 0.204 277)",
+                    "oklch(51% 0.215 277)",
+                    "oklch(63% 0.193 277)",
+                    "oklch(75% 0.139 277)",
+                    "oklch(86% 0.086 277)",
+                    "oklch(95% 0.039 277)"
+                ]
+            },
+            "accent-text": {
+                "role": "primary",
+                "displayName": "On Indigo",
+                "cssVar": "--accent-text",
+                "theme": "light",
+                "canonical": "#ffffff",
+                "oklch": "oklch(100.0% 0.000 90)",
+                "tonalRamp": [
+                    "oklch(15% 0.000 90)",
+                    "oklch(27% 0.000 90)",
+                    "oklch(39% 0.000 90)",
+                    "oklch(51% 0.000 90)",
+                    "oklch(63% 0.000 90)",
+                    "oklch(75% 0.000 90)",
+                    "oklch(86% 0.000 90)",
+                    "oklch(95% 0.000 90)"
+                ]
+            },
+            "accent-soft": {
+                "role": "primary",
+                "displayName": "Focus Halo",
+                "cssVar": "--accent-soft",
+                "theme": "light",
+                "canonical": "rgba(79, 70, 229, 0.1)",
+                "oklch": "oklch(51.1% 0.230 277) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.104 277)",
+                    "oklch(27% 0.173 277)",
+                    "oklch(39% 0.219 277)",
+                    "oklch(51% 0.230 277)",
+                    "oklch(63% 0.207 277)",
+                    "oklch(75% 0.150 277)",
+                    "oklch(86% 0.092 277)",
+                    "oklch(95% 0.041 277)"
+                ]
+            },
+            "focus": {
+                "role": "primary",
+                "displayName": "Focus Ring Indigo",
+                "cssVar": "--focus",
+                "theme": "light",
+                "canonical": "#6366f1",
+                "oklch": "oklch(58.5% 0.204 277)",
+                "tonalRamp": [
+                    "oklch(15% 0.092 277)",
+                    "oklch(27% 0.153 277)",
+                    "oklch(39% 0.194 277)",
+                    "oklch(51% 0.204 277)",
+                    "oklch(63% 0.184 277)",
+                    "oklch(75% 0.133 277)",
+                    "oklch(86% 0.082 277)",
+                    "oklch(95% 0.037 277)"
+                ]
+            },
+            "link": {
+                "role": "primary",
+                "displayName": "Link Indigo",
+                "cssVar": "--link",
+                "theme": "light",
+                "canonical": "#3d37c9",
+                "oklch": "oklch(45.0% 0.216 275)",
+                "tonalRamp": [
+                    "oklch(15% 0.097 275)",
+                    "oklch(27% 0.162 275)",
+                    "oklch(39% 0.205 275)",
+                    "oklch(51% 0.216 275)",
+                    "oklch(63% 0.194 275)",
+                    "oklch(75% 0.140 275)",
+                    "oklch(86% 0.086 275)",
+                    "oklch(95% 0.039 275)"
+                ]
+            },
+            "danger": {
+                "role": "secondary",
+                "displayName": "Rejected Red",
+                "cssVar": "--danger",
+                "theme": "light",
+                "canonical": "#c4320a",
+                "oklch": "oklch(54.1% 0.188 34)",
+                "tonalRamp": [
+                    "oklch(15% 0.085 34)",
+                    "oklch(27% 0.141 34)",
+                    "oklch(39% 0.179 34)",
+                    "oklch(51% 0.188 34)",
+                    "oklch(63% 0.169 34)",
+                    "oklch(75% 0.122 34)",
+                    "oklch(86% 0.075 34)",
+                    "oklch(95% 0.034 34)"
+                ]
+            },
+            "danger-strong": {
+                "role": "secondary",
+                "displayName": "Destructive Red",
+                "cssVar": "--danger-strong",
+                "theme": "light",
+                "canonical": "#b42318",
+                "oklch": "oklch(50.0% 0.182 30)",
+                "tonalRamp": [
+                    "oklch(15% 0.082 30)",
+                    "oklch(27% 0.137 30)",
+                    "oklch(39% 0.173 30)",
+                    "oklch(51% 0.182 30)",
+                    "oklch(63% 0.164 30)",
+                    "oklch(75% 0.118 30)",
+                    "oklch(86% 0.073 30)",
+                    "oklch(95% 0.033 30)"
+                ]
+            },
+            "danger-soft": {
+                "role": "secondary",
+                "displayName": "Rejected Red Soft Fill",
+                "cssVar": "--danger-soft",
+                "theme": "light",
+                "canonical": "#fef1ee",
+                "oklch": "oklch(96.8% 0.015 33)",
+                "tonalRamp": [
+                    "oklch(15% 0.085 33)",
+                    "oklch(27% 0.141 33)",
+                    "oklch(39% 0.179 33)",
+                    "oklch(51% 0.188 33)",
+                    "oklch(63% 0.169 33)",
+                    "oklch(75% 0.122 33)",
+                    "oklch(86% 0.075 33)",
+                    "oklch(95% 0.034 33)"
+                ]
+            },
+            "danger-border": {
+                "role": "secondary",
+                "displayName": "Rejected Red Border",
+                "cssVar": "--danger-border",
+                "theme": "light",
+                "canonical": "#fbd0c5",
+                "oklch": "oklch(89.2% 0.051 35)",
+                "tonalRamp": [
+                    "oklch(15% 0.085 35)",
+                    "oklch(27% 0.141 35)",
+                    "oklch(39% 0.179 35)",
+                    "oklch(51% 0.188 35)",
+                    "oklch(63% 0.169 35)",
+                    "oklch(75% 0.122 35)",
+                    "oklch(86% 0.075 35)",
+                    "oklch(95% 0.034 35)"
+                ]
+            },
+            "warning": {
+                "role": "secondary",
+                "displayName": "Needs Review Amber",
+                "cssVar": "--warning",
+                "theme": "light",
+                "canonical": "#a15c07",
+                "oklch": "oklch(54.3% 0.123 62)",
+                "tonalRamp": [
+                    "oklch(15% 0.055 62)",
+                    "oklch(27% 0.092 62)",
+                    "oklch(39% 0.117 62)",
+                    "oklch(51% 0.123 62)",
+                    "oklch(63% 0.111 62)",
+                    "oklch(75% 0.080 62)",
+                    "oklch(86% 0.049 62)",
+                    "oklch(95% 0.022 62)"
+                ]
+            },
+            "warning-soft": {
+                "role": "secondary",
+                "displayName": "Needs Review Amber Soft Fill",
+                "cssVar": "--warning-soft",
+                "theme": "light",
+                "canonical": "#fef6e7",
+                "oklch": "oklch(97.5% 0.022 83)",
+                "tonalRamp": [
+                    "oklch(15% 0.055 83)",
+                    "oklch(27% 0.092 83)",
+                    "oklch(39% 0.117 83)",
+                    "oklch(51% 0.123 83)",
+                    "oklch(63% 0.111 83)",
+                    "oklch(75% 0.080 83)",
+                    "oklch(86% 0.049 83)",
+                    "oklch(95% 0.022 83)"
+                ]
+            },
+            "warning-border": {
+                "role": "secondary",
+                "displayName": "Needs Review Amber Border",
+                "cssVar": "--warning-border",
+                "theme": "light",
+                "canonical": "#f8dfaa",
+                "oklch": "oklch(91.2% 0.074 86)",
+                "tonalRamp": [
+                    "oklch(15% 0.055 86)",
+                    "oklch(27% 0.092 86)",
+                    "oklch(39% 0.117 86)",
+                    "oklch(51% 0.123 86)",
+                    "oklch(63% 0.111 86)",
+                    "oklch(75% 0.080 86)",
+                    "oklch(86% 0.049 86)",
+                    "oklch(95% 0.022 86)"
+                ]
+            },
+            "success": {
+                "role": "secondary",
+                "displayName": "Approved Green",
+                "cssVar": "--success",
+                "theme": "light",
+                "canonical": "#067647",
+                "oklch": "oklch(49.9% 0.117 157)",
+                "tonalRamp": [
+                    "oklch(15% 0.053 157)",
+                    "oklch(27% 0.088 157)",
+                    "oklch(39% 0.111 157)",
+                    "oklch(51% 0.117 157)",
+                    "oklch(63% 0.105 157)",
+                    "oklch(75% 0.076 157)",
+                    "oklch(86% 0.047 157)",
+                    "oklch(95% 0.021 157)"
+                ]
+            },
+            "success-soft": {
+                "role": "secondary",
+                "displayName": "Approved Green Soft Fill",
+                "cssVar": "--success-soft",
+                "theme": "light",
+                "canonical": "#ecfaf3",
+                "oklch": "oklch(97.3% 0.017 165)",
+                "tonalRamp": [
+                    "oklch(15% 0.053 165)",
+                    "oklch(27% 0.088 165)",
+                    "oklch(39% 0.111 165)",
+                    "oklch(51% 0.117 165)",
+                    "oklch(63% 0.105 165)",
+                    "oklch(75% 0.076 165)",
+                    "oklch(86% 0.047 165)",
+                    "oklch(95% 0.021 165)"
+                ]
+            },
+            "success-border": {
+                "role": "secondary",
+                "displayName": "Approved Green Border",
+                "cssVar": "--success-border",
+                "theme": "light",
+                "canonical": "#b7e9d0",
+                "oklch": "oklch(89.2% 0.062 163)",
+                "tonalRamp": [
+                    "oklch(15% 0.053 163)",
+                    "oklch(27% 0.088 163)",
+                    "oklch(39% 0.111 163)",
+                    "oklch(51% 0.117 163)",
+                    "oklch(63% 0.105 163)",
+                    "oklch(75% 0.076 163)",
+                    "oklch(86% 0.047 163)",
+                    "oklch(95% 0.021 163)"
+                ]
+            },
+            "info": {
+                "role": "secondary",
+                "displayName": "No Changes Blue",
+                "cssVar": "--info",
+                "theme": "light",
+                "canonical": "#1e5bd6",
+                "oklch": "oklch(51.1% 0.199 262)",
+                "tonalRamp": [
+                    "oklch(15% 0.090 262)",
+                    "oklch(27% 0.149 262)",
+                    "oklch(39% 0.189 262)",
+                    "oklch(51% 0.199 262)",
+                    "oklch(63% 0.179 262)",
+                    "oklch(75% 0.130 262)",
+                    "oklch(86% 0.080 262)",
+                    "oklch(95% 0.036 262)"
+                ]
+            },
+            "info-soft": {
+                "role": "secondary",
+                "displayName": "No Changes Blue Soft Fill",
+                "cssVar": "--info-soft",
+                "theme": "light",
+                "canonical": "#eef4ff",
+                "oklch": "oklch(96.6% 0.016 263)",
+                "tonalRamp": [
+                    "oklch(15% 0.090 263)",
+                    "oklch(27% 0.149 263)",
+                    "oklch(39% 0.189 263)",
+                    "oklch(51% 0.199 263)",
+                    "oklch(63% 0.179 263)",
+                    "oklch(75% 0.130 263)",
+                    "oklch(86% 0.080 263)",
+                    "oklch(95% 0.036 263)"
+                ]
+            },
+            "info-border": {
+                "role": "secondary",
+                "displayName": "No Changes Blue Border",
+                "cssVar": "--info-border",
+                "theme": "light",
+                "canonical": "#c7d7fe",
+                "oklch": "oklch(88.0% 0.057 268)",
+                "tonalRamp": [
+                    "oklch(15% 0.090 268)",
+                    "oklch(27% 0.149 268)",
+                    "oklch(39% 0.189 268)",
+                    "oklch(51% 0.199 268)",
+                    "oklch(63% 0.179 268)",
+                    "oklch(75% 0.130 268)",
+                    "oklch(86% 0.080 268)",
+                    "oklch(95% 0.036 268)"
+                ]
+            },
+            "release": {
+                "role": "secondary",
+                "displayName": "New Screen Violet",
+                "cssVar": "--release",
+                "theme": "light",
+                "canonical": "#6927da",
+                "oklch": "oklch(48.7% 0.243 291)",
+                "tonalRamp": [
+                    "oklch(15% 0.109 291)",
+                    "oklch(27% 0.182 291)",
+                    "oklch(39% 0.231 291)",
+                    "oklch(51% 0.243 291)",
+                    "oklch(63% 0.219 291)",
+                    "oklch(75% 0.158 291)",
+                    "oklch(86% 0.097 291)",
+                    "oklch(95% 0.044 291)"
+                ]
+            },
+            "release-soft": {
+                "role": "secondary",
+                "displayName": "New Screen Violet Soft Fill",
+                "cssVar": "--release-soft",
+                "theme": "light",
+                "canonical": "#f5f1ff",
+                "oklch": "oklch(96.5% 0.019 299)",
+                "tonalRamp": [
+                    "oklch(15% 0.109 299)",
+                    "oklch(27% 0.182 299)",
+                    "oklch(39% 0.231 299)",
+                    "oklch(51% 0.243 299)",
+                    "oklch(63% 0.219 299)",
+                    "oklch(75% 0.158 299)",
+                    "oklch(86% 0.097 299)",
+                    "oklch(95% 0.044 299)"
+                ]
+            },
+            "release-border": {
+                "role": "secondary",
+                "displayName": "New Screen Violet Border",
+                "cssVar": "--release-border",
+                "theme": "light",
+                "canonical": "#ddd1fb",
+                "oklch": "oklch(88.4% 0.059 298)",
+                "tonalRamp": [
+                    "oklch(15% 0.109 298)",
+                    "oklch(27% 0.182 298)",
+                    "oklch(39% 0.231 298)",
+                    "oklch(51% 0.243 298)",
+                    "oklch(63% 0.219 298)",
+                    "oklch(75% 0.158 298)",
+                    "oklch(86% 0.097 298)",
+                    "oklch(95% 0.044 298)"
+                ]
+            },
+            "neutral": {
+                "role": "secondary",
+                "displayName": "Draft Grey",
+                "cssVar": "--neutral",
+                "theme": "light",
+                "canonical": "#545b69",
+                "oklch": "oklch(47.0% 0.024 264)",
+                "tonalRamp": [
+                    "oklch(15% 0.011 264)",
+                    "oklch(27% 0.018 264)",
+                    "oklch(39% 0.023 264)",
+                    "oklch(51% 0.024 264)",
+                    "oklch(63% 0.022 264)",
+                    "oklch(75% 0.016 264)",
+                    "oklch(86% 0.010 264)",
+                    "oklch(95% 0.004 264)"
+                ]
+            },
+            "neutral-soft": {
+                "role": "secondary",
+                "displayName": "Draft Grey Soft Fill",
+                "cssVar": "--neutral-soft",
+                "theme": "light",
+                "canonical": "#f1f2f5",
+                "oklch": "oklch(96.1% 0.004 271)",
+                "tonalRamp": [
+                    "oklch(15% 0.002 271)",
+                    "oklch(27% 0.003 271)",
+                    "oklch(39% 0.004 271)",
+                    "oklch(51% 0.004 271)",
+                    "oklch(63% 0.004 271)",
+                    "oklch(75% 0.003 271)",
+                    "oklch(86% 0.002 271)",
+                    "oklch(95% 0.001 271)"
+                ]
+            },
+            "neutral-border": {
+                "role": "secondary",
+                "displayName": "Draft Grey Border",
+                "cssVar": "--neutral-border",
+                "theme": "light",
+                "canonical": "#dcdfe5",
+                "oklch": "oklch(90.3% 0.009 265)",
+                "tonalRamp": [
+                    "oklch(15% 0.004 265)",
+                    "oklch(27% 0.007 265)",
+                    "oklch(39% 0.008 265)",
+                    "oklch(51% 0.009 265)",
+                    "oklch(63% 0.008 265)",
+                    "oklch(75% 0.006 265)",
+                    "oklch(86% 0.004 265)",
+                    "oklch(95% 0.002 265)"
+                ]
+            },
+            "bg-dark": {
+                "role": "neutral",
+                "displayName": "Desk Grey (dark theme)",
+                "cssVar": "--bg",
+                "theme": "dark",
+                "canonical": "#0c0d10",
+                "oklch": "oklch(15.9% 0.007 271)",
+                "tonalRamp": [
+                    "oklch(15% 0.003 271)",
+                    "oklch(27% 0.005 271)",
+                    "oklch(39% 0.006 271)",
+                    "oklch(51% 0.007 271)",
+                    "oklch(63% 0.006 271)",
+                    "oklch(75% 0.004 271)",
+                    "oklch(86% 0.003 271)",
+                    "oklch(95% 0.001 271)"
+                ]
+            },
+            "surface-dark": {
+                "role": "neutral",
+                "displayName": "Card White (dark theme)",
+                "cssVar": "--surface",
+                "theme": "dark",
+                "canonical": "#131418",
+                "oklch": "oklch(19.2% 0.008 274)",
+                "tonalRamp": [
+                    "oklch(15% 0.004 274)",
+                    "oklch(27% 0.006 274)",
+                    "oklch(39% 0.008 274)",
+                    "oklch(51% 0.008 274)",
+                    "oklch(63% 0.007 274)",
+                    "oklch(75% 0.005 274)",
+                    "oklch(86% 0.003 274)",
+                    "oklch(95% 0.001 274)"
+                ]
+            },
+            "surface-2-dark": {
+                "role": "neutral",
+                "displayName": "Inset Grey (dark theme)",
+                "cssVar": "--surface-2",
+                "theme": "dark",
+                "canonical": "#191b20",
+                "oklch": "oklch(22.2% 0.010 268)",
+                "tonalRamp": [
+                    "oklch(15% 0.005 268)",
+                    "oklch(27% 0.008 268)",
+                    "oklch(39% 0.010 268)",
+                    "oklch(51% 0.010 268)",
+                    "oklch(63% 0.009 268)",
+                    "oklch(75% 0.007 268)",
+                    "oklch(86% 0.004 268)",
+                    "oklch(95% 0.002 268)"
+                ]
+            },
+            "surface-3-dark": {
+                "role": "neutral",
+                "displayName": "Screenshot Mat (dark theme)",
+                "cssVar": "--surface-3",
+                "theme": "dark",
+                "canonical": "#20232a",
+                "oklch": "oklch(25.6% 0.014 267)",
+                "tonalRamp": [
+                    "oklch(15% 0.006 267)",
+                    "oklch(27% 0.010 267)",
+                    "oklch(39% 0.013 267)",
+                    "oklch(51% 0.014 267)",
+                    "oklch(63% 0.013 267)",
+                    "oklch(75% 0.009 267)",
+                    "oklch(86% 0.006 267)",
+                    "oklch(95% 0.003 267)"
+                ]
+            },
+            "surface-hover-dark": {
+                "role": "neutral",
+                "displayName": "Row Hover (dark theme)",
+                "cssVar": "--surface-hover",
+                "theme": "dark",
+                "canonical": "#171920",
+                "oklch": "oklch(21.4% 0.014 273)",
+                "tonalRamp": [
+                    "oklch(15% 0.006 273)",
+                    "oklch(27% 0.011 273)",
+                    "oklch(39% 0.013 273)",
+                    "oklch(51% 0.014 273)",
+                    "oklch(63% 0.013 273)",
+                    "oklch(75% 0.009 273)",
+                    "oklch(86% 0.006 273)",
+                    "oklch(95% 0.003 273)"
+                ]
+            },
+            "border-dark": {
+                "role": "neutral",
+                "displayName": "Hairline (dark theme)",
+                "cssVar": "--border",
+                "theme": "dark",
+                "canonical": "#24272e",
+                "oklch": "oklch(27.3% 0.014 267)",
+                "tonalRamp": [
+                    "oklch(15% 0.006 267)",
+                    "oklch(27% 0.010 267)",
+                    "oklch(39% 0.013 267)",
+                    "oklch(51% 0.014 267)",
+                    "oklch(63% 0.012 267)",
+                    "oklch(75% 0.009 267)",
+                    "oklch(86% 0.005 267)",
+                    "oklch(95% 0.002 267)"
+                ]
+            },
+            "border-strong-dark": {
+                "role": "neutral",
+                "displayName": "Control Outline (dark theme)",
+                "cssVar": "--border-strong",
+                "theme": "dark",
+                "canonical": "#333741",
+                "oklch": "oklch(33.7% 0.018 268)",
+                "tonalRamp": [
+                    "oklch(15% 0.008 268)",
+                    "oklch(27% 0.014 268)",
+                    "oklch(39% 0.018 268)",
+                    "oklch(51% 0.018 268)",
+                    "oklch(63% 0.017 268)",
+                    "oklch(75% 0.012 268)",
+                    "oklch(86% 0.007 268)",
+                    "oklch(95% 0.003 268)"
+                ]
+            },
+            "text-dark": {
+                "role": "neutral",
+                "displayName": "Ink (dark theme)",
+                "cssVar": "--text",
+                "theme": "dark",
+                "canonical": "#ececf0",
+                "oklch": "oklch(94.4% 0.005 286)",
+                "tonalRamp": [
+                    "oklch(15% 0.002 286)",
+                    "oklch(27% 0.004 286)",
+                    "oklch(39% 0.005 286)",
+                    "oklch(51% 0.005 286)",
+                    "oklch(63% 0.005 286)",
+                    "oklch(75% 0.003 286)",
+                    "oklch(86% 0.002 286)",
+                    "oklch(95% 0.001 286)"
+                ]
+            },
+            "text-2-dark": {
+                "role": "neutral",
+                "displayName": "Secondary Ink (dark theme)",
+                "cssVar": "--text-2",
+                "theme": "dark",
+                "canonical": "#aeb2bd",
+                "oklch": "oklch(76.4% 0.016 270)",
+                "tonalRamp": [
+                    "oklch(15% 0.007 270)",
+                    "oklch(27% 0.012 270)",
+                    "oklch(39% 0.015 270)",
+                    "oklch(51% 0.016 270)",
+                    "oklch(63% 0.015 270)",
+                    "oklch(75% 0.011 270)",
+                    "oklch(86% 0.007 270)",
+                    "oklch(95% 0.003 270)"
+                ]
+            },
+            "text-3-dark": {
+                "role": "neutral",
+                "displayName": "Meta Grey (dark theme)",
+                "cssVar": "--text-3",
+                "theme": "dark",
+                "canonical": "#8b909c",
+                "oklch": "oklch(65.3% 0.019 268)",
+                "tonalRamp": [
+                    "oklch(15% 0.008 268)",
+                    "oklch(27% 0.014 268)",
+                    "oklch(39% 0.018 268)",
+                    "oklch(51% 0.019 268)",
+                    "oklch(63% 0.017 268)",
+                    "oklch(75% 0.012 268)",
+                    "oklch(86% 0.007 268)",
+                    "oklch(95% 0.003 268)"
+                ]
+            },
+            "placeholder-dark": {
+                "role": "neutral",
+                "displayName": "Placeholder Grey (dark theme)",
+                "cssVar": "--placeholder",
+                "theme": "dark",
+                "canonical": "#7a7f8c",
+                "oklch": "oklch(59.7% 0.021 269)",
+                "tonalRamp": [
+                    "oklch(15% 0.009 269)",
+                    "oklch(27% 0.016 269)",
+                    "oklch(39% 0.020 269)",
+                    "oklch(51% 0.021 269)",
+                    "oklch(63% 0.019 269)",
+                    "oklch(75% 0.014 269)",
+                    "oklch(86% 0.008 269)",
+                    "oklch(95% 0.004 269)"
+                ],
+                "contrast": "4.59:1 on --surface (#131418)"
+            },
+            "accent-dark": {
+                "role": "primary",
+                "displayName": "Action Indigo (dark theme)",
+                "cssVar": "--accent",
+                "theme": "dark",
+                "canonical": "#7c74ff",
+                "oklch": "oklch(63.7% 0.200 282)",
+                "tonalRamp": [
+                    "oklch(15% 0.090 282)",
+                    "oklch(27% 0.150 282)",
+                    "oklch(39% 0.190 282)",
+                    "oklch(51% 0.200 282)",
+                    "oklch(63% 0.180 282)",
+                    "oklch(75% 0.130 282)",
+                    "oklch(86% 0.080 282)",
+                    "oklch(95% 0.036 282)"
+                ]
+            },
+            "accent-hover-dark": {
+                "role": "primary",
+                "displayName": "Action Indigo Hover (dark theme)",
+                "cssVar": "--accent-hover",
+                "theme": "dark",
+                "canonical": "#918aff",
+                "oklch": "oklch(69.2% 0.168 284)",
+                "tonalRamp": [
+                    "oklch(15% 0.076 284)",
+                    "oklch(27% 0.126 284)",
+                    "oklch(39% 0.159 284)",
+                    "oklch(51% 0.168 284)",
+                    "oklch(63% 0.151 284)",
+                    "oklch(75% 0.109 284)",
+                    "oklch(86% 0.067 284)",
+                    "oklch(95% 0.030 284)"
+                ]
+            },
+            "accent-text-dark": {
+                "role": "primary",
+                "displayName": "On Indigo (dark theme)",
+                "cssVar": "--accent-text",
+                "theme": "dark",
+                "canonical": "#0c0d10",
+                "oklch": "oklch(15.9% 0.007 271)",
+                "tonalRamp": [
+                    "oklch(15% 0.003 271)",
+                    "oklch(27% 0.005 271)",
+                    "oklch(39% 0.006 271)",
+                    "oklch(51% 0.007 271)",
+                    "oklch(63% 0.006 271)",
+                    "oklch(75% 0.004 271)",
+                    "oklch(86% 0.003 271)",
+                    "oklch(95% 0.001 271)"
+                ]
+            },
+            "accent-soft-dark": {
+                "role": "primary",
+                "displayName": "Focus Halo (dark theme)",
+                "cssVar": "--accent-soft",
+                "theme": "dark",
+                "canonical": "rgba(124, 116, 255, 0.14)",
+                "oklch": "oklch(63.7% 0.200 282) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.090 282)",
+                    "oklch(27% 0.150 282)",
+                    "oklch(39% 0.190 282)",
+                    "oklch(51% 0.200 282)",
+                    "oklch(63% 0.180 282)",
+                    "oklch(75% 0.130 282)",
+                    "oklch(86% 0.080 282)",
+                    "oklch(95% 0.036 282)"
+                ]
+            },
+            "focus-dark": {
+                "role": "primary",
+                "displayName": "Focus Ring Indigo (dark theme)",
+                "cssVar": "--focus",
+                "theme": "dark",
+                "canonical": "#8b85ff",
+                "oklch": "oklch(67.8% 0.175 283)",
+                "tonalRamp": [
+                    "oklch(15% 0.079 283)",
+                    "oklch(27% 0.132 283)",
+                    "oklch(39% 0.167 283)",
+                    "oklch(51% 0.175 283)",
+                    "oklch(63% 0.158 283)",
+                    "oklch(75% 0.114 283)",
+                    "oklch(86% 0.070 283)",
+                    "oklch(95% 0.032 283)"
+                ]
+            },
+            "link-dark": {
+                "role": "primary",
+                "displayName": "Link Indigo (dark theme)",
+                "cssVar": "--link",
+                "theme": "dark",
+                "canonical": "#a7a2ff",
+                "oklch": "oklch(75.3% 0.132 285)",
+                "tonalRamp": [
+                    "oklch(15% 0.059 285)",
+                    "oklch(27% 0.099 285)",
+                    "oklch(39% 0.126 285)",
+                    "oklch(51% 0.132 285)",
+                    "oklch(63% 0.119 285)",
+                    "oklch(75% 0.086 285)",
+                    "oklch(86% 0.053 285)",
+                    "oklch(95% 0.024 285)"
+                ]
+            },
+            "danger-dark": {
+                "role": "secondary",
+                "displayName": "Rejected Red (dark theme)",
+                "cssVar": "--danger",
+                "theme": "dark",
+                "canonical": "#ff8a73",
+                "oklch": "oklch(75.7% 0.147 32)",
+                "tonalRamp": [
+                    "oklch(15% 0.066 32)",
+                    "oklch(27% 0.110 32)",
+                    "oklch(39% 0.139 32)",
+                    "oklch(51% 0.147 32)",
+                    "oklch(63% 0.132 32)",
+                    "oklch(75% 0.095 32)",
+                    "oklch(86% 0.059 32)",
+                    "oklch(95% 0.026 32)"
+                ]
+            },
+            "danger-strong-dark": {
+                "role": "secondary",
+                "displayName": "Destructive Red (dark theme)",
+                "cssVar": "--danger-strong",
+                "theme": "dark",
+                "canonical": "#ff9c88",
+                "oklch": "oklch(79.0% 0.123 32)",
+                "tonalRamp": [
+                    "oklch(15% 0.055 32)",
+                    "oklch(27% 0.092 32)",
+                    "oklch(39% 0.117 32)",
+                    "oklch(51% 0.123 32)",
+                    "oklch(63% 0.110 32)",
+                    "oklch(75% 0.080 32)",
+                    "oklch(86% 0.049 32)",
+                    "oklch(95% 0.022 32)"
+                ]
+            },
+            "danger-soft-dark": {
+                "role": "secondary",
+                "displayName": "Rejected Red Soft Fill (dark theme)",
+                "cssVar": "--danger-soft",
+                "theme": "dark",
+                "canonical": "rgba(240, 68, 56, 0.12)",
+                "oklch": "oklch(63.7% 0.210 29) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.095 29)",
+                    "oklch(27% 0.158 29)",
+                    "oklch(39% 0.200 29)",
+                    "oklch(51% 0.210 29)",
+                    "oklch(63% 0.189 29)",
+                    "oklch(75% 0.137 29)",
+                    "oklch(86% 0.084 29)",
+                    "oklch(95% 0.038 29)"
+                ]
+            },
+            "danger-border-dark": {
+                "role": "secondary",
+                "displayName": "Rejected Red Border (dark theme)",
+                "cssVar": "--danger-border",
+                "theme": "dark",
+                "canonical": "rgba(240, 68, 56, 0.32)",
+                "oklch": "oklch(63.7% 0.210 29) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.095 29)",
+                    "oklch(27% 0.158 29)",
+                    "oklch(39% 0.200 29)",
+                    "oklch(51% 0.210 29)",
+                    "oklch(63% 0.189 29)",
+                    "oklch(75% 0.137 29)",
+                    "oklch(86% 0.084 29)",
+                    "oklch(95% 0.038 29)"
+                ]
+            },
+            "warning-dark": {
+                "role": "secondary",
+                "displayName": "Needs Review Amber (dark theme)",
+                "cssVar": "--warning",
+                "theme": "dark",
+                "canonical": "#f8c55c",
+                "oklch": "oklch(84.9% 0.135 83)",
+                "tonalRamp": [
+                    "oklch(15% 0.061 83)",
+                    "oklch(27% 0.101 83)",
+                    "oklch(39% 0.128 83)",
+                    "oklch(51% 0.135 83)",
+                    "oklch(63% 0.121 83)",
+                    "oklch(75% 0.088 83)",
+                    "oklch(86% 0.054 83)",
+                    "oklch(95% 0.024 83)"
+                ]
+            },
+            "warning-soft-dark": {
+                "role": "secondary",
+                "displayName": "Needs Review Amber Soft Fill (dark theme)",
+                "cssVar": "--warning-soft",
+                "theme": "dark",
+                "canonical": "rgba(247, 144, 9, 0.12)",
+                "oklch": "oklch(74.7% 0.170 62) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.077 62)",
+                    "oklch(27% 0.128 62)",
+                    "oklch(39% 0.162 62)",
+                    "oklch(51% 0.170 62)",
+                    "oklch(63% 0.153 62)",
+                    "oklch(75% 0.111 62)",
+                    "oklch(86% 0.068 62)",
+                    "oklch(95% 0.031 62)"
+                ]
+            },
+            "warning-border-dark": {
+                "role": "secondary",
+                "displayName": "Needs Review Amber Border (dark theme)",
+                "cssVar": "--warning-border",
+                "theme": "dark",
+                "canonical": "rgba(247, 144, 9, 0.3)",
+                "oklch": "oklch(74.7% 0.170 62) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.077 62)",
+                    "oklch(27% 0.128 62)",
+                    "oklch(39% 0.162 62)",
+                    "oklch(51% 0.170 62)",
+                    "oklch(63% 0.153 62)",
+                    "oklch(75% 0.111 62)",
+                    "oklch(86% 0.068 62)",
+                    "oklch(95% 0.031 62)"
+                ]
+            },
+            "success-dark": {
+                "role": "secondary",
+                "displayName": "Approved Green (dark theme)",
+                "cssVar": "--success",
+                "theme": "dark",
+                "canonical": "#5ad49a",
+                "oklch": "oklch(78.5% 0.139 160)",
+                "tonalRamp": [
+                    "oklch(15% 0.062 160)",
+                    "oklch(27% 0.104 160)",
+                    "oklch(39% 0.132 160)",
+                    "oklch(51% 0.139 160)",
+                    "oklch(63% 0.125 160)",
+                    "oklch(75% 0.090 160)",
+                    "oklch(86% 0.055 160)",
+                    "oklch(95% 0.025 160)"
+                ]
+            },
+            "success-soft-dark": {
+                "role": "secondary",
+                "displayName": "Approved Green Soft Fill (dark theme)",
+                "cssVar": "--success-soft",
+                "theme": "dark",
+                "canonical": "rgba(23, 178, 106, 0.12)",
+                "oklch": "oklch(67.3% 0.160 156) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.072 156)",
+                    "oklch(27% 0.120 156)",
+                    "oklch(39% 0.152 156)",
+                    "oklch(51% 0.160 156)",
+                    "oklch(63% 0.144 156)",
+                    "oklch(75% 0.104 156)",
+                    "oklch(86% 0.064 156)",
+                    "oklch(95% 0.029 156)"
+                ]
+            },
+            "success-border-dark": {
+                "role": "secondary",
+                "displayName": "Approved Green Border (dark theme)",
+                "cssVar": "--success-border",
+                "theme": "dark",
+                "canonical": "rgba(23, 178, 106, 0.3)",
+                "oklch": "oklch(67.3% 0.160 156) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.072 156)",
+                    "oklch(27% 0.120 156)",
+                    "oklch(39% 0.152 156)",
+                    "oklch(51% 0.160 156)",
+                    "oklch(63% 0.144 156)",
+                    "oklch(75% 0.104 156)",
+                    "oklch(86% 0.064 156)",
+                    "oklch(95% 0.029 156)"
+                ]
+            },
+            "info-dark": {
+                "role": "secondary",
+                "displayName": "No Changes Blue (dark theme)",
+                "cssVar": "--info",
+                "theme": "dark",
+                "canonical": "#8db4ff",
+                "oklch": "oklch(77.1% 0.116 263)",
+                "tonalRamp": [
+                    "oklch(15% 0.052 263)",
+                    "oklch(27% 0.087 263)",
+                    "oklch(39% 0.110 263)",
+                    "oklch(51% 0.116 263)",
+                    "oklch(63% 0.105 263)",
+                    "oklch(75% 0.076 263)",
+                    "oklch(86% 0.046 263)",
+                    "oklch(95% 0.021 263)"
+                ]
+            },
+            "info-soft-dark": {
+                "role": "secondary",
+                "displayName": "No Changes Blue Soft Fill (dark theme)",
+                "cssVar": "--info-soft",
+                "theme": "dark",
+                "canonical": "rgba(46, 144, 250, 0.12)",
+                "oklch": "oklch(65.2% 0.181 254) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.081 254)",
+                    "oklch(27% 0.136 254)",
+                    "oklch(39% 0.172 254)",
+                    "oklch(51% 0.181 254)",
+                    "oklch(63% 0.163 254)",
+                    "oklch(75% 0.118 254)",
+                    "oklch(86% 0.072 254)",
+                    "oklch(95% 0.033 254)"
+                ]
+            },
+            "info-border-dark": {
+                "role": "secondary",
+                "displayName": "No Changes Blue Border (dark theme)",
+                "cssVar": "--info-border",
+                "theme": "dark",
+                "canonical": "rgba(46, 144, 250, 0.3)",
+                "oklch": "oklch(65.2% 0.181 254) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.081 254)",
+                    "oklch(27% 0.136 254)",
+                    "oklch(39% 0.172 254)",
+                    "oklch(51% 0.181 254)",
+                    "oklch(63% 0.163 254)",
+                    "oklch(75% 0.118 254)",
+                    "oklch(86% 0.072 254)",
+                    "oklch(95% 0.033 254)"
+                ]
+            },
+            "release-dark": {
+                "role": "secondary",
+                "displayName": "New Screen Violet (dark theme)",
+                "cssVar": "--release",
+                "theme": "dark",
+                "canonical": "#c2a8ff",
+                "oklch": "oklch(78.6% 0.124 297)",
+                "tonalRamp": [
+                    "oklch(15% 0.056 297)",
+                    "oklch(27% 0.093 297)",
+                    "oklch(39% 0.118 297)",
+                    "oklch(51% 0.124 297)",
+                    "oklch(63% 0.112 297)",
+                    "oklch(75% 0.081 297)",
+                    "oklch(86% 0.050 297)",
+                    "oklch(95% 0.022 297)"
+                ]
+            },
+            "release-soft-dark": {
+                "role": "secondary",
+                "displayName": "New Screen Violet Soft Fill (dark theme)",
+                "cssVar": "--release-soft",
+                "theme": "dark",
+                "canonical": "rgba(122, 90, 248, 0.15)",
+                "oklch": "oklch(58.9% 0.224 287) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.101 287)",
+                    "oklch(27% 0.168 287)",
+                    "oklch(39% 0.213 287)",
+                    "oklch(51% 0.224 287)",
+                    "oklch(63% 0.202 287)",
+                    "oklch(75% 0.146 287)",
+                    "oklch(86% 0.090 287)",
+                    "oklch(95% 0.040 287)"
+                ]
+            },
+            "release-border-dark": {
+                "role": "secondary",
+                "displayName": "New Screen Violet Border (dark theme)",
+                "cssVar": "--release-border",
+                "theme": "dark",
+                "canonical": "rgba(122, 90, 248, 0.36)",
+                "oklch": "oklch(58.9% 0.224 287) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.101 287)",
+                    "oklch(27% 0.168 287)",
+                    "oklch(39% 0.213 287)",
+                    "oklch(51% 0.224 287)",
+                    "oklch(63% 0.202 287)",
+                    "oklch(75% 0.146 287)",
+                    "oklch(86% 0.090 287)",
+                    "oklch(95% 0.040 287)"
+                ]
+            },
+            "neutral-dark": {
+                "role": "secondary",
+                "displayName": "Draft Grey (dark theme)",
+                "cssVar": "--neutral",
+                "theme": "dark",
+                "canonical": "#b3b8c3",
+                "oklch": "oklch(78.2% 0.017 266)",
+                "tonalRamp": [
+                    "oklch(15% 0.007 266)",
+                    "oklch(27% 0.012 266)",
+                    "oklch(39% 0.016 266)",
+                    "oklch(51% 0.017 266)",
+                    "oklch(63% 0.015 266)",
+                    "oklch(75% 0.011 266)",
+                    "oklch(86% 0.007 266)",
+                    "oklch(95% 0.003 266)"
+                ]
+            },
+            "neutral-soft-dark": {
+                "role": "secondary",
+                "displayName": "Draft Grey Soft Fill (dark theme)",
+                "cssVar": "--neutral-soft",
+                "theme": "dark",
+                "canonical": "rgba(148, 155, 170, 0.1)",
+                "oklch": "oklch(68.9% 0.023 266) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.011 266)",
+                    "oklch(27% 0.018 266)",
+                    "oklch(39% 0.022 266)",
+                    "oklch(51% 0.023 266)",
+                    "oklch(63% 0.021 266)",
+                    "oklch(75% 0.015 266)",
+                    "oklch(86% 0.009 266)",
+                    "oklch(95% 0.004 266)"
+                ]
+            },
+            "neutral-border-dark": {
+                "role": "secondary",
+                "displayName": "Draft Grey Border (dark theme)",
+                "cssVar": "--neutral-border",
+                "theme": "dark",
+                "canonical": "rgba(148, 155, 170, 0.24)",
+                "oklch": "oklch(68.9% 0.023 266) at the alpha written in the token",
+                "tonalRamp": [
+                    "oklch(15% 0.011 266)",
+                    "oklch(27% 0.018 266)",
+                    "oklch(39% 0.022 266)",
+                    "oklch(51% 0.023 266)",
+                    "oklch(63% 0.021 266)",
+                    "oklch(75% 0.015 266)",
+                    "oklch(86% 0.009 266)",
+                    "oklch(95% 0.004 266)"
+                ]
+            }
+        },
+        "typographyMeta": {
+            "display": {
+                "displayName": "Display",
+                "purpose": "Title on the sign-in and first-run cards only. Weight 650 is requested; the shipped static Inter files render it as 700."
+            },
+            "headline": {
+                "displayName": "Headline",
+                "purpose": "The page title in the sticky header. One per page; truncates past 320px on the review page."
+            },
+            "title": {
+                "displayName": "Title",
+                "purpose": "Heading of a form dialog and of the submit confirm."
+            },
+            "card-title": {
+                "displayName": "Card title",
+                "purpose": "Name in a list row or screenshot card. Same size as body; weight does the work."
+            },
+            "body": {
+                "displayName": "Body",
+                "purpose": "Default text, with cv11, ss01 and tnum switched on. Also the next-step line of an empty state."
+            },
+            "body-sm": {
+                "displayName": "Body small",
+                "purpose": "Subtitles, notices, menu items, toast text, checkbox labels, input text, comment previews. Decision bar progress text at weight 500."
+            },
+            "control": {
+                "displayName": "Control",
+                "purpose": "Button labels, segmented options, nav links and form field labels."
+            },
+            "caption": {
+                "displayName": "Caption",
+                "purpose": "Metadata: dates, build counts, commit subjects in lists, the review header context line, the shortcut legend, hints, tooltips."
+            },
+            "tag": {
+                "displayName": "Tag",
+                "purpose": "Tag text."
+            },
+            "label-caps": {
+                "displayName": "Label caps",
+                "purpose": "Uppercase Meta Grey labels over the two comparison columns and at the top of a dropdown menu (0.04em there). Nowhere else. Column label qualifiers drop to regular weight and sentence case."
+            },
+            "mono": {
+                "displayName": "Mono",
+                "purpose": "Commit hashes, screen numbers, CI snippets, callback URLs, keys, and key caps in the shortcut legend (11px). Platform monospace; no mono font is loaded."
+            }
+        },
+        "shadows": [
+            {
+                "name": "shadow-sm",
+                "value": "0 1px 2px rgba(16, 24, 40, 0.05)",
+                "darkValue": "0 1px 2px rgba(0, 0, 0, 0.4)",
+                "cssVar": "--shadow-sm",
+                "purpose": "Resting: cards, default and primary buttons, inputs, selects, the search field, and a segmented control (one shadow under the group)."
+            },
+            {
+                "name": "shadow-md",
+                "value": "0 4px 12px -2px rgba(16, 24, 40, 0.08), 0 2px 4px -2px rgba(16, 24, 40, 0.04)",
+                "darkValue": "0 6px 16px -4px rgba(0, 0, 0, 0.5)",
+                "cssVar": "--shadow-md",
+                "purpose": "Attached: tooltips and the project search results list."
+            },
+            {
+                "name": "shadow-lg",
+                "value": "0 24px 48px -12px rgba(16, 24, 40, 0.18)",
+                "darkValue": "0 24px 56px -12px rgba(0, 0, 0, 0.7)",
+                "cssVar": "--shadow-lg",
+                "purpose": "Floating: dropdown menus, modals (the submit confirm included), toasts, and the sign-in card."
+            },
+            {
+                "name": "focus-halo",
+                "value": "0 0 0 3px rgba(79, 70, 229, 0.1)",
+                "darkValue": "0 0 0 3px rgba(124, 116, 255, 0.14)",
+                "purpose": "Replaces the resting shadow on a focused input, select, textarea or search field."
+            },
+            {
+                "name": "decision-ring",
+                "value": "inset 0 0 0 1px #067647",
+                "darkValue": "inset 0 0 0 1px #5ad49a",
+                "purpose": "Approve (success tone, shown) or Reject (danger tone) button on hover and once chosen."
+            },
+            {
+                "name": "sticky-chrome",
+                "value": "none",
+                "purpose": "The top bar, the page header and the review decision bar cast no shadow; a hairline separates them from content."
+            }
+        ],
+        "motion": [
+            {
+                "name": "control-transition",
+                "value": "0.12s",
+                "purpose": "Background, border and text colour on buttons and segmented options; border and shadow on fields; background on list rows. Browser default easing (ease)."
+            },
+            {
+                "name": "dropdown-transition",
+                "value": "opacity 0.1s, transform 0.1s",
+                "purpose": "Dropdown menu enter and leave, from opacity 0 and translateY(-3px)."
+            },
+            {
+                "name": "toggle-transition",
+                "value": "0.15s",
+                "purpose": "Admin toggle track colour and knob slide (translateX(16px)); fade of the screenshot hover hint."
+            },
+            {
+                "name": "skeleton-shimmer",
+                "value": "1.4s ease-in-out infinite",
+                "purpose": "Skeleton background sweep. Removed under prefers-reduced-motion."
+            },
+            {
+                "name": "spinner-reduced",
+                "value": "3s",
+                "purpose": "Spinner rotation period under prefers-reduced-motion (slowed, not stopped)."
+            },
+            {
+                "name": "scroll-next",
+                "value": "smooth; auto under prefers-reduced-motion",
+                "purpose": "Scroll to the next undecided screenshot card after a review, and to a card reached with J or K. Lands 12px below the sticky header (scroll-margin-top is the measured sticky height plus 12px)."
+            }
+        ],
+        "breakpoints": [
+            {
+                "name": "review-header",
+                "value": "1120px",
+                "query": "(max-width: 1120px)",
+                "purpose": "The review header context line (branch, commit, build status) moves to its own full-width row."
+            },
+            {
+                "name": "narrow",
+                "value": "900px",
+                "query": "(max-width: 900px)",
+                "purpose": "Build rows collapse from five columns to two; the review decision bar wraps."
+            },
+            {
+                "name": "mobile",
+                "value": "640px",
+                "query": "(max-width: 640px)",
+                "purpose": "Page padding 16px 12px 32px; wordmark hidden; dialog, auth card and screenshot card padding reduced; review bar stacks; review header title and tools wrap; shortcut legend and the baseline qualifier hide."
+            },
+            {
+                "name": "tiny",
+                "value": "360px",
+                "query": "(max-width: 360px)",
+                "purpose": "Top bar padding and gaps tighten to 8px."
+            },
+            {
+                "name": "review-context-container",
+                "value": "420px",
+                "query": "@container (max-width: 420px)",
+                "purpose": "Container query on the review header context line: the commit subject hides and leaves the hash."
+            }
+        ],
+        "containers": [
+            {
+                "name": "page",
+                "value": "1120px",
+                "purpose": "Default page container, padding 28px 20px 48px."
+            },
+            {
+                "name": "review",
+                "value": "none",
+                "purpose": "Review screen: always full width."
+            },
+            {
+                "name": "review-single-pane",
+                "value": "1280px",
+                "purpose": "The lone screenshot pane of an expanded unchanged screen, centred."
+            },
+            {
+                "name": "review-title",
+                "value": "320px",
+                "purpose": "Maximum width of the app name in the review header before it truncates."
+            },
+            {
+                "name": "dialog",
+                "value": "520px",
+                "purpose": "Form dialog column."
+            },
+            {
+                "name": "submit-confirm",
+                "value": "440px",
+                "purpose": "Submit confirm dialog column."
+            },
+            {
+                "name": "auth-card",
+                "value": "400px",
+                "purpose": "Sign-in card (480px for first-run setup)."
+            }
+        ],
+        "statusMapping": [
+            {
+                "subject": "build",
+                "status": "needs review",
+                "label": "Needs Review",
+                "tone": "warning",
+                "icon": "magnifying-glass"
+            },
+            {
+                "subject": "build",
+                "status": "processing",
+                "label": "Processing",
+                "tone": "warning",
+                "icon": "stopwatch"
+            },
+            {
+                "subject": "build",
+                "status": "no changes",
+                "label": "No Changes",
+                "tone": "info",
+                "icon": "check"
+            },
+            {
+                "subject": "build",
+                "status": "changes approved",
+                "label": "Changes Approved",
+                "tone": "success",
+                "icon": "check"
+            },
+            {
+                "subject": "build",
+                "status": "failed",
+                "label": "Failed",
+                "tone": "danger",
+                "icon": "xmark"
+            },
+            {
+                "subject": "build",
+                "status": "changes rejected",
+                "label": "Changes Rejected",
+                "tone": "danger",
+                "icon": "xmark"
+            },
+            {
+                "subject": "build",
+                "status": "draft",
+                "label": "Draft",
+                "tone": "neutral",
+                "icon": "pen-to-square"
+            },
+            {
+                "subject": "build",
+                "status": "canceled",
+                "label": "Canceled",
+                "tone": "neutral"
+            },
+            {
+                "subject": "screen",
+                "status": "needs review",
+                "label": "Needs Review",
+                "tone": "warning"
+            },
+            {
+                "subject": "screen",
+                "status": "no changes",
+                "label": "No Changes",
+                "tone": "info"
+            },
+            {
+                "subject": "screen",
+                "status": "changes approved",
+                "label": "Changes Approved",
+                "tone": "success"
+            },
+            {
+                "subject": "screen",
+                "status": "new",
+                "label": "New",
+                "tone": "release"
+            },
+            {
+                "subject": "screen",
+                "status": "removed",
+                "label": "Removed",
+                "tone": "neutral"
+            },
+            {
+                "subject": "screen review",
+                "status": "approved",
+                "label": "Approved",
+                "tone": "success",
+                "icon": "check"
+            },
+            {
+                "subject": "screen review",
+                "status": "rejected",
+                "label": "Rejected",
+                "tone": "danger",
+                "icon": "xmark"
+            }
+        ],
+        "knownGaps": [
+            "**Tailwind leftovers.** Tailwind v4 is still imported globally (including its reset). Eleven of its layout utilities remain in templates, down from fourteen (`flex`, `flex-col`, `items-center`, `justify-end`, `gap-2`, `gap-4`, `w-full`, `pr-6`, `truncate`, `font-mono`, `text-inherit`), almost all in the build list. The review screen is down to one, `truncate`, on two spans of its header. The loader sets its sizes through Tailwind in rem while everything else is px. No Tailwind colour, radius, or shadow utilities are used.",
+            "**Weight 650 is not loaded.** Page titles and the wordmark ask for 650, and the stack names 'Inter var' first, but only static Inter 400, 500, 600, and 700 are shipped, so 650 renders as 700.",
+            "**Hard-coded colours.** The tooltip's four colours and the modal scrim are literals. The page background is repeated as literals in `index.html` (deliberate, to avoid a flash before styles load). The favicon uses blues, a red, and a slate that are not in the palette.",
+            "**Off-scale radii.** 4px (tags, key caps, skeleton), 6px (tooltip, menu items), 7px (brand mark), 3px (focus outline), and a literal 12px on the auth mark sit beside the three radius tokens.",
+            "**Off-ramp sizes.** 15px (empty state title), 17px (dialog title), 18px (full-page error), 12.5px (unused card header subtitle), and two near-identical title sizes (19px and 20px). Status tags are 19px or 24px depending on the screen.",
+            "**Mono size drift.** Commit hashes in build rows still use Tailwind's `font-mono` utility, which applies the mono stack but not the 0.92em reduction given to inline code, so they render at the surrounding 14px. The review header now uses the shared mono style, so the same hash is 0.92em of 12px there.",
+            "**Shared and borrowed tones.** \"Processing\" and \"Needs Review\" builds share the warning tone and differ only by icon. \"New\" screens use a token named `release`.",
+            "**Unused primitives.** Defined in the stylesheet but not used by any screen: card header and body, large button, link button, skeleton, warning and info notices, and the menu separator and meta block.",
+            "**Local one-offs.** Nine pieces are styled inside the screens that use them rather than as shared primitives: the Approve and Reject buttons, the admin toggle, the search field, the back button, and now the segmented control, the submit confirm, the decision bar, the key cap, and the active ring. The 1280px cap on a lone screenshot is a literal.",
+            "**Dialogs outside the wrapper.** The alert and confirm dialogs that come from the foundation library (delete confirmations, error alerts, the notices after a submit) and the loading modal do not go through the shared modal wrapper, so they do not get its dialog role, focus trap, or focus restore."
+        ]
+    },
+    "components": [
+        {
+            "name": "Primary Button",
+            "kind": "button",
+            "refersTo": "button-primary",
+            "description": "The one committing action on a page header, dialog or decision bar: Add App, Save, Create, sign in, Approve build.",
+            "html": "<button class=\"ds-btn-primary\" type=\"button\">Add App</button> <button class=\"ds-btn-primary\" type=\"button\">Approve build</button> <button class=\"ds-btn-primary\" type=\"button\" disabled>Saving...</button>",
+            "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; box-shadow: var(--shadow-sm); transition: background-color 0.12s, border-color 0.12s, color 0.12s; } .ds-btn-primary:hover:not(:disabled) { background: var(--surface-2); } .ds-btn-primary:disabled { opacity: 0.55; cursor: not-allowed; } .ds-btn-primary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; } .ds-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); } .ds-btn-primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }"
+        },
+        {
+            "name": "Secondary Buttons",
+            "kind": "button",
+            "refersTo": "button",
+            "description": "Default (outlined neutral: Cancel, Edit, back), ghost (borderless: Logout, row tools) and danger (outlined with a Destructive Red label, always followed by a confirm).",
+            "html": "<div class=\"ds-btn-row\"><button class=\"ds-btn\" type=\"button\">Cancel</button> <button class=\"ds-btn ds-btn-sm\" type=\"button\">Edit</button> <button class=\"ds-btn ds-btn-icon\" type=\"button\" aria-label=\"Back\"><svg class=\"ds-ico\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M9.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 288 480 288c17.7 0 32-14.3 32-32s-14.3-32-32-32l-370.7 0 105.4-105.4c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z\"/></svg></button> <button class=\"ds-btn-ghost\" type=\"button\"><svg class=\"ds-ico\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M160 96c17.7 0 32-14.3 32-32s-14.3-32-32-32L96 32C43 32 0 75 0 128L0 384c0 53 43 96 96 96l64 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-64 0c-17.7 0-32-14.3-32-32l0-256c0-17.7 14.3-32 32-32l64 0zM502.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-128-128c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L402.7 224 192 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l210.7 0-73.4 73.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l128-128z\"/></svg> Logout</button> <button class=\"ds-btn-ghost ds-btn-ghost-icon\" type=\"button\" aria-label=\"Settings\"><svg class=\"ds-ico\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M195.1 9.5C198.1-5.3 211.2-16 226.4-16l59.8 0c15.2 0 28.3 10.7 31.3 25.5L332 79.5c14.1 6 27.3 13.7 39.3 22.8l67.8-22.5c14.4-4.8 30.2 1.2 37.8 14.4l29.9 51.8c7.6 13.2 4.9 29.8-6.5 39.9L447 233.3c.9 7.4 1.3 15 1.3 22.7s-.5 15.3-1.3 22.7l53.4 47.5c11.4 10.1 14 26.8 6.5 39.9l-29.9 51.8c-7.6 13.1-23.4 19.2-37.8 14.4l-67.8-22.5c-12.1 9.1-25.3 16.7-39.3 22.8l-14.4 69.9c-3.1 14.9-16.2 25.5-31.3 25.5l-59.8 0c-15.2 0-28.3-10.7-31.3-25.5l-14.4-69.9c-14.1-6-27.2-13.7-39.3-22.8L73.5 432.3c-14.4 4.8-30.2-1.2-37.8-14.4L5.8 366.1c-7.6-13.2-4.9-29.8 6.5-39.9l53.4-47.5c-.9-7.4-1.3-15-1.3-22.7s.5-15.3 1.3-22.7L12.3 185.8c-11.4-10.1-14-26.8-6.5-39.9L35.7 94.1c7.6-13.2 23.4-19.2 37.8-14.4l67.8 22.5c12.1-9.1 25.3-16.7 39.3-22.8L195.1 9.5zM256.3 336a80 80 0 1 0 -.6-160 80 80 0 1 0 .6 160z\"/></svg></button> <button class=\"ds-btn-danger\" type=\"button\">Delete</button></div>",
+            "css": ".ds-btn-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } .ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; box-shadow: var(--shadow-sm); transition: background-color 0.12s, border-color 0.12s, color 0.12s; } .ds-btn:hover:not(:disabled) { background: var(--surface-2); } .ds-btn:disabled { opacity: 0.55; cursor: not-allowed; } .ds-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; } .ds-btn-sm { height: 26px; padding: 0 9px; font-size: 12px; border-radius: var(--radius-sm); } .ds-btn-icon { width: 32px; padding: 0; } .ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; box-shadow: var(--shadow-sm); transition: background-color 0.12s, border-color 0.12s, color 0.12s; } .ds-btn-ghost:hover:not(:disabled) { background: var(--surface-2); } .ds-btn-ghost:disabled { opacity: 0.55; cursor: not-allowed; } .ds-btn-ghost:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; } .ds-btn-ghost { border-color: transparent; background: transparent; box-shadow: none; color: var(--text-2); } .ds-btn-ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--text); } .ds-btn-ghost-icon { width: 26px; height: 26px; padding: 0; border-radius: var(--radius-sm); } .ds-btn-danger { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; box-shadow: var(--shadow-sm); transition: background-color 0.12s, border-color 0.12s, color 0.12s; } .ds-btn-danger:hover:not(:disabled) { background: var(--surface-2); } .ds-btn-danger:disabled { opacity: 0.55; cursor: not-allowed; } .ds-btn-danger:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; } .ds-btn-danger { color: var(--danger-strong); } .ds-ico { width: 1em; height: 1em; font-size: 12px; flex-shrink: 0; }"
+        },
+        {
+            "name": "Input and Select",
+            "kind": "input",
+            "refersTo": "input",
+            "description": "A labelled text field and a select. Focus swaps the border to the focus colour and the shadow to a 3px halo.",
+            "html": "<div class=\"ds-form\"><label class=\"ds-label\">App Name<input class=\"ds-input\" type=\"text\" placeholder=\"e.g. Web app\"></label><label class=\"ds-label\">Default Branch<select class=\"ds-input ds-select\"><option>main</option><option>develop</option></select><span class=\"ds-hint\">Builds on this branch become the reference.</span></label></div>",
+            "css": ".ds-form { display: flex; flex-direction: column; gap: 12px; width: 280px; font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; } .ds-label { display: flex; flex-direction: column; gap: 6px; color: var(--text); font-size: 13px; font-weight: 500; } .ds-input { box-sizing: border-box; height: 32px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; font-weight: 400; box-shadow: var(--shadow-sm); transition: border-color 0.12s, box-shadow 0.12s; } .ds-input::placeholder { color: var(--placeholder); } .ds-input:focus, .ds-input:focus-visible { outline: none; border-color: var(--focus); box-shadow: 0 0 0 3px var(--accent-soft); } .ds-select { padding-right: 28px; appearance: none; -webkit-appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%); background-position: calc(100% - 14px) 50%, calc(100% - 10px) 50%; background-size: 4px 4px, 4px 4px; background-repeat: no-repeat; cursor: pointer; } .ds-hint { color: var(--text-3); font-size: 12px; font-weight: 400; }"
+        },
+        {
+            "name": "Status Tags",
+            "kind": "chip",
+            "refersTo": "tag",
+            "description": "Status as a soft fill, matching border and tone-coloured text. Build statuses carry an icon at 24px and say what happened to the changes; screen statuses are 19px text only.",
+            "html": "<div class=\"ds-tags\"><span class=\"ds-tag ds-tag-status ds-tag-warning\"><svg class=\"ds-ico\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376C296.3 401.1 253.9 416 208 416 93.1 416 0 322.9 0 208S93.1 0 208 0 416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z\"/></svg>Needs Review</span><span class=\"ds-tag ds-tag-status ds-tag-info\"><svg class=\"ds-ico\" viewBox=\"0 0 448 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M434.8 70.1c14.3 10.4 17.5 30.4 7.1 44.7l-256 352c-5.5 7.6-14 12.3-23.4 13.1s-18.5-2.7-25.1-9.3l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l101.5 101.5 234-321.7c10.4-14.3 30.4-17.5 44.7-7.1z\"/></svg>No Changes</span><span class=\"ds-tag ds-tag-status ds-tag-success\"><svg class=\"ds-ico\" viewBox=\"0 0 448 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M434.8 70.1c14.3 10.4 17.5 30.4 7.1 44.7l-256 352c-5.5 7.6-14 12.3-23.4 13.1s-18.5-2.7-25.1-9.3l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l101.5 101.5 234-321.7c10.4-14.3 30.4-17.5 44.7-7.1z\"/></svg>Changes Approved</span><span class=\"ds-tag ds-tag-status ds-tag-danger\"><svg class=\"ds-ico\" viewBox=\"0 0 384 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M55.1 73.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L147.2 256 9.9 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192.5 301.3 329.9 438.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.8 256 375.1 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192.5 210.7 55.1 73.4z\"/></svg>Changes Rejected</span><span class=\"ds-tag ds-tag-release\">New</span><span class=\"ds-tag\">Draft</span><span class=\"ds-tag ds-tag-mono\">12</span></div>",
+            "css": ".ds-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } .ds-tag { box-sizing: border-box; display: inline-flex; align-items: center; gap: 4px; height: 19px; padding: 0 6px; border: 1px solid var(--neutral-border); border-radius: 4px; background: var(--neutral-soft); color: var(--neutral); font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; font-size: 11px; font-weight: 500; line-height: 1; white-space: nowrap; } .ds-tag .ds-ico { font-size: 9.5px; } .ds-tag-status { height: 24px; gap: 8px; } .ds-tag-warning { border-color: var(--warning-border); background: var(--warning-soft); color: var(--warning); } .ds-tag-success { border-color: var(--success-border); background: var(--success-soft); color: var(--success); } .ds-tag-info { border-color: var(--info-border); background: var(--info-soft); color: var(--info); } .ds-tag-release { border-color: var(--release-border); background: var(--release-soft); color: var(--release); } .ds-tag-danger { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger); } .ds-tag-mono { font-family: var(--font-mono); } .ds-ico { width: 1em; height: 1em; font-size: 12px; flex-shrink: 0; }"
+        },
+        {
+            "name": "Top Bar",
+            "kind": "nav",
+            "refersTo": "topbar",
+            "description": "Sticky 46px translucent bar: inverted grid mark and wordmark, the primary nav link, then solid icon triggers and Logout.",
+            "html": "<header class=\"ds-topbar\"><a class=\"ds-brand\" href=\"#\"><span class=\"ds-brand-mark\"><svg class=\"ds-brand-ico\" viewBox=\"0 0 448 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M384 96l0 128-128 0 0-128 128 0zm0 192l0 128-128 0 0-128 128 0zM192 224l-128 0 0-128 128 0 0 128zM64 288l128 0 0 128-128 0 0-128zM64 32C28.7 32 0 60.7 0 96L0 416c0 35.3 28.7 64 64 64l320 0c35.3 0 64-28.7 64-64l0-320c0-35.3-28.7-64-64-64L64 32z\"/></svg></span><span>PixelCI</span></a><nav class=\"ds-nav\"><a class=\"ds-nav-link ds-nav-link-active\" href=\"#\">Apps</a></nav><div class=\"ds-topbar-right\"><button class=\"ds-top-trigger\" type=\"button\" aria-label=\"Theme\"><svg class=\"ds-ico\" viewBox=\"0 0 576 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M288-32c8.4 0 16.3 4.4 20.6 11.7L364.1 72.3 468.9 46c8.2-2 16.9 .4 22.8 6.3S500 67 498 75.1l-26.3 104.7 92.7 55.5c7.2 4.3 11.7 12.2 11.7 20.6s-4.4 16.3-11.7 20.6L471.7 332.1 498 436.8c2 8.2-.4 16.9-6.3 22.8S477 468 468.9 466l-104.7-26.3-55.5 92.7c-4.3 7.2-12.2 11.7-20.6 11.7s-16.3-4.4-20.6-11.7L211.9 439.7 107.2 466c-8.2 2-16.8-.4-22.8-6.3S76 445 78 436.8l26.2-104.7-92.6-55.5C4.4 272.2 0 264.4 0 256s4.4-16.3 11.7-20.6L104.3 179.9 78 75.1c-2-8.2 .3-16.8 6.3-22.8S99 44 107.2 46l104.7 26.2 55.5-92.6 1.8-2.6c4.5-5.7 11.4-9.1 18.8-9.1zm0 144a144 144 0 1 0 0 288 144 144 0 1 0 0-288zm0 240a96 96 0 1 1 0-192 96 96 0 1 1 0 192z\"/></svg></button><button class=\"ds-top-trigger\" type=\"button\" aria-label=\"Administration\"><svg class=\"ds-ico\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M195.1 9.5C198.1-5.3 211.2-16 226.4-16l59.8 0c15.2 0 28.3 10.7 31.3 25.5L332 79.5c14.1 6 27.3 13.7 39.3 22.8l67.8-22.5c14.4-4.8 30.2 1.2 37.8 14.4l29.9 51.8c7.6 13.2 4.9 29.8-6.5 39.9L447 233.3c.9 7.4 1.3 15 1.3 22.7s-.5 15.3-1.3 22.7l53.4 47.5c11.4 10.1 14 26.8 6.5 39.9l-29.9 51.8c-7.6 13.1-23.4 19.2-37.8 14.4l-67.8-22.5c-12.1 9.1-25.3 16.7-39.3 22.8l-14.4 69.9c-3.1 14.9-16.2 25.5-31.3 25.5l-59.8 0c-15.2 0-28.3-10.7-31.3-25.5l-14.4-69.9c-14.1-6-27.2-13.7-39.3-22.8L73.5 432.3c-14.4 4.8-30.2-1.2-37.8-14.4L5.8 366.1c-7.6-13.2-4.9-29.8 6.5-39.9l53.4-47.5c-.9-7.4-1.3-15-1.3-22.7s.5-15.3 1.3-22.7L12.3 185.8c-11.4-10.1-14-26.8-6.5-39.9L35.7 94.1c7.6-13.2 23.4-19.2 37.8-14.4l67.8 22.5c12.1-9.1 25.3-16.7 39.3-22.8L195.1 9.5zM256.3 336a80 80 0 1 0 -.6-160 80 80 0 1 0 .6 160z\"/></svg></button><button class=\"ds-top-logout\" type=\"button\"><svg class=\"ds-ico\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M160 96c17.7 0 32-14.3 32-32s-14.3-32-32-32L96 32C43 32 0 75 0 128L0 384c0 53 43 96 96 96l64 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-64 0c-17.7 0-32-14.3-32-32l0-256c0-17.7 14.3-32 32-32l64 0zM502.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-128-128c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L402.7 224 192 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l210.7 0-73.4 73.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l128-128z\"/></svg> Logout</button></div></header>",
+            "css": ".ds-topbar { box-sizing: border-box; display: flex; align-items: center; gap: 18px; height: 46px; min-width: 420px; padding: 0 16px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: saturate(1.4) blur(10px); font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; } .ds-brand { display: inline-flex; align-items: center; gap: 9px; color: var(--text); font-size: 14px; font-weight: 650; letter-spacing: -0.01em; text-decoration: none; } .ds-brand-mark { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--text); color: var(--bg); } .ds-brand-ico { width: 11px; height: 11px; } .ds-nav { display: flex; gap: 2px; } .ds-nav-link { padding: 6px 10px; border-radius: var(--radius-sm); color: var(--text-2); font-size: 13px; font-weight: 500; text-decoration: none; } .ds-nav-link:hover { background: var(--surface-2); color: var(--text); } .ds-nav-link-active, .ds-nav-link-active:hover { background: var(--surface-3); color: var(--text); } .ds-topbar-right { display: flex; align-items: center; gap: 6px; margin-left: auto; } .ds-top-trigger, .ds-top-logout { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; color: var(--text-2); font: inherit; font-size: 13px; cursor: pointer; transition: background-color 0.12s, color 0.12s; } .ds-top-trigger { width: 32px; padding: 0; } .ds-top-logout { padding: 0 12px; font-weight: 500; line-height: 1; } .ds-top-trigger:hover, .ds-top-logout:hover { background: var(--surface-2); color: var(--text); } .ds-brand:focus-visible, .ds-nav-link:focus-visible, .ds-top-trigger:focus-visible, .ds-top-logout:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; } .ds-topbar .ds-ico { width: 1em; height: 1em; font-size: 13px; } .ds-top-logout .ds-ico { font-size: 12px; }"
+        },
+        {
+            "name": "Theme Menu",
+            "kind": "custom",
+            "refersTo": "menu",
+            "description": "The open dropdown menu: uppercase group label, radio items with a solid leading icon, and an indigo check on the current choice.",
+            "html": "<div class=\"ds-menu\" role=\"menu\" aria-label=\"Theme\"><div class=\"ds-menu-label\">Theme</div><button class=\"ds-menu-item\" type=\"button\" role=\"menuitemradio\" aria-checked=\"true\"><svg class=\"ds-menu-ico\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M64 32C28.7 32 0 60.7 0 96L0 352c0 35.3 28.7 64 64 64l144 0-16 48-72 0c-13.3 0-24 10.7-24 24s10.7 24 24 24l272 0c13.3 0 24-10.7 24-24s-10.7-24-24-24l-72 0-16-48 144 0c35.3 0 64-28.7 64-64l0-256c0-35.3-28.7-64-64-64L64 32zM96 96l320 0c17.7 0 32 14.3 32 32l0 160c0 17.7-14.3 32-32 32L96 320c-17.7 0-32-14.3-32-32l0-160c0-17.7 14.3-32 32-32z\"/></svg>System<svg class=\"ds-menu-check\" viewBox=\"0 0 448 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M434.8 70.1c14.3 10.4 17.5 30.4 7.1 44.7l-256 352c-5.5 7.6-14 12.3-23.4 13.1s-18.5-2.7-25.1-9.3l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l101.5 101.5 234-321.7c10.4-14.3 30.4-17.5 44.7-7.1z\"/></svg></button><button class=\"ds-menu-item\" type=\"button\" role=\"menuitemradio\" aria-checked=\"false\"><svg class=\"ds-menu-ico\" viewBox=\"0 0 576 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M288-32c8.4 0 16.3 4.4 20.6 11.7L364.1 72.3 468.9 46c8.2-2 16.9 .4 22.8 6.3S500 67 498 75.1l-26.3 104.7 92.7 55.5c7.2 4.3 11.7 12.2 11.7 20.6s-4.4 16.3-11.7 20.6L471.7 332.1 498 436.8c2 8.2-.4 16.9-6.3 22.8S477 468 468.9 466l-104.7-26.3-55.5 92.7c-4.3 7.2-12.2 11.7-20.6 11.7s-16.3-4.4-20.6-11.7L211.9 439.7 107.2 466c-8.2 2-16.8-.4-22.8-6.3S76 445 78 436.8l26.2-104.7-92.6-55.5C4.4 272.2 0 264.4 0 256s4.4-16.3 11.7-20.6L104.3 179.9 78 75.1c-2-8.2 .3-16.8 6.3-22.8S99 44 107.2 46l104.7 26.2 55.5-92.6 1.8-2.6c4.5-5.7 11.4-9.1 18.8-9.1zm0 144a144 144 0 1 0 0 288 144 144 0 1 0 0-288zm0 240a96 96 0 1 1 0-192 96 96 0 1 1 0 192z\"/></svg>Light</button><button class=\"ds-menu-item\" type=\"button\" role=\"menuitemradio\" aria-checked=\"false\"><svg class=\"ds-menu-ico\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M256 0C114.6 0 0 114.6 0 256S114.6 512 256 512c68.8 0 131.3-27.2 177.3-71.4 7.3-7 9.4-17.9 5.3-27.1s-13.7-14.9-23.8-14.1c-4.9 .4-9.8 .6-14.8 .6-101.6 0-184-82.4-184-184 0-72.1 41.5-134.6 102.1-164.8 9.1-4.5 14.3-14.3 13.1-24.4S322.6 8.5 312.7 6.3C294.4 2.2 275.4 0 256 0z\"/></svg>Dark</button></div>",
+            "css": ".ds-menu { box-sizing: border-box; width: 200px; padding: 5px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-lg); font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; } .ds-menu-label { padding: 6px 9px 4px; color: var(--text-3); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; } .ds-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 9px; border: 0; border-radius: 6px; background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; } .ds-menu-item:hover, .ds-menu-item:focus-visible { outline: none; background: var(--surface-2); } .ds-menu-ico { width: 14px; height: 13px; color: var(--text-3); flex-shrink: 0; } .ds-menu-check { width: 11px; height: 11px; margin-left: auto; color: var(--accent); }"
+        },
+        {
+            "name": "Segmented Control",
+            "kind": "custom",
+            "refersTo": "segmented-button",
+            "description": "Joined toggle buttons in the review header: the screen filter and the zoom. The pressed option takes Screenshot Mat, not indigo; one resting shadow sits under the whole group.",
+            "html": "<div class=\"ds-seg-row\"><div class=\"ds-seg\" role=\"group\" aria-label=\"Screens to show\"><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"true\">Needs review (3)</button><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"false\">All screens (12)</button></div><div class=\"ds-seg\" role=\"group\" aria-label=\"Zoom\"><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"true\">Fit</button><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"false\">100%</button><button class=\"ds-seg-btn\" type=\"button\" aria-pressed=\"false\">200%</button></div></div>",
+            "css": ".ds-seg-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; } .ds-seg { display: inline-flex; flex-shrink: 0; border-radius: var(--radius); box-shadow: var(--shadow-sm); } .ds-seg-btn { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 0; background: var(--surface); color: var(--text-2); font: inherit; font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; transition: background-color 0.12s, color 0.12s; } .ds-seg-btn + .ds-seg-btn { margin-left: -1px; } .ds-seg-btn:first-child { border-radius: var(--radius) 0 0 var(--radius); } .ds-seg-btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; } .ds-seg-btn:hover { background: var(--surface-2); color: var(--text); } .ds-seg-btn[aria-pressed='true'] { background: var(--surface-3); color: var(--text); } .ds-seg-btn:focus-visible { z-index: 1; outline: 2px solid var(--focus); outline-offset: 2px; }"
+        },
+        {
+            "name": "Build List",
+            "kind": "card",
+            "refersTo": "list-row",
+            "description": "One card holding hairline-divided rows. Each row is the link: branch, commit (mono hash over subject), date, status tag. The focus ring is drawn inside the row so the card does not clip it.",
+            "html": "<div class=\"ds-list\"><div class=\"ds-row\" role=\"link\" tabindex=\"0\"><span class=\"ds-cell\"><svg class=\"ds-ico\" viewBox=\"0 0 448 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M80 104a24 24 0 1 0 0-48 24 24 0 1 0 0 48zm80-24c0 32.8-19.7 61-48 73.3l0 70.7 176 0c26.5 0 48-21.5 48-48l0-22.7c-28.3-12.3-48-40.5-48-73.3 0-44.2 35.8-80 80-80s80 35.8 80 80c0 32.8-19.7 61-48 73.3l0 22.7c0 61.9-50.1 112-112 112l-176 0 0 70.7c28.3 12.3 48 40.5 48 73.3 0 44.2-35.8 80-80 80S0 476.2 0 432c0-32.8 19.7-61 48-73.3l0-205.3C19.7 141 0 112.8 0 80 0 35.8 35.8 0 80 0s80 35.8 80 80zm232 0a24 24 0 1 0 -48 0 24 24 0 1 0 48 0zM80 456a24 24 0 1 0 0-48 24 24 0 1 0 0 48z\"/></svg>feature/redesign</span><span class=\"ds-cell\"><svg class=\"ds-ico\" viewBox=\"0 0 576 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M288 336a80 80 0 1 0 0-160 80 80 0 1 0 0 160zm156.8-48C430 361 365.4 416 288 416S146 361 131.2 288L32 288c-17.7 0-32-14.3-32-32s14.3-32 32-32l99.2 0C146 151 210.6 96 288 96s142 55 156.8 128l99.2 0c17.7 0 32 14.3 32 32s-14.3 32-32 32l-99.2 0z\"/></svg><span class=\"ds-commit\"><span class=\"ds-hash\">f0a1b2c3</span><span class=\"ds-subject\">Redesign login page</span></span></span><span class=\"ds-date\">1/22/25 1:00</span><span class=\"ds-tag ds-tag-status ds-tag-warning\"><svg class=\"ds-ico\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376C296.3 401.1 253.9 416 208 416 93.1 416 0 322.9 0 208S93.1 0 208 0 416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z\"/></svg>Needs Review</span></div><div class=\"ds-row\" role=\"link\" tabindex=\"0\"><span class=\"ds-cell\"><svg class=\"ds-ico\" viewBox=\"0 0 448 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M80 104a24 24 0 1 0 0-48 24 24 0 1 0 0 48zm80-24c0 32.8-19.7 61-48 73.3l0 70.7 176 0c26.5 0 48-21.5 48-48l0-22.7c-28.3-12.3-48-40.5-48-73.3 0-44.2 35.8-80 80-80s80 35.8 80 80c0 32.8-19.7 61-48 73.3l0 22.7c0 61.9-50.1 112-112 112l-176 0 0 70.7c28.3 12.3 48 40.5 48 73.3 0 44.2-35.8 80-80 80S0 476.2 0 432c0-32.8 19.7-61 48-73.3l0-205.3C19.7 141 0 112.8 0 80 0 35.8 35.8 0 80 0s80 35.8 80 80zm232 0a24 24 0 1 0 -48 0 24 24 0 1 0 48 0zM80 456a24 24 0 1 0 0-48 24 24 0 1 0 0 48z\"/></svg>main</span><span class=\"ds-cell\"><svg class=\"ds-ico\" viewBox=\"0 0 576 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M288 336a80 80 0 1 0 0-160 80 80 0 1 0 0 160zm156.8-48C430 361 365.4 416 288 416S146 361 131.2 288L32 288c-17.7 0-32-14.3-32-32s14.3-32 32-32l99.2 0C146 151 210.6 96 288 96s142 55 156.8 128l99.2 0c17.7 0 32 14.3 32 32s-14.3 32-32 32l-99.2 0z\"/></svg><span class=\"ds-commit\"><span class=\"ds-hash\">b2c3d4e5</span><span class=\"ds-subject\">Fix responsive breakpoints</span></span></span><span class=\"ds-date\">1/20/25 6:00</span><span class=\"ds-tag ds-tag-status ds-tag-info\"><svg class=\"ds-ico\" viewBox=\"0 0 448 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M434.8 70.1c14.3 10.4 17.5 30.4 7.1 44.7l-256 352c-5.5 7.6-14 12.3-23.4 13.1s-18.5-2.7-25.1-9.3l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l101.5 101.5 234-321.7c10.4-14.3 30.4-17.5 44.7-7.1z\"/></svg>No Changes</span></div><div class=\"ds-row\" role=\"link\" tabindex=\"0\"><span class=\"ds-cell\"><svg class=\"ds-ico\" viewBox=\"0 0 448 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M80 104a24 24 0 1 0 0-48 24 24 0 1 0 0 48zm80-24c0 32.8-19.7 61-48 73.3l0 70.7 176 0c26.5 0 48-21.5 48-48l0-22.7c-28.3-12.3-48-40.5-48-73.3 0-44.2 35.8-80 80-80s80 35.8 80 80c0 32.8-19.7 61-48 73.3l0 22.7c0 61.9-50.1 112-112 112l-176 0 0 70.7c28.3 12.3 48 40.5 48 73.3 0 44.2-35.8 80-80 80S0 476.2 0 432c0-32.8 19.7-61 48-73.3l0-205.3C19.7 141 0 112.8 0 80 0 35.8 35.8 0 80 0s80 35.8 80 80zm232 0a24 24 0 1 0 -48 0 24 24 0 1 0 48 0zM80 456a24 24 0 1 0 0-48 24 24 0 1 0 0 48z\"/></svg>main</span><span class=\"ds-cell\"><svg class=\"ds-ico\" viewBox=\"0 0 576 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M288 336a80 80 0 1 0 0-160 80 80 0 1 0 0 160zm156.8-48C430 361 365.4 416 288 416S146 361 131.2 288L32 288c-17.7 0-32-14.3-32-32s14.3-32 32-32l99.2 0C146 151 210.6 96 288 96s142 55 156.8 128l99.2 0c17.7 0 32 14.3 32 32s-14.3 32-32 32l-99.2 0z\"/></svg><span class=\"ds-commit\"><span class=\"ds-hash\">e4f5a6b7</span><span class=\"ds-subject\">Add dashboard and settings</span></span></span><span class=\"ds-date\">1/15/25 4:00</span><span class=\"ds-tag ds-tag-status ds-tag-success\"><svg class=\"ds-ico\" viewBox=\"0 0 448 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M434.8 70.1c14.3 10.4 17.5 30.4 7.1 44.7l-256 352c-5.5 7.6-14 12.3-23.4 13.1s-18.5-2.7-25.1-9.3l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l101.5 101.5 234-321.7c10.4-14.3 30.4-17.5 44.7-7.1z\"/></svg>Changes Approved</span></div></div>",
+            "css": ".ds-list { box-sizing: border-box; width: 680px; max-width: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); color: var(--text); font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; font-size: 14px; line-height: 1.45; } .ds-row { box-sizing: border-box; display: grid; grid-template-columns: minmax(140px, 0.9fr) minmax(0, 1.6fr) 100px 140px; align-items: center; gap: 16px; min-height: 72px; padding: 14px 18px; cursor: pointer; transition: background-color 0.12s; } .ds-row + .ds-row { border-top: 1px solid var(--border); } .ds-row:hover { background: var(--surface-hover); } .ds-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; } .ds-cell { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; } .ds-cell > .ds-ico { color: var(--text-3); } .ds-commit { display: flex; flex-direction: column; min-width: 0; } .ds-hash { font-family: var(--font-mono); } .ds-subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 12px; } .ds-date { color: var(--text-3); font-size: 12px; } .ds-row > .ds-tag { justify-self: end; } .ds-tag { box-sizing: border-box; display: inline-flex; align-items: center; gap: 4px; height: 19px; padding: 0 6px; border: 1px solid var(--neutral-border); border-radius: 4px; background: var(--neutral-soft); color: var(--neutral); font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; font-size: 11px; font-weight: 500; line-height: 1; white-space: nowrap; } .ds-tag .ds-ico { font-size: 9.5px; } .ds-tag-status { height: 24px; gap: 8px; } .ds-tag-warning { border-color: var(--warning-border); background: var(--warning-soft); color: var(--warning); } .ds-tag-success { border-color: var(--success-border); background: var(--success-soft); color: var(--success); } .ds-tag-info { border-color: var(--info-border); background: var(--info-soft); color: var(--info); } .ds-tag-release { border-color: var(--release-border); background: var(--release-soft); color: var(--release); } .ds-tag-danger { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger); } .ds-tag-mono { font-family: var(--font-mono); } .ds-ico { width: 1em; height: 1em; font-size: 12px; flex-shrink: 0; }"
+        },
+        {
+            "name": "Screenshot Comparison Card",
+            "kind": "custom",
+            "refersTo": "screen-card",
+            "description": "Signature component of the review screen: numbered screen, status tag, reference and new build side by side on locked panes, then comment with Approve and Reject. Focus the card to see the active ring. The screenshots here are drawn placeholders.",
+            "html": "<div class=\"ds-screen\" tabindex=\"0\"><div class=\"ds-screen-meta\"><div class=\"ds-screen-id\"><span class=\"ds-tag ds-tag-mono\">1</span><span class=\"ds-screen-name\">Homepage</span></div><span class=\"ds-tag ds-tag-warning\">Needs Review</span></div><div class=\"ds-compare\"><div class=\"ds-compare-labels\"><span>Reference build <span class=\"ds-qualifier\">approved baseline</span></span><span>New build</span></div><div class=\"ds-compare-images\"><div class=\"ds-mat\"><div class=\"ds-shot\"><div class=\"ds-shot-bar\"></div><div class=\"ds-shot-line\"></div><div class=\"ds-shot-line ds-shot-line-b\"></div><div class=\"ds-shot-block\"></div></div></div><div class=\"ds-mat ds-mat-new\"><span class=\"ds-diff-hint\"><svg class=\"ds-ico\" viewBox=\"0 0 512 512\" aria-hidden=\"true\"><path fill=\"currentColor\" d=\"M232.5 5.2c14.9-6.9 32.1-6.9 47 0l218.6 101c8.5 3.9 13.9 12.4 13.9 21.8s-5.4 17.9-13.9 21.8l-218.6 101c-14.9 6.9-32.1 6.9-47 0L13.9 149.8C5.4 145.8 0 137.3 0 128s5.4-17.9 13.9-21.8L232.5 5.2zM48.1 218.4l164.3 75.9c27.7 12.8 59.6 12.8 87.3 0l164.3-75.9 34.1 15.8c8.5 3.9 13.9 12.4 13.9 21.8s-5.4 17.9-13.9 21.8l-218.6 101c-14.9 6.9-32.1 6.9-47 0L13.9 277.8C5.4 273.8 0 265.3 0 256s5.4-17.9 13.9-21.8l34.1-15.8zM13.9 362.2l34.1-15.8 164.3 75.9c27.7 12.8 59.6 12.8 87.3 0l164.3-75.9 34.1 15.8c8.5 3.9 13.9 12.4 13.9 21.8s-5.4 17.9-13.9 21.8l-218.6 101c-14.9 6.9-32.1 6.9-47 0L13.9 405.8C5.4 401.8 0 393.3 0 384s5.4-17.9 13.9-21.8z\"/></svg>Shift+click to show all diffs · Hold D to flash the diff</span><div class=\"ds-shot ds-shot-changed\"><div class=\"ds-shot-bar\"></div><div class=\"ds-shot-line\"></div><div class=\"ds-shot-line ds-shot-line-b\"></div><div class=\"ds-shot-block\"></div></div></div></div></div><div class=\"ds-review-bar\"><textarea class=\"ds-review-comment\" rows=\"1\" placeholder=\"Leave a comment (optional)\"></textarea><div class=\"ds-review-actions\"><button class=\"ds-review-btn ds-approve\" type=\"button\">Approve</button><button class=\"ds-review-btn ds-reject\" type=\"button\">Reject</button></div></div></div>",
+            "css": ".ds-screen { box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; width: 680px; max-width: 100%; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); color: var(--text); font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; font-size: 14px; line-height: 1.45; } .ds-screen:focus { outline: none; } .ds-screen:focus-visible, .ds-screen:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; } .ds-qualifier { margin-left: 4px; font-weight: 400; letter-spacing: normal; text-transform: none; } .ds-screen-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 24px; } .ds-screen-id { display: flex; align-items: center; gap: 10px; min-width: 0; } .ds-screen-name { font-weight: 600; } .ds-compare { display: flex; flex-direction: column; gap: 6px; padding-top: 14px; border-top: 1px solid var(--border); } .ds-compare-labels, .ds-compare-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } .ds-compare-labels span { color: var(--text-3); font-size: 11px; font-weight: 600; letter-spacing: 0.045em; text-transform: uppercase; text-align: center; } .ds-mat { box-sizing: border-box; position: relative; display: flex; align-items: flex-start; justify-content: center; padding: 18px; border-radius: var(--radius-sm); background: var(--surface-3); } .ds-shot { box-sizing: border-box; width: 100%; max-width: 220px; padding: 10px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border); } .ds-shot-bar { height: 10px; width: 45%; border-radius: 3px; background: var(--border-strong); } .ds-shot-line { height: 6px; margin-top: 10px; border-radius: 3px; background: var(--surface-3); } .ds-shot-line-b { width: 70%; margin-top: 6px; } .ds-shot-block { height: 44px; margin-top: 10px; border-radius: 4px; background: var(--surface-2); } .ds-shot-changed .ds-shot-line-b { width: 40%; } .ds-shot-changed .ds-shot-block { height: 28px; } .ds-diff-hint { position: absolute; top: 8px; right: 8px; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: var(--radius-sm); background: var(--text); color: var(--bg); font-size: 11px; opacity: 0; pointer-events: none; transition: opacity 0.15s; } .ds-diff-hint .ds-ico { font-size: 10px; } .ds-mat-new:hover .ds-diff-hint { opacity: 0.9; } .ds-review-bar { display: flex; align-items: stretch; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border); } .ds-review-comment { box-sizing: border-box; flex: 1; min-width: 0; height: 36px; min-height: 36px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; resize: vertical; box-shadow: var(--shadow-sm); transition: border-color 0.12s, box-shadow 0.12s; } .ds-review-comment::placeholder { color: var(--placeholder); } .ds-review-comment:focus, .ds-review-comment:focus-visible { outline: none; border-color: var(--focus); box-shadow: 0 0 0 3px var(--accent-soft); } .ds-review-actions { display: flex; gap: 8px; } .ds-review-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 12px; border: 1px solid; border-radius: var(--radius); font: inherit; font-size: 13px; font-weight: 500; line-height: 1; cursor: pointer; box-shadow: var(--shadow-sm); transition: background-color 0.12s, border-color 0.12s, color 0.12s; } .ds-review-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; } .ds-approve { color: var(--success); border-color: var(--success-border); background: var(--success-soft); } .ds-approve:hover, .ds-approve:active { border-color: var(--success); box-shadow: inset 0 0 0 1px var(--success); } .ds-reject { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); } .ds-reject:hover, .ds-reject:active { border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); } .ds-tag { box-sizing: border-box; display: inline-flex; align-items: center; gap: 4px; height: 19px; padding: 0 6px; border: 1px solid var(--neutral-border); border-radius: 4px; background: var(--neutral-soft); color: var(--neutral); font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; font-size: 11px; font-weight: 500; line-height: 1; white-space: nowrap; } .ds-tag .ds-ico { font-size: 9.5px; } .ds-tag-status { height: 24px; gap: 8px; } .ds-tag-warning { border-color: var(--warning-border); background: var(--warning-soft); color: var(--warning); } .ds-tag-success { border-color: var(--success-border); background: var(--success-soft); color: var(--success); } .ds-tag-info { border-color: var(--info-border); background: var(--info-soft); color: var(--info); } .ds-tag-release { border-color: var(--release-border); background: var(--release-soft); color: var(--release); } .ds-tag-danger { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger); } .ds-tag-mono { font-family: var(--font-mono); } .ds-ico { width: 1em; height: 1em; font-size: 12px; flex-shrink: 0; }"
+        },
+        {
+            "name": "Decision Bar",
+            "kind": "custom",
+            "refersTo": "decision-bar",
+            "description": "Sticky strip at the bottom of the review screen: progress text, the keyboard legend in key caps, and the single primary button. Page background, hairline on top, no shadow.",
+            "html": "<div class=\"ds-decision\"><p class=\"ds-decision-progress\">2 of 5 reviewed · 3 unreviewed will be approved on submit</p><p class=\"ds-decision-keys\"><span><kbd class=\"ds-kbd\">J</kbd>/<kbd class=\"ds-kbd\">K</kbd> next/previous</span><span aria-hidden=\"true\">·</span><span><kbd class=\"ds-kbd\">A</kbd> approve</span><span aria-hidden=\"true\">·</span><span><kbd class=\"ds-kbd\">R</kbd> reject</span><span aria-hidden=\"true\">·</span><span><kbd class=\"ds-kbd\">D</kbd> diff</span></p><button class=\"ds-decision-btn\" type=\"button\">Approve build</button></div>",
+            "css": ".ds-decision { box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; width: 680px; max-width: 100%; padding: 12px 4px; border-top: 1px solid var(--border); background: var(--bg); font-family: var(--font-sans); font-feature-settings: 'cv11' 1, 'ss01' 1, 'tnum' 1; line-height: 1.45; } .ds-decision-progress { flex: 0 1 auto; min-width: 0; margin: 0; color: var(--text); font-size: 13px; font-weight: 500; } .ds-decision-keys { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; flex: 1 1 auto; min-width: 0; margin: 0; color: var(--text-3); font-size: 12px; } .ds-decision-keys > span { white-space: nowrap; } .ds-kbd { display: inline-block; min-width: 18px; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text-2); font-family: var(--font-mono); font-size: 11px; line-height: 1; text-align: center; } .ds-decision-btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; height: 32px; margin-left: auto; padding: 0 12px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--accent); color: var(--accent-text); font: inherit; font-size: 13px; font-weight: 500; line-height: 1; white-space: nowrap; cursor: pointer; box-shadow: var(--shadow-sm); transition: background-color 0.12s, border-color 0.12s, color 0.12s; } .ds-decision-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); } .ds-decision-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }"
+        }
+    ],
+    "narrative": {
+        "northStar": "The Review Desk",
+        "overview": "A tidy, well-lit workstation: white cards on a cool grey desk, one indigo accent for the action, status in small coloured tags; screenshots are the papers being reviewed. Everything on the desk is furniture for looking at two images side by side and deciding. The chrome is a 46px bar, a page title, and a stack of cards; the screenshots get whatever width is left.\n\nThe shipped UI is compact, quiet, and utilitarian. Compact: body text is 14px, controls are 32px tall, tags are 19px, and one list row carries branch, commit, author, date, and status. Quiet: surfaces are near-neutral greys with hairline borders, resting shadows are barely visible, and hover only shifts a background by a step. Utilitarian: there is no illustration and no imagery other than the user's own screenshots; the single decorative moment is a faint grid behind the sign-in card.\n\nThe system ships in light and dark from one set of token names. Every colour is a CSS custom property declared for light on the root and redeclared for dark, so components never branch on theme. The theme follows the operating system unless the user picks Light or Dark from the theme menu. The tokens and primitives were copied from an internal \"CI Dashboard\" design system, so a few names and unused primitives come from that origin rather than from this product. The brand appears as a small grid glyph in an inverted rounded square beside the text wordmark \"PixelCI\"; there is no separate logo asset.",
+        "keyCharacteristics": [
+            "White cards (12px radius, hairline border, faint shadow) on a cool grey page.",
+            "One indigo accent, used for the committing action, the selected or on state, and focus.",
+            "Status is always a small tag: soft fill, matching border, darker text of the same tone, with a word in it.",
+            "Compact scale: 14px body, 13px controls, 12px meta, 11px tags; hierarchy comes from weight more than size.",
+            "A translucent, blurred top bar (46px) with a sticky page header directly beneath it.",
+            "Light and dark themes share one token vocabulary; dark status fills are translucent tints of the tone.",
+            "Screenshots sit on a slightly darker mat. Fit never scales one above its natural size; 200% is the one deliberate magnification and stays pixel-sharp.",
+            "The review screen keeps the build decision in a sticky bar at the bottom of the viewport and can be worked from the keyboard."
+        ],
+        "rules": [
+            {
+                "name": "The One Indigo Rule",
+                "body": "Indigo means \"this is the action, this is selected, or this has focus\". It fills one committing button per surface (the page header, a dialog's action row, or the review screen's decision bar), marks checked and on states, and draws focus. It never carries status.",
+                "section": "colors"
+            },
+            {
+                "name": "The Tag Triplet Rule",
+                "body": "A status tone is always applied as its three tokens together: soft fill, matching border, tone-coloured text. Tags are never solid fills, and every tag contains a word, so colour is never the only signal.",
+                "section": "colors"
+            },
+            {
+                "name": "The Borrowed Fill Rule",
+                "body": "The Approve and Reject buttons are the only controls that wear a status triplet (success and danger). Everywhere else, buttons are neutral or indigo and status stays in tags.",
+                "section": "colors"
+            },
+            {
+                "name": "The Weight Before Size Rule",
+                "body": "The whole ramp sits between 11px and 20px. Step up a level by weight (400, 500, 600, 650) before reaching for a larger size; a row title and its body text are both 14px.",
+                "section": "typography"
+            },
+            {
+                "name": "The Machine Text Rule",
+                "body": "Text a machine produced and a person may copy (hashes, IDs, snippets, URLs, keys) is monospace. Everything a person wrote is Inter.",
+                "section": "typography"
+            },
+            {
+                "name": "The Screenshot Gets the Width Rule",
+                "body": "Every page is capped at 1120px except the one whose job is comparing images. Chrome never takes horizontal space from a screenshot.",
+                "section": "layout"
+            },
+            {
+                "name": "The Rows In One Card Rule",
+                "body": "A collection is one card with hairline-divided rows. Each row is the link; hover tints the whole row.",
+                "section": "layout"
+            },
+            {
+                "name": "The Shadow Means Detached Rule",
+                "body": "Shadow strength says how far a surface has left the page: resting for things on it, attached for things hanging off a control, floating for things above everything. Hover changes fill, never shadow.",
+                "section": "elevation"
+            },
+            {
+                "name": "The Nested Radius Rule",
+                "body": "12px holds 8px holds 5px. Never give an inner element the same or a larger radius than its container.",
+                "section": "shapes"
+            },
+            {
+                "name": "The Inset Ring Rule",
+                "body": "A focusable element that sits flush inside a clipping card (an app row, a build row, a project search result) draws its focus ring inside its own edge (2px, offset -2px), so the card cannot cut the ring off. Everything else keeps the outward ring.",
+                "section": "shapes"
+            }
+        ],
+        "dos": [
+            "**Do** take every colour from the custom properties, so a new surface works in light and dark without a theme branch.",
+            "**Do** give each page header, dialog, or decision bar one filled indigo button for its committing action, and keep the rest default or ghost (The One Indigo Rule).",
+            "**Do** show status as a tag with all three tone tokens and a word in it, using the status mapping table (The Tag Triplet Rule).",
+            "**Do** keep controls at 32px tall with 13px medium labels so buttons, inputs, selects, and segmented controls align on one row.",
+            "**Do** put collections in one card with hairline-divided rows, and make the whole row the link (The Rows In One Card Rule).",
+            "**Do** pick a shadow by how detached the surface is: resting, attached, or floating (The Shadow Means Detached Rule).",
+            "**Do** nest radii 12px, 8px, 5px from container to control to inner piece (The Nested Radius Rule).",
+            "**Do** set hashes, IDs, snippets, and URLs in the monospace stack and everything else in Inter (The Machine Text Rule).",
+            "**Do** keep the visible keyboard focus: a 2px Focus Ring Indigo outline at 2px offset, the 3px Focus Halo on fields, and the ring drawn inside the edge for rows in a clipping card (The Inset Ring Rule).",
+            "**Do** keep motion to short colour and opacity changes (0.1s to 0.15s) and honour reduced motion the way the skeleton, the spinner, and the scroll to the next card do.",
+            "**Do** give screenshots the width: a full-width container on the review screen, and natural size as the upper limit of Fit.",
+            "**Do** keep the two panes of a comparison locked together, and keep a pane short enough that the card's name and review bar stay on screen with it.",
+            "**Do** name the outcome on a committing button and repeat that name on the confirm (\"Approve build\", \"Submit review\"), and start focus on Cancel when the action cannot be taken back.",
+            "**Do** open the app's own dialogs through the shared modal wrapper so they get a dialog role, a focus trap, Escape, and focus restore.",
+            "**Do** say what went wrong in a danger notice in the page, with a way out when the page is a dead end, and give an empty state a next-step line when there is a next step."
+        ],
+        "donts": [
+            "**Don't** use indigo for status, or a status tone for a general-purpose button. Approve and Reject are the only toned buttons (The Borrowed Fill Rule).",
+            "**Don't** fill a tag or notice with a solid tone; the fill is always the soft token with the tone on text and border.",
+            "**Don't** change a shadow on hover, or add one to the top bar, the page header, or the decision bar; hover changes fill only and sticky chrome is separated by a hairline.",
+            "**Don't** fill a destructive button red. Delete is an outlined button with a Destructive Red label, followed by a confirm dialog.",
+            "**Don't** let Fit scale a screenshot above its natural width, smooth the 200% view (it is pixelated on purpose), or lay chrome over a screenshot; the hover hint chip is the only overlay.",
+            "**Don't** fill the pressed option of a segmented control with indigo; it takes Screenshot Mat, like the active nav link.",
+            "**Don't** put counts on the submit button; they belong in the progress text and the confirm.",
+            "**Don't** use uppercase text outside the two places it exists: comparison column labels and dropdown group labels.",
+            "**Don't** reuse the grid-and-glow background outside the auth page.",
+            "**Don't** hard-code a colour, radius, or shadow where a token exists.",
+            "**Don't** copy the known gaps below into new work."
+        ]
+    }
+}
