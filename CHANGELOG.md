@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Breaking:** PixelCI now requires PostgreSQL 15+ (PostgreSQL 18 recommended); MySQL is no longer supported
+    - Replace the `MYSQL_*` environment variables with `PG_HOST`, `PG_PORT`, `PG_USER`, `PG_PASSWORD_SECRET` and `PG_DATABASE`
+    - The database schema is now created by a single base migration. Existing MySQL data is not migrated automatically
 - GitHub Actions integration: GitHub App login, OIDC-authenticated CLI (no secrets), and per-job re-run after approval
   (push, pull_request, workflow_dispatch and schedule events; GitHub Enterprise Server supported). See the GitHub Setup guide
 - GitHub: if the workflow run is still in progress when a build is approved, PixelCI now re-runs the job automatically once the run

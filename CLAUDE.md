@@ -24,7 +24,7 @@ The system works by:
 # Install dependencies (from root)
 yarn --immutable
 
-# Set up local services (MySQL, Redis, S3)
+# Set up local services (PostgreSQL, Redis, S3)
 # See packages/api/.env.development for required services
 ```
 
@@ -35,6 +35,9 @@ cd packages/api
 
 # Run migrations
 yarn migrate
+
+# Generate a migration after changing entities (schema is entity-first; review the output)
+yarn migrate:create
 
 # Run development server (watches for changes)
 yarn dev
@@ -165,7 +168,7 @@ cd packages/api
 yarn test:int
 ```
 
-Located in `packages/api/tests/integration/`. Requires MySQL, Redis, and S3 (SeaweedFS) services running.
+Located in `packages/api/tests/integration/`. Requires PostgreSQL, Redis, and S3 (SeaweedFS) services running.
 
 ### E2E Tests (UI)
 
@@ -216,7 +219,7 @@ Background jobs in `packages/api/src/jobs/`:
 
 - Development: `packages/api/.env.development`, `packages/ui/.env`
 - Production: `packages/api/.env.production`, `packages/ui/.env.production`
-- Required services: MySQL, Redis, S3-compatible storage
+- Required services: PostgreSQL, Redis, S3-compatible storage
 
 ## Key Files to Know
 

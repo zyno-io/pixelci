@@ -74,7 +74,7 @@ PixelCI provides a web interface for reviewing builds, comparing screenshots, an
 
 ## Architecture
 
-- **Backend**: TypeScript, Deepkit Framework, MySQL, Redis
+- **Backend**: TypeScript, Deepkit Framework, PostgreSQL, Redis
 - **Frontend**: Vue 3, TypeScript, Pinia, TailwindCSS
 - **Image Processing**: pixelmatch for pixel-by-pixel comparison
 - **Storage**: S3-compatible object storage for screenshots and diffs
