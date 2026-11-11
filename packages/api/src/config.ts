@@ -21,8 +21,8 @@ export class AppConfig extends BaseAppConfig {
     // Maximum width*height of an uploaded screenshot (checked from the PNG header before decoding)
     SCREEN_MAX_PIXELS = 25_000_000;
 
-    // Interim: this is the effective upload size limit. Oversized bodies are rejected up front (Content-Length / source accounting);
-    // the per-file FileUpload maxSize on the upload endpoint is set above it ('17MB') so the multipart 413 path, which can hang
-    // over real sockets, is never the one that triggers. 16 MiB image + 64 KiB for multipart framing.
+    // Effective upload size limit: oversized bodies are rejected up front (Content-Length / source accounting), before any
+    // multipart parsing. The per-file FileUpload maxSize on the upload endpoint ('17MB') sits above it as a backstop.
+    // 16 MiB image + 64 KiB for multipart framing.
     HTTP_MAX_REQUEST_BODY_BYTES = 16 * 1024 * 1024 + 64 * 1024;
 }
