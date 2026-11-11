@@ -14,6 +14,9 @@ export class S3Service {
             endpoint: appConfig.S3_ENDPOINT,
             region: appConfig.S3_REGION,
             forcePathStyle: true,
+            // Only compute/validate checksums when an operation requires them (SDK defaults break some S3-compatible stores)
+            requestChecksumCalculation: 'WHEN_REQUIRED',
+            responseChecksumValidation: 'WHEN_REQUIRED',
             ...(appConfig.S3_ACCESS_KEY_ID &&
                 appConfig.S3_ACCESS_SECRET && {
                     credentials: {
@@ -27,12 +30,14 @@ export class S3Service {
     async uploadFile(localPath: string, targetPath: string, contentType: string): Promise<void>;
     async uploadFile(buffer: Buffer, targetPath: string, contentType: string): Promise<void>;
     async uploadFile(localPathOrBuffer: string | Buffer, targetPath: string, contentType: string): Promise<void> {
-        // todo: figure out why createReadStream didn't work & fix it
+        // A path is read fully into memory rather than streamed: a stream body can't be replayed on an SDK retry and leaks its fd
+        // if S3 rejects the request early. Memory is bounded by the upload size cap (16MB).
+        const body = typeof localPathOrBuffer === 'string' ? await readFile(localPathOrBuffer) : localPathOrBuffer;
         const command = new PutObjectCommand({
             Bucket: this.appConfig.S3_BUCKET,
             Key: targetPath,
             ContentType: contentType,
-            Body: typeof localPathOrBuffer === 'string' ? await readFile(localPathOrBuffer) : localPathOrBuffer
+            Body: body
         });
         await this.s3Client.send(command);
     }

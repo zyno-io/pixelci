@@ -94,7 +94,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/IVcsIntegrationCreateInput"
+              $ref: "#/components/schemas/IOnboardingRequest"
   /api/session/login:
     post:
       operationId: postSessionLogin
@@ -484,14 +484,7 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/IBuildScreenCreateResponse"
-                  - type: object
-                    properties:
-                      status:
-                        type: string
-                    required:
-                      - status
+                $ref: "#/components/schemas/IBuildScreenCreateResponse"
       parameters:
         - name: appId
           in: path
@@ -517,6 +510,7 @@ paths:
                 image:
                   type: string
                   format: binary
+                  x-maxSizeBytes: 17825792
               required:
                 - image
   /api/apps/{appId}/builds/{id}/screens/{screenId}/image:
@@ -936,8 +930,23 @@ components:
       properties:
         isOnboarded:
           type: boolean
+        setupEnabled:
+          type: boolean
+        hasAdmin:
+          type: boolean
       required:
         - isOnboarded
+        - setupEnabled
+        - hasAdmin
+    IOnboardingRequest:
+      type: object
+      properties:
+        setupToken:
+          type: string
+        integration:
+          $ref: "#/components/schemas/IVcsIntegrationCreateInput"
+      required:
+        - integration
     IVcsIntegrationCreateInput:
       oneOf:
         - $ref: "#/components/schemas/IGitLabIntegrationInput"
@@ -1041,6 +1050,8 @@ components:
         redirectUri:
           type: string
         code:
+          type: string
+        setupToken:
           type: string
       required:
         - providerId

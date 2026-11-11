@@ -9,7 +9,7 @@ export interface IUserVcsSession {
 }
 
 @entity.name('users')
-@entity.index(['vcsId', 'vcsUserId'])
+@entity.index(['vcsId', 'vcsUserId'], { unique: true })
 export class UserEntity extends BaseEntity {
     id!: UuidString & PrimaryKey;
     vcsId!: UuidString;

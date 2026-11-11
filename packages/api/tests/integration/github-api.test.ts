@@ -15,6 +15,8 @@ import { VcsGitHubService } from '../../src/services/VcsGitHub.service';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
+const SETUP_TOKEN = 'gh-api-setup-token-0123456789';
+process.env.SETUP_TOKEN = SETUP_TOKEN;
 process.env.REDIS_PREFIX = 'pixelci_test';
 
 configureTestDatabase();
@@ -525,14 +527,63 @@ async function run() {
         assert(!url.searchParams.has('scope'), 'no scope expected');
     }
 
-    const login = (code: string) =>
-        send(facade, 'POST', '/api/session/login', { providerId: GH_VCS_ID, redirectUri: 'https://pixelci.test/login', code });
+    const login = (code: string, setupToken?: string) =>
+        send(facade, 'POST', '/api/session/login', { providerId: GH_VCS_ID, redirectUri: 'https://pixelci.test/login', code, setupToken });
 
-    test('login with a good code → JWT, user created as admin, name falls back to login');
+    test('login without the setup token on a fresh install → user created, NOT admin; wrong token likewise');
+    {
+        for (const token of [undefined, 'wrong-token']) {
+            const res = await login('good', token);
+            status(res, 200, 'login without token');
+            const user = await UserEntity.query().filter({ vcsId: GH_VCS_ID, vcsUserId: '4242' }).findOne();
+            assert(user.isAdmin === false, `user must not be admin without the setup token (${token})`);
+            await UserEntity.query().filter({ id: user.id }).deleteMany();
+        }
+    }
+
+    test('login with the token while no admin exists promotes an EXISTING non-admin user; with an admin present it does not');
+    {
+        const adminless = await UserEntity.query().filter({ vcsId: GH_VCS_ID, vcsUserId: '4242' }).findOneOrUndefined();
+        assert(!adminless, 'precondition: no user yet');
+        await createPersistedEntity(UserEntity, {
+            id: '00000000-0000-0000-0000-0000000000e1',
+            name: 'Existing',
+            createdAt: new Date(),
+            lastLoginAt: new Date(),
+            isAdmin: false,
+            vcsId: GH_VCS_ID,
+            vcsUserId: '4242'
+        });
+        const st = (await get(facade, '/api/session/onboarding-status')).json;
+        assert(st.hasAdmin === false, 'hasAdmin should be false');
+        status(await login('good', SETUP_TOKEN), 200, 'existing promoted');
+        let u = await UserEntity.query().filter({ vcsId: GH_VCS_ID, vcsUserId: '4242' }).findOne();
+        assert(u.isAdmin === true, 'existing non-admin should be promoted while no admin exists');
+        const st2 = (await get(facade, '/api/session/onboarding-status')).json;
+        assert(st2.hasAdmin === true, 'hasAdmin should be true');
+        // now an admin exists: a different non-admin presenting the token stays non-admin
+        await UserEntity.query().filter({ id: '00000000-0000-0000-0000-0000000000e1' }).patchMany({ isAdmin: false });
+        await createPersistedEntity(UserEntity, {
+            id: '00000000-0000-0000-0000-0000000000e2',
+            name: 'Admin',
+            createdAt: new Date(),
+            lastLoginAt: new Date(),
+            isAdmin: true,
+            vcsId: GH_VCS_ID,
+            vcsUserId: 'someone-else'
+        });
+        status(await login('good', SETUP_TOKEN), 200, 'no promotion');
+        u = await UserEntity.query().filter({ vcsId: GH_VCS_ID, vcsUserId: '4242' }).findOne();
+        assert(u.isAdmin === false, 'must not be promoted while an admin exists');
+        await UserEntity.query().filter({ id: '00000000-0000-0000-0000-0000000000e2' }).deleteMany();
+        await UserEntity.query().filter({ id: '00000000-0000-0000-0000-0000000000e1' }).deleteMany();
+    }
+
+    test('login with a good code + setup token → JWT, user created as admin, name falls back to login');
     let userId: string;
     let userJwt: string;
     {
-        const res = await login('good');
+        const res = await login('good', SETUP_TOKEN);
         status(res, 200, 'login');
         userJwt = res.json.jwt;
         const user = await UserEntity.query().filter({ vcsId: GH_VCS_ID, vcsUserId: '4242' }).findOne();
