@@ -70,6 +70,9 @@ function addReadTokenHash(build: BuildEntity, hash: string) {
     build.ciReadTokenHashes = [...current, hash].slice(-MAX_READ_TOKEN_HASHES);
 }
 
+const BUILDS_DEFAULT_PAGE_SIZE = 50;
+const BUILDS_MAX_PAGE_SIZE = 200;
+
 @ApiController('/api/apps/:appId/builds')
 export class BuildsController {
     constructor(
@@ -82,18 +85,26 @@ export class BuildsController {
 
     @http.GET()
     @http.middleware(UserAuthMiddleware)
-    async index(appId: UuidString, user: UserEntity, query: HttpQueries<{ branchId?: UuidString }>): Promise<IBuildResponse[]> {
+    async index(
+        appId: UuidString,
+        user: UserEntity,
+        query: HttpQueries<{ branchId?: UuidString; limit?: number; before?: UuidString }>
+    ): Promise<IBuildResponse[]> {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
 
-        const { branchId } = query;
+        const { branchId, before } = query;
+        const limit = Number.isFinite(query.limit) ? Math.min(Math.max(Math.trunc(query.limit!), 1), BUILDS_MAX_PAGE_SIZE) : BUILDS_DEFAULT_PAGE_SIZE;
 
         const builds = await BuildEntity.query()
             .filter({
                 appId,
                 status: { $nin: ['draft', 'canceled'] },
-                ...(branchId && { branchId })
+                ...(branchId && { branchId }),
+                ...(before && { id: { $lt: before } })
             })
-            .orderBy('createdAt', 'desc')
+            // uuid7 ids sort the same as createdAt and are unique, so they make a stable keyset cursor
+            .orderBy('id', 'desc')
+            .limit(limit)
             .find();
 
         const branchIds = uniq(builds.map(build => build.branchId));

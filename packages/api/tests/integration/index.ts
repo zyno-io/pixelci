@@ -98,6 +98,7 @@ async function run() {
     }
 
     await testMalformedIds(facade);
+    await testBuildsPagination(facade);
 }
 
 async function testMalformedIds(facade: TestingFacade) {
@@ -109,6 +110,7 @@ async function testMalformedIds(facade: TestingFacade) {
         '/api/apps/not-a-uuid',
         `/api/apps/${APP_ID}/builds/not-a-uuid`,
         `/api/apps/${APP_ID}/builds?branchId=not-a-uuid`,
+        `/api/apps/${APP_ID}/builds?before=not-a-uuid`,
         '/api/apps/not-a-uuid/builds',
         '/api/apps/vcs-projects/search?vcsId=not-a-uuid&search=x'
     ]) {
@@ -122,6 +124,37 @@ async function testMalformedIds(facade: TestingFacade) {
     const missing = await get(`/api/apps/${ZERO_ID}`);
     if (missing.statusCode !== 404) {
         throw new Error(`Expected 404 for unknown app but got ${missing.statusCode}: ${missing.body}`);
+    }
+    console.log('  PASS');
+}
+
+async function testBuildsPagination(facade: TestingFacade) {
+    console.log('\nTest: builds list pages are disjoint, ordered, and honour limit/before');
+    const jwt = await JWT.generate({ subject: ZERO_ID });
+    const list = async (query: string) => {
+        const response = await facade.request(HttpRequest.GET(`/api/apps/${APP_ID}/builds${query}`).header('authorization', `Bearer ${jwt}`));
+        if (response.statusCode !== 200) throw new Error(`Expected 200 for builds${query} but got ${response.statusCode}: ${response.body}`);
+        return (response.json as { id: string }[]).map(b => b.id);
+    };
+
+    const all = await list('?limit=200');
+    if (all.length < 3) throw new Error(`Expected at least 3 builds from the scenarios, got ${all.length}`);
+    if (JSON.stringify(all) !== JSON.stringify([...all].sort().reverse())) throw new Error('Builds are not ordered newest first');
+    if (JSON.stringify(await list('')) !== JSON.stringify(all.slice(0, 50))) throw new Error('Default page is not the first 50 builds');
+    if ((await list('?limit=0')).length !== 1) throw new Error('limit=0 should clamp to 1');
+    if ((await list('?limit=100000')).length !== all.length) throw new Error('limit above the maximum should clamp to 200');
+
+    const paged: string[] = [];
+    let before = '';
+    for (let i = 0; i < all.length + 1; i++) {
+        const page = await list(`?limit=2${before && `&before=${before}`}`);
+        if (page.length > 2) throw new Error('Page exceeds the limit');
+        if (!page.length) break;
+        paged.push(...page);
+        before = page[page.length - 1];
+    }
+    if (JSON.stringify(paged) !== JSON.stringify(all)) {
+        throw new Error(`Pages are not disjoint and ordered: ${JSON.stringify(paged)} vs ${JSON.stringify(all)}`);
     }
     console.log('  PASS');
 }
