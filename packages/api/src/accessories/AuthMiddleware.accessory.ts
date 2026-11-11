@@ -21,6 +21,9 @@ export class AdminAuthMiddleware extends UserAuthMiddleware {
     }
 }
 
+/** CI session tokens (uploader and readers) stop working this long after the last create/upload, so final-status polls can be repeated safely. */
+export const CI_TOKEN_TTL_MS = 4 * 60 * 60 * 1000;
+
 /**
  * Hashes a CI token for storage/comparison.
  */
@@ -63,8 +66,10 @@ export class BuildCiTokenMiddleware extends HttpMiddleware {
         // Uploads/process require the creator's token; status polling also accepts read-only tokens of concurrent jobs
         const allowed =
             !!build && (build.ciTokenHash === tokenHash || (request.method === 'GET' && (build.ciReadTokenHashes ?? []).includes(tokenHash)));
-        // Sessions expire (refreshed on create/upload); a null expiry counts as expired
-        const expired = !build?.ciTokensExpireAt || build.ciTokensExpireAt.getTime() <= Date.now();
+        // Sessions expire (refreshed on create/upload). A null expiry is a build created by an old pod during the rolling deploy (the column
+        // is added before the old pods stop and has no default), so fall back to the build's last activity plus the TTL.
+        const expiresAt = build && (build.ciTokensExpireAt ?? new Date((build.draftActiveAt ?? build.createdAt).getTime() + CI_TOKEN_TTL_MS));
+        const expired = !expiresAt || expiresAt.getTime() <= Date.now();
         if (!build || !allowed || expired) {
             this.logger.warn(`CI token auth failed: build not found or token hash mismatch for buildId=${buildId}`);
             throw new HttpUnauthorizedError();

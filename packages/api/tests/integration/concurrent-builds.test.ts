@@ -314,9 +314,13 @@ async function testFinalPollIsRepeatable(f: Facade) {
     await expectCode(status(f, id, a), 200, 'A after refresh');
     await expectCode(status(f, id, b), 200, 'B after refresh');
 
-    // A null expiry (pre-migration rows) counts as expired
-    await BuildEntity.query().filter({ id }).patchMany({ ciTokensExpireAt: null });
-    await expectCode(status(f, id, a), 401, 'A with null expiry');
+    // A null expiry (a build created by an old pod during the rolling deploy) falls back to draftActiveAt + TTL
+    await BuildEntity.query().filter({ id }).patchMany({ ciTokensExpireAt: null, draftActiveAt: new Date(), createdAt: new Date() });
+    await expectCode(status(f, id, a), 200, 'A with null expiry and recent activity');
+    await BuildEntity.query()
+        .filter({ id })
+        .patchMany({ ciTokensExpireAt: null, draftActiveAt: new Date(Date.now() - 5 * 60 * 60 * 1000) });
+    await expectCode(status(f, id, a), 401, 'A with null expiry and old activity');
     console.log('  PASS');
 }
 
@@ -436,10 +440,11 @@ async function testShardRejectedBeforeWrite(f: Facade) {
     console.log('\nTest: sharded creates are rejected before any write');
     const t = newJob('branch-shard');
     const sha = jobs.get(t)!.sha;
-    await expectCode(create(f, t, undefined, { shard: { index: 0, total: 2 } }), 400, 'shard total 2');
+    await expectCode(create(f, t, undefined, { shard: { index: 1, total: 2 } }), 400, 'shard total 2');
     assert((await BuildEntity.query().filter({ appId: APP_ID, commitHash: sha }).find()).length === 0, 'no build created');
-    await expectCode(create(f, t, undefined, { shard: { index: 2, total: 2 } }), 400, 'shard index out of range');
-    await expectCode(create(f, t, undefined, { shard: { index: 0, total: 1 } }), 200, 'shard total 1 is unsharded');
+    await expectCode(create(f, t, undefined, { shard: { index: 3, total: 2 } }), 400, 'shard index above total');
+    await expectCode(create(f, t, undefined, { shard: { index: 0, total: 1 } }), 400, 'shard index is 1-based');
+    await expectCode(create(f, t, undefined, { shard: { index: 1, total: 1 } }), 200, 'shard 1/1 is unsharded');
     console.log('  PASS');
 }
 

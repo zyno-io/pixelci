@@ -14,7 +14,7 @@ import { ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { createPersistedEntity, OkResponse, uuid7, WorkerService } from '@zyno-io/ts-server-foundation';
 import { keyBy, uniq } from 'lodash';
 
-import { BuildCiTokenMiddleware, hashCiToken, UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
+import { BuildCiTokenMiddleware, CI_TOKEN_TTL_MS, hashCiToken, UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
 import { Db } from '../database';
 import { AppEntity } from '../entities/App.entity';
@@ -37,8 +37,7 @@ type IBuildBasicResponse = Pick<BuildEntity, 'status'>;
 
 /** A draft older than this is considered abandoned: it may be taken over by a new job or canceled by another build's processing. */
 export const STALE_DRAFT_MS = 15 * 60 * 1000;
-/** CI session tokens (uploader and readers) stop working this long after the last create/upload, so final-status polls can be repeated safely. */
-export const CI_TOKEN_TTL_MS = 4 * 60 * 60 * 1000;
+export { CI_TOKEN_TTL_MS };
 const MAX_MANIFEST_COUNT = 100_000;
 const MANIFEST_HASH_RE = /^[0-9a-f]{64}$/;
 const MAX_READ_TOKEN_HASHES = 20;
@@ -188,8 +187,8 @@ export class BuildsController {
         // MR7 replaces this; until then sharded builds must not create (and strand) a draft on a server that can't merge them
         if (body?.shard !== undefined) {
             const { index, total } = body.shard ?? {};
-            if (!Number.isInteger(index) || !Number.isInteger(total) || index < 0 || total < 1 || index >= total) {
-                throw new HttpBadRequestError('shard must be { index, total } with 0 <= index < total');
+            if (!Number.isInteger(index) || !Number.isInteger(total) || total < 1 || index < 1 || index > total) {
+                throw new HttpBadRequestError('shard must be { index, total } with 1 <= index <= total');
             }
             if (total > 1) throw new HttpBadRequestError('Sharded builds are not supported by this server version');
         }
