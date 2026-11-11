@@ -124,7 +124,9 @@ export class SessionController {
     @http.POST('onboarding/vcs-integration')
     async createOnboardingVcsIntegration(body: HttpBody<IOnboardingRequest>): Promise<Pick<VcsIntegrationEntity, 'id' | 'name' | 'platform'>> {
         // Once onboarded, answer 403 whether or not the token is right so a guessed token can't be confirmed.
-        if (!this.isSetupTokenValid(body.setupToken) || (await VcsIntegrationEntity.query().count()) > 0) {
+        // The count always runs, so response timing doesn't reveal whether the token was correct either.
+        const onboarded = (await VcsIntegrationEntity.query().count()) > 0;
+        if (!this.isSetupTokenValid(body.setupToken) || onboarded) {
             throw new HttpAccessDeniedError('Invalid or missing setup token');
         }
         const input = body.integration;
@@ -169,7 +171,12 @@ export class SessionController {
         let writtenUnderLock = false;
 
         // Only new users, and non-admins presenting a valid setup token (who may be claiming the first admin role), need the lock.
-        if (!user || (!user.isAdmin && this.isSetupTokenValid(body.setupToken))) {
+        // The unlocked admin pre-check keeps correct-token and wrong-token logins on the same fast path once an admin exists
+        // (no timing signal); the locked re-check below stays authoritative.
+        if (
+            !user ||
+            (!user.isAdmin && (await UserEntity.query().filter({ isAdmin: true }).count()) === 0 && this.isSetupTokenValid(body.setupToken))
+        ) {
             // Serialize with onboarding and other first logins so two racing logins can neither both become admin nor both insert.
             // The lookup is repeated under the lock: the users index is not unique yet, so the unlocked lookup above can be stale.
             user = await this.db

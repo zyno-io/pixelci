@@ -79,6 +79,9 @@ async function login(provider: ISessionProvider) {
             } catch {
                 // sessionStorage unavailable
             }
+        } else {
+            // an emptied (or hidden) field must not leave a stale token to be sent with this login
+            clearSetupToken();
         }
 
         const { url } = await dataFromAsync(
