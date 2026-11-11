@@ -15,7 +15,7 @@
         "migrate:reset": "tsf-dev migrate:reset",
         "test": "tsf-dev test",
         "test:debug": "tsf-dev test --debug",
-        "test:all": "yarn build && yarn test && yarn test:int && yarn test:int:auth && yarn test:int:concurrent && yarn test:int:constraints && yarn test:int:onboarding && yarn test:int:ext && yarn test:int:github && yarn test:int:github-api",
+        "test:all": "yarn build && yarn test && yarn test:int && yarn test:int:auth && yarn test:int:concurrent && yarn test:int:constraints && yarn test:int:onboarding && yarn test:int:ext && yarn test:int:github && yarn test:int:github-api && yarn test:int:canary",
         "test:int": "APP_ENV=development ttsx tests/integration/index.ts",
         "test:int:auth": "APP_ENV=development ttsx tests/integration/ci-token-auth.test.ts",
         "test:int:concurrent": "APP_ENV=development ttsx tests/integration/concurrent-builds.test.ts",
@@ -24,6 +24,7 @@
         "test:int:github-api": "APP_ENV=development ttsx tests/integration/github-api.test.ts",
         "test:int:onboarding": "APP_ENV=development ttsx tests/integration/onboarding.test.ts",
         "test:int:ext": "APP_ENV=development ttsx tests/integration/ext-read.test.ts",
+        "test:int:canary": "APP_ENV=development ttsx tests/integration/response-canary.test.ts",
         "format": "npx oxlint --fix --fix-suggestions --fix-dangerously && oxfmt",
         "postinstall": "tsf-install"
     },

@@ -56,7 +56,7 @@ export class S3Service {
             Bucket: this.appConfig.S3_BUCKET,
             Key: path
         });
-        return getSignedUrl(this.s3Client, command, { expiresIn: 3600 });
+        return getSignedUrl(this.s3Client, command, { expiresIn: 300 });
     }
 
     async getBuffer(path: string): Promise<Buffer> {

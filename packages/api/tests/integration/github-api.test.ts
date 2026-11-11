@@ -788,7 +788,7 @@ async function run() {
             userJwt
         );
         status(res, 200, 'create');
-        assert(res.json.vcsProjectId === CREATED_ID, `response id ${res.json.vcsProjectId}`);
+        assert(res.json.id && res.json.vcsProjectId === undefined, `create response should be the index shape, got ${JSON.stringify(res.json)}`);
         const stored = await AppEntity.query().filter({ id: res.json.id }).findOne();
         assert(stored.vcsProjectId === CREATED_ID, `stored id ${stored.vcsProjectId}`);
     }

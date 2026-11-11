@@ -6,6 +6,7 @@ import { AppConfig } from '../config';
 import { AppEntity, IApprovalMinRole } from '../entities/App.entity';
 import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
+import { BoundedTtlCache } from '../helpers/BoundedTtlCache';
 import { IVcsProjectRole, VcsService } from './Vcs.service';
 
 /**
@@ -26,9 +27,9 @@ const ROLE_LABEL: Record<IApprovalMinRole, string> = { read: 'read', write: 'wri
  * Decisions are cached briefly per principal+project to avoid a VCS round-trip on every request.
  */
 export class AppAccessService {
-    private cache = new Map<string, { allowed: boolean; expiresAt: number }>();
+    private cache = new BoundedTtlCache<boolean>(10_000, ACCESS_CACHE_TTL_MS);
     /** VCS roles, kept apart from the read-access cache (and `role:`-prefixed) so the two can never answer for each other. */
-    private roleCache = new Map<string, { role: IVcsProjectRole; expiresAt: number }>();
+    private roleCache = new BoundedTtlCache<IVcsProjectRole>(10_000, ROLE_CACHE_TTL_MS);
 
     constructor(
         private vcsService: VcsService,
@@ -49,7 +50,7 @@ export class AppAccessService {
         const cacheKey = `${principalKey}:${app.vcsId}:${projectIdentifier}`;
 
         const cached = this.cache.get(cacheKey);
-        if (cached && cached.expiresAt > Date.now()) return cached.allowed;
+        if (cached !== undefined) return cached;
 
         let allowed: boolean;
         try {
@@ -62,7 +63,7 @@ export class AppAccessService {
             allowed = false;
         }
 
-        this.cache.set(cacheKey, { allowed, expiresAt: Date.now() + ACCESS_CACHE_TTL_MS });
+        this.cache.set(cacheKey, allowed);
         return allowed;
     }
 
@@ -131,7 +132,7 @@ export class AppAccessService {
         const cacheKey = `role:user:${user.id}:${app.vcsId}:${projectIdentifier}`;
 
         const cached = this.roleCache.get(cacheKey);
-        if (cached && cached.expiresAt > Date.now()) return cached.role;
+        if (cached !== undefined) return cached;
 
         let role: IVcsProjectRole;
         try {
@@ -141,7 +142,7 @@ export class AppAccessService {
         }
         if (ROLE_RANK[role] === undefined) return null;
 
-        this.roleCache.set(cacheKey, { role, expiresAt: Date.now() + ROLE_CACHE_TTL_MS });
+        this.roleCache.set(cacheKey, role);
         return role;
     }
 

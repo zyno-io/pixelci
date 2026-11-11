@@ -16,6 +16,7 @@ export class BranchesController {
     @http.GET()
     async index(appId: UuidString, user: UserEntity): Promise<IBranchResponse[]> {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
-        return BranchEntity.query().filter({ appId }).find();
+        const branches = await BranchEntity.query().filter({ appId }).find();
+        return branches.map(({ id, name }) => ({ id, name }));
     }
 }
