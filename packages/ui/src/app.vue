@@ -2,7 +2,7 @@
     <div class="app-content">
         <div v-if="globalError" id="global-error" v-text="globalError" />
 
-        <Onboarding v-else-if="isOnboarded === false" @complete="isOnboarded = true" />
+        <Onboarding v-else-if="isOnboarded === false" :setup-enabled="setupEnabled" @complete="isOnboarded = true" />
 
         <login v-else-if="!store.sessionUser || $route.path === '/login'" />
 
@@ -29,14 +29,16 @@ const store = useStore();
 const { globalError } = store;
 
 const isOnboarded = ref<boolean | null>(null);
+const setupEnabled = ref(false);
 
 setupStore();
 
 onMounted(async () => {
     try {
         const response = await SessionApi.getSessionGetOnboardingStatus();
-        const { isOnboarded: status } = dataFrom(response);
+        const { isOnboarded: status, setupEnabled: enabled } = dataFrom(response);
         isOnboarded.value = status;
+        setupEnabled.value = enabled;
     } catch {
         isOnboarded.value = true;
     }

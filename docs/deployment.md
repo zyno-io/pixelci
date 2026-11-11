@@ -30,6 +30,7 @@ docker run -d \
   -e S3_ACCESS_KEY_ID=your-access-key \
   -e S3_ACCESS_SECRET=your-secret-key \
   -e S3_BUCKET=pixelci \
+  -e SETUP_TOKEN=a-long-random-secret-of-16-chars-or-more \
   ghcr.io/zyno-io/pixelci:latest
 ```
 
@@ -43,7 +44,7 @@ docker exec pixelci node . migrate:run
 
 **3. Access the web interface**
 
-Visit `http://localhost:7924`. On first launch, the onboarding wizard will guide you through creating your first VCS integration and logging in.
+Visit `http://localhost:7924`. On first launch, the onboarding wizard asks for your `SETUP_TOKEN` and guides you through creating your first VCS integration and logging in.
 
 ## Docker Compose
 
@@ -58,6 +59,7 @@ services:
         environment:
             APP_ENV: production
             ENABLE_JOB_RUNNER: 'true'
+            SETUP_TOKEN: a-long-random-secret-of-16-chars-or-more
             AUTH_JWT_SECRET: your-secret-key
             REDIS_HOST: redis
             REDIS_PREFIX: pixelci
@@ -109,7 +111,7 @@ docker compose up -d
 docker compose exec pixelci node . migrate:run
 ```
 
-Then visit `http://localhost:7924`. The onboarding wizard will guide you through initial setup.
+Then visit `http://localhost:7924`. The onboarding wizard (which asks for `SETUP_TOKEN`) will guide you through initial setup.
 
 ## Running Migrations
 
@@ -184,6 +186,14 @@ PixelCI creates its tables at startup (migrations) and at runtime (the job queue
 | Variable            | Required | Default | Description                                 |
 | ------------------- | -------- | ------- | ------------------------------------------- |
 | `ENABLE_JOB_RUNNER` | No       | `false` | Enable the job runner on the server process |
+
+### First-run Setup
+
+| Variable      | Required           | Default | Description                                                                                                                                                                                                                       |
+| ------------- | ------------------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SETUP_TOKEN` | Yes, for first run | unset   | Secret you type into the onboarding wizard to create the first VCS integration and to claim the first admin account. At least 16 characters; unset or shorter disables first-run setup. You can remove it once setup is complete. |
+
+Without this token, anyone who can reach a fresh instance could register their own VCS integration and become admin, so setup is refused until it is configured.
 
 ### Access Control
 

@@ -8,6 +8,8 @@ import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
+const SETUP_TOKEN = 'test-setup-token-0123456789';
+process.env.SETUP_TOKEN = SETUP_TOKEN;
 process.env.REDIS_PREFIX = 'pixelci_test';
 
 configureTestDatabase();
@@ -33,6 +35,7 @@ async function run() {
 
     // Phase 1: fresh install (no VCS integrations, no users)
     await testOnboardingStatusFresh(facade);
+    await testOnboardingRejectsBadToken(facade);
     await testCreateOnboardingVcsIntegration(facade);
     await testOnboardingStatusAfterSetup(facade);
     await testProvidersDoNotLeakConfig(facade);
@@ -71,6 +74,8 @@ async function run() {
     await testLegacyGitHubRowPartialUpdate(facade, adminJwt);
     await testSessionIncludesVcsId(facade, adminJwt);
     await testOnboardingGitHubOnFreshDb();
+    await testOnboardingConcurrentRequests();
+    await testOnboardingDisabledWithoutToken();
 }
 
 const GITHUB_KEY = generateKeyPairSync('rsa', {
@@ -110,7 +115,10 @@ async function testGitLabShowRedactsSecret(facade: Facade, jwt: string) {
     const response = await facade.request(adminReq(HttpRequest.GET(`/api/admin/vcs-integrations/${gl.id}`), jwt));
     assertStatus(response, 200);
     if (String(response.body).includes('secret')) throw new Error(`show leaks a secret: ${response.body}`);
-    const body = response.json as { platform: string; config: { url: string; clientId: string } };
+    const body = response.json as {
+        platform: string;
+        config: { url: string; clientId: string };
+    };
     if (body.platform !== 'gitlab' || !body.config.url || !body.config.clientId) throw new Error(`Unexpected show body: ${response.body}`);
     console.log('  PASS');
 }
@@ -125,7 +133,11 @@ async function testGitLabUpdateWithoutPlatform(facade: Facade, jwt: string) {
     const response = await facade.request(
         adminReq(HttpRequest.PUT(`/api/admin/vcs-integrations/${gl.id}`), jwt).json({
             name: 'Renamed GitLab',
-            config: { url: 'https://gitlab.example.com', clientId: 'new-client-id', clientSecret: '' }
+            config: {
+                url: 'https://gitlab.example.com',
+                clientId: 'new-client-id',
+                clientSecret: ''
+            }
         })
     );
     assertStatus(response, 200);
@@ -160,7 +172,10 @@ async function testGitHubIntegrationLifecycle(facade: Facade, jwt: string) {
     const show = await facade.request(adminReq(HttpRequest.GET(`/api/admin/vcs-integrations/${created.id}`), jwt));
     assertStatus(show, 200);
     if (String(show.body).includes('gh-secret') || String(show.body).includes('PRIVATE KEY')) throw new Error(`show leaks secrets: ${show.body}`);
-    const detail = show.json as { platform: string; config: Record<string, unknown> };
+    const detail = show.json as {
+        platform: string;
+        config: Record<string, unknown>;
+    };
     if (
         detail.platform !== 'github' ||
         detail.config.hasPrivateKey !== true ||
@@ -176,7 +191,12 @@ async function testGitHubIntegrationLifecycle(facade: Facade, jwt: string) {
     const merge = await facade.request(
         adminReq(HttpRequest.PUT(`/api/admin/vcs-integrations/${created.id}`), jwt).json({
             platform: 'github',
-            config: { oidcAudience: 'https://other.example.com//', clientSecret: '', privateKey: '', url: '' }
+            config: {
+                oidcAudience: 'https://other.example.com//',
+                clientSecret: '',
+                privateKey: '',
+                url: ''
+            }
         })
     );
     assertStatus(merge, 200);
@@ -227,10 +247,19 @@ async function testLegacyGitHubRowPartialUpdate(facade: Facade, jwt: string) {
         id,
         name: 'Legacy GitHub',
         platform: 'github',
-        config: { clientId: 'cid', clientSecret: 'csecret', oidcAudience: 'https://old.example' }
+        config: {
+            clientId: 'cid',
+            clientSecret: 'csecret',
+            oidcAudience: 'https://old.example'
+        }
     });
     const put = (config: Record<string, string>) =>
-        facade.request(adminReq(HttpRequest.PUT(`/api/admin/vcs-integrations/${id}`), jwt).json({ platform: 'github', config }));
+        facade.request(
+            adminReq(HttpRequest.PUT(`/api/admin/vcs-integrations/${id}`), jwt).json({
+                platform: 'github',
+                config
+            })
+        );
 
     assertStatus(await put({ oidcAudience: 'https://new.example' }), 200);
     const stored = await VcsIntegrationEntity.query().filter({ id }).findOne();
@@ -259,7 +288,12 @@ async function testOnboardingGitHubOnFreshDb() {
         databasePrefix: 'pixelci_onboardgh'
     });
     await facade.start();
-    const response = await facade.request(HttpRequest.POST('/api/session/onboarding/vcs-integration').json(githubInput()));
+    const response = await facade.request(
+        HttpRequest.POST('/api/session/onboarding/vcs-integration').json({
+            setupToken: SETUP_TOKEN,
+            integration: githubInput()
+        })
+    );
     assertStatus(response, 200);
     const body = response.json as { id: string; platform: string };
     if (body.platform !== 'github') throw new Error(`Expected github, got ${response.body}`);
@@ -277,10 +311,76 @@ async function testOnboardingStatusFresh(facade: ReturnType<typeof TestingHelper
     console.log('\nTest: onboarding status on fresh install → not onboarded');
     const response = await facade.request(HttpRequest.GET('/api/session/onboarding-status'));
     assertStatus(response, 200);
-    const body = response.json as { isOnboarded: boolean };
+    const body = response.json as { isOnboarded: boolean; setupEnabled: boolean };
     if (body.isOnboarded !== false) {
         throw new Error(`Expected isOnboarded=false, got ${body.isOnboarded}`);
     }
+    if (body.setupEnabled !== true) {
+        throw new Error(`Expected setupEnabled=true, got ${body.setupEnabled}`);
+    }
+    console.log('  PASS');
+}
+
+function onboardingBody(setupToken?: string) {
+    return {
+        ...(setupToken === undefined ? {} : { setupToken }),
+        integration: githubInput()
+    };
+}
+
+async function testOnboardingRejectsBadToken(facade: Facade) {
+    console.log('\nTest: onboarding without / with a wrong setup token -> 403, nothing created');
+    for (const body of [onboardingBody(), onboardingBody('wrong'), onboardingBody(SETUP_TOKEN + 'x'), onboardingBody('')]) {
+        assertStatus(await facade.request(HttpRequest.POST('/api/session/onboarding/vcs-integration').json(body)), 403);
+    }
+    if ((await VcsIntegrationEntity.query().count()) !== 0) throw new Error('A rejected request created an integration');
+    console.log('  PASS');
+}
+
+async function testOnboardingConcurrentRequests() {
+    console.log('\nTest: concurrent onboarding with the correct token -> exactly one 200');
+    const facade = TestingHelpers.createTestingFacade(CoreAppOptions, {
+        enableDatabase: true,
+        databasePrefix: 'pixelci_onboardrace',
+        useSavepoints: false
+    });
+    await facade.start();
+    const responses = await Promise.all(
+        Array.from({ length: 6 }, (_, i) =>
+            facade.request(
+                HttpRequest.POST('/api/session/onboarding/vcs-integration').json({
+                    setupToken: SETUP_TOKEN,
+                    integration: { ...githubInput(), name: `Race ${i}` }
+                })
+            )
+        )
+    );
+    const codes = responses.map(r => r.statusCode).sort();
+    if (codes.filter(c => c === 200).length !== 1 || codes.filter(c => c === 400).length !== 5) {
+        throw new Error(`Expected one 200 and five 400, got ${codes.join(',')}`);
+    }
+    if ((await VcsIntegrationEntity.query().count()) !== 1) throw new Error('Expected exactly one integration row');
+    console.log('  PASS');
+}
+
+async function testOnboardingDisabledWithoutToken() {
+    console.log('\nTest: SETUP_TOKEN unset (or too short) -> setup disabled, onboarding 403');
+    for (const value of [undefined, 'short']) {
+        // An empty value stands in for "unset": .env.development would otherwise re-supply SETUP_TOKEN
+        process.env.SETUP_TOKEN = value ?? '';
+        const facade = TestingHelpers.createTestingFacade(CoreAppOptions, {
+            enableDatabase: true,
+            databasePrefix: 'pixelci_onboardoff'
+        });
+        await facade.start();
+        const status = (await facade.request(HttpRequest.GET('/api/session/onboarding-status'))).json as { setupEnabled: boolean };
+        if (status.setupEnabled !== false) throw new Error(`Expected setupEnabled=false for ${value}`);
+        for (const token of [SETUP_TOKEN, value ?? '', 'undefined']) {
+            assertStatus(await facade.request(HttpRequest.POST('/api/session/onboarding/vcs-integration').json(onboardingBody(token))), 403);
+        }
+        await facade.stop();
+    }
+    process.env.SETUP_TOKEN = SETUP_TOKEN;
     console.log('  PASS');
 }
 
@@ -288,12 +388,15 @@ async function testCreateOnboardingVcsIntegration(facade: ReturnType<typeof Test
     console.log('\nTest: create onboarding VCS integration → 200');
     const response = await facade.request(
         HttpRequest.POST('/api/session/onboarding/vcs-integration').json({
-            name: 'Test GitLab',
-            platform: 'gitlab',
-            config: {
-                url: 'https://gitlab.example.com',
-                clientId: 'test-client-id',
-                clientSecret: 'test-client-secret'
+            setupToken: SETUP_TOKEN,
+            integration: {
+                name: 'Test GitLab',
+                platform: 'gitlab',
+                config: {
+                    url: 'https://gitlab.example.com',
+                    clientId: 'test-client-id',
+                    clientSecret: 'test-client-secret'
+                }
             }
         })
     );
@@ -337,12 +440,15 @@ async function testCreateOnboardingVcsIntegrationBlocked(facade: ReturnType<type
     console.log('\nTest: create onboarding VCS integration when already onboarded → 400');
     const response = await facade.request(
         HttpRequest.POST('/api/session/onboarding/vcs-integration').json({
-            name: 'Second GitLab',
-            platform: 'gitlab',
-            config: {
-                url: 'https://gitlab2.example.com',
-                clientId: 'test-client-id-2',
-                clientSecret: 'test-client-secret-2'
+            setupToken: SETUP_TOKEN,
+            integration: {
+                name: 'Second GitLab',
+                platform: 'gitlab',
+                config: {
+                    url: 'https://gitlab2.example.com',
+                    clientId: 'test-client-id-2',
+                    clientSecret: 'test-client-secret-2'
+                }
             }
         })
     );
@@ -390,7 +496,11 @@ async function testAdminCanListVcsIntegrations(facade: ReturnType<typeof Testing
     console.log('\nTest: admin can list VCS integrations → 200');
     const response = await facade.request(HttpRequest.GET('/api/admin/vcs-integrations').header('authorization', `Bearer ${jwt}`));
     assertStatus(response, 200);
-    const body = response.json as Array<{ id: string; name: string; platform: string }>;
+    const body = response.json as Array<{
+        id: string;
+        name: string;
+        platform: string;
+    }>;
     if (!Array.isArray(body) || body.length === 0) {
         throw new Error('Expected non-empty array of integrations');
     }
@@ -401,7 +511,11 @@ async function testAdminCanListUsers(facade: ReturnType<typeof TestingHelpers.cr
     console.log('\nTest: admin can list users → 200');
     const response = await facade.request(HttpRequest.GET('/api/admin/users').header('authorization', `Bearer ${jwt}`));
     assertStatus(response, 200);
-    const body = response.json as Array<{ id: string; name: string; isAdmin: boolean }>;
+    const body = response.json as Array<{
+        id: string;
+        name: string;
+        isAdmin: boolean;
+    }>;
     if (!Array.isArray(body) || body.length === 0) {
         throw new Error('Expected non-empty array of users');
     }
@@ -482,7 +596,11 @@ async function testVcsIntegrationCrud(facade: ReturnType<typeof TestingHelpers.c
             })
     );
     assertStatus(createResponse, 200);
-    const created = createResponse.json as { id: string; name: string; platform: string };
+    const created = createResponse.json as {
+        id: string;
+        name: string;
+        platform: string;
+    };
     if (created.name !== 'CRUD Test GitLab') {
         throw new Error(`Expected name='CRUD Test GitLab', got ${created.name}`);
     }
@@ -491,7 +609,11 @@ async function testVcsIntegrationCrud(facade: ReturnType<typeof TestingHelpers.c
     console.log('  Reading integration...');
     const showResponse = await facade.request(HttpRequest.GET(`/api/admin/vcs-integrations/${created.id}`).header('authorization', `Bearer ${jwt}`));
     assertStatus(showResponse, 200);
-    const shown = showResponse.json as { id: string; name: string; config: { url: string } };
+    const shown = showResponse.json as {
+        id: string;
+        name: string;
+        config: { url: string };
+    };
     if (shown.config.url !== 'https://crud-gitlab.example.com') {
         throw new Error(`Expected config.url='https://crud-gitlab.example.com', got ${shown.config.url}`);
     }

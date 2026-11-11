@@ -15,6 +15,8 @@ import { VcsGitHubService } from '../../src/services/VcsGitHub.service';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
+const SETUP_TOKEN = 'gh-api-setup-token-0123456789';
+process.env.SETUP_TOKEN = SETUP_TOKEN;
 process.env.REDIS_PREFIX = 'pixelci_test';
 
 configureTestDatabase();
@@ -521,14 +523,25 @@ async function run() {
         assert(!url.searchParams.has('scope'), 'no scope expected');
     }
 
-    const login = (code: string) =>
-        send(facade, 'POST', '/api/session/login', { providerId: GH_VCS_ID, redirectUri: 'https://pixelci.test/login', code });
+    const login = (code: string, setupToken?: string) =>
+        send(facade, 'POST', '/api/session/login', { providerId: GH_VCS_ID, redirectUri: 'https://pixelci.test/login', code, setupToken });
 
-    test('login with a good code → JWT, user created as admin, name falls back to login');
+    test('login without the setup token on a fresh install → user created, NOT admin; wrong token likewise');
+    {
+        for (const token of [undefined, 'wrong-token']) {
+            const res = await login('good', token);
+            status(res, 200, 'login without token');
+            const user = await UserEntity.query().filter({ vcsId: GH_VCS_ID, vcsUserId: '4242' }).findOne();
+            assert(user.isAdmin === false, `user must not be admin without the setup token (${token})`);
+            await UserEntity.query().filter({ id: user.id }).deleteMany();
+        }
+    }
+
+    test('login with a good code + setup token → JWT, user created as admin, name falls back to login');
     let userId: string;
     let userJwt: string;
     {
-        const res = await login('good');
+        const res = await login('good', SETUP_TOKEN);
         status(res, 200, 'login');
         userJwt = res.json.jwt;
         const user = await UserEntity.query().filter({ vcsId: GH_VCS_ID, vcsUserId: '4242' }).findOne();

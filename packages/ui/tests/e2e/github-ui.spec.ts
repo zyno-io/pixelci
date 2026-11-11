@@ -30,7 +30,7 @@ async function mockApi(page: Page, opts: { authenticated?: boolean; providers?: 
         const body = req.postData() ? JSON.parse(req.postData()!) : undefined;
         requests.push({ method, path, body });
 
-        if (path === '/api/session/onboarding-status') return json(route, { isOnboarded: true });
+        if (path === '/api/session/onboarding-status') return json(route, { isOnboarded: true, setupEnabled: true });
         if (path === '/api/session/me') {
             return authenticated
                 ? json(route, { id: 'u1', vcsId: GITHUB.id, name: 'Mock Admin', isAdmin: true })

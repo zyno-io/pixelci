@@ -94,7 +94,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/IVcsIntegrationCreateInput"
+              $ref: "#/components/schemas/IOnboardingRequest"
   /api/session/login:
     post:
       operationId: postSessionLogin
@@ -924,8 +924,20 @@ components:
       properties:
         isOnboarded:
           type: boolean
+        setupEnabled:
+          type: boolean
       required:
         - isOnboarded
+        - setupEnabled
+    IOnboardingRequest:
+      type: object
+      properties:
+        setupToken:
+          type: string
+        integration:
+          $ref: "#/components/schemas/IVcsIntegrationCreateInput"
+      required:
+        - integration
     IVcsIntegrationCreateInput:
       oneOf:
         - $ref: "#/components/schemas/IGitLabIntegrationInput"
@@ -1029,6 +1041,8 @@ components:
         redirectUri:
           type: string
         code:
+          type: string
+        setupToken:
           type: string
       required:
         - providerId

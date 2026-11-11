@@ -43,7 +43,7 @@ Open **Install App** and install it on the account or organization, selecting th
 
 ### 3. Create a VCS Integration
 
-On first launch, PixelCI shows an onboarding wizard that walks you through creating your first VCS integration. Choose **GitHub** and enter:
+On first launch, PixelCI shows an onboarding wizard that walks you through creating your first VCS integration. Enter the **Setup Token** (the `SETUP_TOKEN` environment variable on the server; at least 16 characters), choose **GitHub**, and enter:
 
 | Field                 | Value                                                                                            |
 | --------------------- | ------------------------------------------------------------------------------------------------ |

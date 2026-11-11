@@ -29,6 +29,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { LOCAL_STORAGE_AUTH_KEY } from '@/openapi-client';
 import { type ISessionProvider, SessionApi } from '@/openapi-client-generated';
+import { clearSetupToken, SETUP_TOKEN_STORAGE_KEY } from '@/setup-token';
 import LoaderModal from '@/shared/components/loader-modal.vue';
 import ThemeMenu from '@/shared/components/theme-menu.vue';
 import { useStore } from '@/store';
@@ -67,7 +68,12 @@ async function login(provider: ISessionProvider) {
                 path: { id: provider.id },
                 query: {
                     redirectUri: `${window.location.origin}/login`,
-                    state: btoa(JSON.stringify({ path: location.pathname, providerId: provider.id }))
+                    state: btoa(
+                        JSON.stringify({
+                            path: location.pathname,
+                            providerId: provider.id
+                        })
+                    )
                 }
             })
         );
@@ -98,15 +104,23 @@ async function processCode(code: string) {
             state = { providerId: available[0].id, path: '/' };
         }
 
+        let setupToken: string | undefined;
+        try {
+            setupToken = sessionStorage.getItem(SETUP_TOKEN_STORAGE_KEY) ?? undefined;
+        } catch {
+            // sessionStorage unavailable
+        }
         const { jwt } = await dataFromAsync(
             SessionApi.postSessionLogin({
                 body: {
                     code,
+                    setupToken,
                     providerId: state.providerId!,
                     redirectUri: `${window.location.origin}/login`
                 }
             })
         );
+        clearSetupToken();
         targetPath.value = state.path;
         localStorage.setItem(LOCAL_STORAGE_AUTH_KEY, jwt);
         loadSession();

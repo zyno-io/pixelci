@@ -13,4 +13,8 @@ export class AppConfig extends BaseAppConfig {
     // When true (default), reads are filtered/gated by whether the caller can access the app's
     // project in the VCS provider. Set false for environments without a reachable VCS (e.g. e2e).
     ENFORCE_VCS_PROJECT_ACCESS: boolean = true;
+
+    // Secret required to complete first-run setup (create the first VCS integration, become the first admin).
+    // Unset, or shorter than 16 characters, disables first-run setup.
+    SETUP_TOKEN?: string;
 }
