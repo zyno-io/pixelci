@@ -63,8 +63,8 @@ A complete setup with PostgreSQL, Redis, and PixelCI:
 Set `SETUP_TOKEN` and `SECRETS_ENCRYPTION_KEYS` in an `.env` file next to the compose file. Generate each value once, write it into the file, and keep a copy elsewhere; never regenerate `SECRETS_ENCRYPTION_KEYS` (see [Secrets Encryption](#secrets-encryption)):
 
 ```bash
-echo "SETUP_TOKEN=$(openssl rand -hex 32)" >> .env
-echo "SECRETS_ENCRYPTION_KEYS=k1:$(openssl rand -base64 32)" >> .env
+grep -q "^SETUP_TOKEN=" .env 2>/dev/null || echo "SETUP_TOKEN=$(openssl rand -hex 32)" >> .env
+grep -q "^SECRETS_ENCRYPTION_KEYS=" .env 2>/dev/null || echo "SECRETS_ENCRYPTION_KEYS=k1:$(openssl rand -base64 32)" >> .env
 ```
 
 ```yaml

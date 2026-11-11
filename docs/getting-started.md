@@ -40,7 +40,7 @@ docker run -d \
   -e S3_ACCESS_KEY_ID=your-access-key \
   -e S3_ACCESS_SECRET=your-secret-key \
   -e S3_BUCKET=pixelci \
-  -e SECRETS_ENCRYPTION_KEYS="k1:<your key>" \
+  -e SECRETS_ENCRYPTION_KEYS="<the value printed above>" \
   ghcr.io/zyno-io/pixelci:latest
 ```
 
