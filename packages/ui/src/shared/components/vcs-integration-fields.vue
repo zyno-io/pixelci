@@ -28,7 +28,13 @@
 
         <label>
             Private Key
-            <textarea class="input" v-model="config.privateKey" rows="4" placeholder="-----BEGIN RSA PRIVATE KEY-----" :required="!isEdit || !hasPrivateKey" />
+            <textarea
+                class="input"
+                v-model="config.privateKey"
+                rows="4"
+                placeholder="-----BEGIN RSA PRIVATE KEY-----"
+                :required="!isEdit || !hasPrivateKey"
+            />
             <span v-if="isEdit && hasPrivateKey" class="hint">Key configured. Leave blank to keep the stored key.</span>
         </label>
 
