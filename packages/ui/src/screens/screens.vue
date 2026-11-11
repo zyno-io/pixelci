@@ -52,8 +52,13 @@
 
             <div v-if="loadError" class="notice danger load-error" role="alert">
                 <i class="fa fa-triangle-exclamation" aria-hidden="true" />
-                <div class="notice-body">This build couldn't be loaded. It may have been removed, or you may not have access.</div>
+                <div class="notice-body">
+                    {{ accessDenied ?? "This build couldn't be loaded. It may have been removed, or you may not have access." }}
+                </div>
                 <div class="notice-actions">
+                    <button v-if="accessDenied" type="button" class="btn" data-testid="switch-account" @click="signOut">
+                        Sign in with a different account
+                    </button>
                     <RouterLink :to="buildsPath" class="btn">Back to builds</RouterLink>
                 </div>
             </div>
@@ -299,6 +304,7 @@ import {
     type IBuildResponse,
     type IBuildScreenResponse
 } from '@/openapi-client-generated';
+import { accessDeniedMessage, signOut } from '@/shared/access-error';
 import LoaderModal from '@/shared/components/loader-modal.vue';
 import Loader from '@/shared/components/loader.vue';
 
@@ -334,6 +340,7 @@ const app = ref<IAppShowResponse>();
 const build = ref<IBuildResponse>();
 const screens = ref<IScreen[]>();
 const loadError = ref(false);
+const accessDenied = ref<string | null>(null);
 const filter = ref<Filter>('review');
 const showDiff = ref(false);
 // While D is held the diff state is inverted, so a tap reads as a quick flash.
@@ -825,6 +832,7 @@ async function load() {
         loadImages();
     } catch (err) {
         handleError(err);
+        accessDenied.value = accessDeniedMessage(err);
         loadError.value = true;
         document.title = 'Build unavailable · PixelCI';
     } finally {

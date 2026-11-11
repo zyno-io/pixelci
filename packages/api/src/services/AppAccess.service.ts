@@ -5,6 +5,7 @@ import { createHash } from 'crypto';
 import { AppConfig } from '../config';
 import { AppEntity } from '../entities/App.entity';
 import { UserEntity } from '../entities/User.entity';
+import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { VcsService } from './Vcs.service';
 
 /**
@@ -60,9 +61,18 @@ export class AppAccessService {
     }
 
     async assertCanAccess(principal: IAppAccessPrincipal, app: AppEntity): Promise<void> {
-        if (!(await this.canAccess(principal, app))) {
-            throw new HttpAccessDeniedError('You do not have access to this project in the VCS provider');
+        if (await this.canAccess(principal, app)) return;
+
+        // Signed in through a different provider than the app's: say so, since the fix is to sign in
+        // with the other one. (Without this the UI can only show a generic "no access".)
+        const principalVcsId = principal.kind === 'user' ? principal.user.vcsId : principal.vcsId;
+        if (app.vcsId !== principalVcsId) {
+            const integration = await VcsIntegrationEntity.query().filterField('id', app.vcsId).findOneOrUndefined();
+            const provider = integration?.name ?? 'a different provider';
+            throw new HttpAccessDeniedError(`This app is connected to ${provider}. Sign in with ${provider} to view it.`);
         }
+
+        throw new HttpAccessDeniedError('You do not have access to this project in the VCS provider');
     }
 
     /**

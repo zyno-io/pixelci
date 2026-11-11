@@ -45,6 +45,36 @@ test.describe('Error Handling (authenticated)', () => {
         await expect(alert.getByRole('link', { name: 'Back to builds' })).toBeVisible();
     });
 
+    test('signed in with the wrong provider: explains it and offers to switch account', async ({ page }) => {
+        const message = 'This app is connected to GitHub. Sign in with GitHub to view it.';
+        await page.goto('/');
+        await page.locator('.app').first().click();
+        await page.waitForSelector('.build');
+        const appPath = new URL(page.url()).pathname;
+        await page.locator('.build').first().locator('span').first().click();
+        await page.waitForSelector('.screen');
+        const buildPath = new URL(page.url()).pathname;
+
+        // The API refuses everything under this app, as it does for a user from another provider.
+        await page.route(`**/api${appPath}**`, route =>
+            route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ message }) })
+        );
+
+        for (const path of [buildPath, appPath]) {
+            await page.goto(path);
+            const alert = page.getByRole('alert');
+            await expect(alert).toHaveCount(1);
+            await expect(alert).toContainText(message);
+            await expect(page.getByTestId('switch-account')).toBeVisible();
+            await expect(page.locator('.vf-modal')).toHaveCount(0);
+        }
+
+        // Stub the provider so the single-provider auto-redirect doesn't hang on DNS.
+        await page.route('**/oauth/authorize**', route => route.fulfill({ status: 200, contentType: 'text/html', body: 'ok' }));
+        await page.getByTestId('switch-account').click();
+        await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pixelci:jwt'))).toBeNull();
+    });
+
     test('bad app id shows one inline alert and no modal', async ({ page }) => {
         await page.goto('/apps/00000000-0000-0000-0000-0000000fffff');
         const alert = page.getByRole('alert');

@@ -5,8 +5,13 @@
         <div v-else-if="!app && !isLoadingBuilds" class="load-error">
             <div class="notice danger" role="alert">
                 <i class="fa fa-triangle-exclamation" aria-hidden="true" />
-                <div class="notice-body">This app couldn't be loaded. It may have been removed, or you may not have access.</div>
+                <div class="notice-body">
+                    {{ accessDenied ?? "This app couldn't be loaded. It may have been removed, or you may not have access." }}
+                </div>
                 <div class="notice-actions">
+                    <button v-if="accessDenied" type="button" class="btn" data-testid="switch-account" @click="signOut">
+                        Sign in with a different account
+                    </button>
                     <RouterLink to="/apps" class="btn">Back to Apps</RouterLink>
                 </div>
             </div>
@@ -121,6 +126,7 @@ import { onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { AppsApi, BranchesApi, BuildsApi, type IAppShowResponse, type IBranchResponse, type IBuildResponse } from '@/openapi-client-generated';
+import { accessDeniedMessage, signOut } from '@/shared/access-error';
 import LoaderModal from '@/shared/components/loader-modal.vue';
 import { useStore } from '@/store';
 
@@ -137,6 +143,7 @@ const builds = ref<IBuildResponse[]>([]);
 const isLoading = ref(true);
 const isLoadingBuilds = ref(true);
 const buildsFailed = ref(false);
+const accessDenied = ref<string | null>(null);
 
 onMounted(() => {
     if (store.selectedBranchId) selectedBranchId.value = store.selectedBranchId;
@@ -182,6 +189,7 @@ async function loadBuilds() {
         builds.value = dataFrom(buildsResponse);
     } catch (err) {
         handleError(err);
+        accessDenied.value = accessDeniedMessage(err);
         buildsFailed.value = true;
         builds.value = [];
     } finally {
