@@ -11,6 +11,7 @@ import {
     UuidString
 } from '@zyno-io/ts-server-foundation';
 import { AnyResponse, createPersistedEntity, uuid7 } from '@zyno-io/ts-server-foundation';
+import { readFile } from 'fs/promises';
 import { keyBy, uniq } from 'lodash';
 
 import { BuildCiTokenMiddleware, hashCiToken, UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
@@ -126,12 +127,14 @@ export class BuildScreensController {
         request: HttpRequest,
         appId: UuidString,
         id: UuidString,
-        body: HttpBody<{ image: FileUpload<{ maxSize: '16MB' }> }>
+        body: HttpBody<{ image: FileUpload<{ maxSize: '17MB' }> }>
     ): Promise<IBuildScreenCreateResponse> {
         const callerHash = hashCiToken((request.headers.authorization ?? '').slice(7));
 
         const screenName = parseScreenName(body.image.name);
-        await readPngHeader(body.image.path, this.appConfig.SCREEN_MAX_PIXELS);
+        // Read once (bounded by the request body cap) and validate and upload the same buffer
+        const imageBuf = await readFile(body.image.path);
+        readPngHeader(imageBuf, this.appConfig.SCREEN_MAX_PIXELS);
 
         const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
@@ -142,7 +145,7 @@ export class BuildScreensController {
         // The S3 PUT happens outside any transaction so a slow upload never holds a DB connection or row locks.
         // TODO(phase 1): the key is per build+screen, so a late PUT from a superseded uploader (after a takeover) can overwrite the
         // new uploader's image. Content-addressed storage removes that race.
-        await this.s3Svc.uploadFile(body.image.path, this.s3Svc.getPathForScreen(appId, id, screen.id), 'image/png');
+        await this.s3Svc.uploadFile(imageBuf, this.s3Svc.getPathForScreen(appId, id, screen.id), 'image/png');
 
         // Returned (not thrown) from the transaction, like `process`, so a rejection doesn't roll back anything.
         const result = await this.db.transaction(async txn => {

@@ -1,14 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { after, describe, it } from 'node:test';
+import { describe, it } from 'node:test';
 import { crc32 } from 'node:zlib';
 
-import { parseScreenName, readPngHeader } from '../../src/services/ScreenUpload';
-
-const dir = mkdtempSync(join(tmpdir(), 'screen-upload-'));
-after(() => rmSync(dir, { recursive: true, force: true }));
+import { MAX_CHUNKS, parseScreenName, readPngHeader as readPngHeaderSync } from '../../src/services/ScreenUpload';
 
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -42,12 +36,9 @@ function chunk(type: string, data: Buffer) {
 const iend = () => chunk('IEND', Buffer.alloc(0));
 const secondIhdr = (w: number, h: number) => pngHeader({ width: w, height: h }).subarray(8);
 
-let n = 0;
-function file(buf: Buffer) {
-    const p = join(dir, `f${n++}.png`);
-    writeFileSync(p, buf);
-    return p;
-}
+// the validator is synchronous; wrap it so `assert.rejects` can be used uniformly
+const readPngHeader = async (buf: Buffer, maxPixels: number) => readPngHeaderSync(buf, maxPixels);
+const file = (buf: Buffer) => buf;
 
 describe('parseScreenName', () => {
     it('strips only a trailing .png (case-insensitive)', () => {
@@ -141,12 +132,27 @@ describe('readPngHeader', () => {
         await assert.rejects(readPngHeader(file(lying), 1e9), { httpCode: 400 });
     });
 
-    it('rejects a file with no IEND and a chunk length above 2^31-1', async () => {
+    it('rejects a file with no IEND', async () => {
         await assert.rejects(readPngHeader(file(Buffer.concat([pngHeader(), chunk('IDAT', Buffer.alloc(10))])), 1e9), { httpCode: 400 });
+    });
+
+    it('rejects a chunk length above 2^31-1 via the length check (not the EOF check)', async () => {
         const huge = Buffer.alloc(12);
         huge.writeUInt32BE(0x80000000, 0);
         huge.write('IDAT', 4, 'latin1');
-        await assert.rejects(readPngHeader(file(Buffer.concat([pngHeader(), huge])), 1e9), { httpCode: 400 });
+        await assert.rejects(readPngHeader(file(Buffer.concat([pngHeader(), huge])), 1e9), { httpCode: 400, message: /chunk length/ });
+        // a length within range that runs past EOF is reported as truncation instead
+        const lying = Buffer.from(huge);
+        lying.writeUInt32BE(1000, 0);
+        await assert.rejects(readPngHeader(file(Buffer.concat([pngHeader(), lying])), 1e9), { httpCode: 400, message: /truncated/ });
+    });
+
+    it('enforces MAX_CHUNKS', async () => {
+        const empty = chunk('tEXt', Buffer.alloc(0));
+        const ok = Buffer.concat([pngHeader(), ...Array.from({ length: MAX_CHUNKS - 1 }, () => empty), iend()]);
+        assert.deepEqual(await readPngHeader(ok, 1e9), { width: 100, height: 50 });
+        const tooMany = Buffer.concat([pngHeader(), ...Array.from({ length: MAX_CHUNKS }, () => empty), iend()]);
+        await assert.rejects(readPngHeader(tooMany, 1e9), { httpCode: 400, message: /too many/ });
     });
 
     it('enforces the pixel cap', async () => {

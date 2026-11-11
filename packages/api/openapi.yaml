@@ -498,7 +498,7 @@ paths:
                 image:
                   type: string
                   format: binary
-                  x-maxSizeBytes: 16777216
+                  x-maxSizeBytes: 17825792
               required:
                 - image
   /api/apps/{appId}/builds/{id}/screens/{screenId}/image:
