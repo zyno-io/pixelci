@@ -122,6 +122,52 @@ describe('PixelCiApi', () => {
             assert.equal('shard' in body, false);
         });
 
+        it('sends the same runId on every attempt of one run', async () => {
+            const responses = [
+                { ok: false, status: 503, statusText: 'x', text: async () => '', headers: new Headers() },
+                { ok: true, status: 200, json: async () => ({ id: 'b', status: 'draft' }) }
+            ];
+            mock.timers.enable({ apis: ['setTimeout'] });
+            mock.method(console, 'warn', () => {});
+            mockFetch.mock.mockImplementation(async () => responses.shift() as any);
+            const p = api.createBuild({ screens: { count: 1, hash: 'h' } });
+            for (let i = 0; i < 5; i++) {
+                await new Promise(resolve => setImmediate(resolve));
+                mock.timers.tick(2000);
+            }
+            await p;
+            mock.timers.reset();
+            mock.restoreAll();
+            const ids = mockFetch.mock.calls.map(c => JSON.parse(c.arguments[1]!.body as string).runId);
+            assert.equal(ids.length, 2);
+            assert.match(ids[0], /^[0-9a-f-]{36}$/);
+            assert.equal(ids[0], ids[1]);
+        });
+
+        it("surfaces the server's unsupported-shard 400 and does not retry", async () => {
+            mockFetch.mock.mockImplementation(
+                async () =>
+                    ({
+                        ok: false,
+                        status: 400,
+                        statusText: 'Bad Request',
+                        text: async () => JSON.stringify({ message: 'Sharded builds are not supported by this server version' })
+                    }) as any
+            );
+            await assert.rejects(
+                () => api.createBuild({ screens: { count: 0, hash: 'h' }, shard: { index: 1, total: 2 } }),
+                (err: any) => err instanceof AppError && err.message.includes('Sharded builds are not supported by this server version')
+            );
+            assert.equal(mockFetch.mock.callCount(), 1);
+        });
+
+        it('treats an absent shard echo as unsharded but rejects null', async () => {
+            mockFetch.mock.mockImplementation(async () => ({ ok: true, json: async () => ({ id: 'b', status: 'draft' }) }) as any);
+            assert.equal((await api.createBuild({ screens: { count: 1, hash: 'h' } })).shard, undefined);
+            mockFetch.mock.mockImplementation(async () => ({ ok: true, json: async () => ({ id: 'b', status: 'draft', shard: null }) }) as any);
+            await assert.rejects(() => api.createBuild({ screens: { count: 1, hash: 'h' } }));
+        });
+
         it('should send and return the shard', async () => {
             mockFetch.mock.mockImplementation(
                 async () => ({ ok: true, json: async () => ({ id: 'b', status: 'draft', shard: { index: 2, total: 3 } }) }) as any
@@ -339,6 +385,43 @@ describe('request retries', () => {
         assert.equal(bodies.length, 2);
         assert.ok(bodies[0] instanceof FormData && bodies[1] instanceof FormData);
         assert.notEqual(bodies[0], bodies[1]);
+        rmSync(dir, { recursive: true });
+    });
+
+    it('sends the name field before the image part, keeping the filename', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'pixelci-cli-'));
+        const file = join(dir, 'a.png');
+        writeFileSync(file, 'png');
+        mockFetch.mock.mockImplementation(async () => ok({ id: 'x', name: 'café "q" a\\b' }));
+        await api.uploadScreen('b', file, 'café "q" a\\b');
+        const form = mockFetch.mock.calls[0].arguments[1]!.body as FormData;
+        assert.deepEqual([...form.keys()], ['name', 'image']);
+        assert.equal(form.get('name'), 'café "q" a\\b');
+        assert.equal((form.get('image') as File).name, 'café "q" a\\b.png');
+        rmSync(dir, { recursive: true });
+    });
+
+    it('fails fast when the server stored a different name', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'pixelci-cli-'));
+        const file = join(dir, 'a.png');
+        writeFileSync(file, 'png');
+        mockFetch.mock.mockImplementation(async () => ok({ id: 'x', name: 'cafÃ©' }));
+        await assert.rejects(
+            () => api.uploadScreen('b', file, 'café'),
+            (err: any) =>
+                err instanceof AppError &&
+                err.message ===
+                    "Server stored screen 'café' as 'cafÃ©'; this server version can't handle that name. Rename the screenshot or upgrade PixelCI"
+        );
+        rmSync(dir, { recursive: true });
+    });
+
+    it('skips the name check when the response has no name', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'pixelci-cli-'));
+        const file = join(dir, 'a.png');
+        writeFileSync(file, 'png');
+        mockFetch.mock.mockImplementation(async () => ok({ id: 'x' }));
+        await api.uploadScreen('b', file, 'café');
         rmSync(dir, { recursive: true });
     });
 });

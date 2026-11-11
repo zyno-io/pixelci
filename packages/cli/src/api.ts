@@ -1,4 +1,5 @@
 import { assert, type ReceiveType } from '@zyno-io/ts-reflection';
+import { randomUUID } from 'crypto';
 import { openAsBlob } from 'fs';
 
 import type { IScreenManifest } from './manifest.js';
@@ -69,6 +70,8 @@ export class PixelCiApi {
     private appId: string;
     private ciToken: string;
     private projectUrl: string;
+    // one per CLI run; reused by create retries so the server can tell a retry from a new run
+    private runId = randomUUID();
 
     constructor(serverUrl: string, appId: string, jobInfo: ICIJobInfo) {
         this.serverUrl = serverUrl.replace(/\/+$/, '');
@@ -144,7 +147,7 @@ export class PixelCiApi {
         const response = await this.request<{ id: string; status: string; shard?: { index: number; total: number } }>(
             'POST',
             `apps/${this.appId}/builds`,
-            () => ({ projectUrl: this.projectUrl, screens: opts.screens, ...(opts.shard && { shard: opts.shard }) }),
+            () => ({ projectUrl: this.projectUrl, runId: this.runId, screens: opts.screens, ...(opts.shard && { shard: opts.shard }) }),
             JSON_TIMEOUT_MS
         );
 
@@ -156,17 +159,25 @@ export class PixelCiApi {
     }
 
     async uploadScreen(buildId: string, imageFile: string, screenName: string): Promise<void> {
-        await this.request<{ id: string }>(
+        const response = await this.request<{ id: string; name?: string }>(
             'POST',
             `apps/${this.appId}/builds/${buildId}/screens`,
             async () => {
                 const blob = await openAsBlob(imageFile, { type: 'image/png' });
                 const formData = new FormData();
+                // the multipart filename is mangled server-side (latin1, quotes, backslashes), so send
+                // the name as its own text field, before the file part
+                formData.append('name', screenName);
                 formData.append('image', blob, `${screenName}.png`);
                 return formData;
             },
             UPLOAD_TIMEOUT_MS
         );
+        if (response.name !== undefined && response.name !== screenName) {
+            throw new AppError(
+                `Server stored screen '${screenName}' as '${response.name}'; this server version can't handle that name. Rename the screenshot or upgrade PixelCI`
+            );
+        }
     }
 
     async processBuild(buildId: string, screens: IScreenManifest): Promise<void> {
