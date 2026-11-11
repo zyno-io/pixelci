@@ -307,6 +307,18 @@ paths:
             type: string
             format: uuid
             pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
     post:
       operationId: postBuildsCreate
       tags:

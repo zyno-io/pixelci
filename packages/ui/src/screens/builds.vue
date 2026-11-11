@@ -114,6 +114,11 @@
                         </div>
                     </div>
                 </div>
+                <div v-if="hasMoreBuilds && !isLoadingBuilds && !buildsFailed" class="load-more">
+                    <button type="button" class="btn" data-testid="load-older-builds" :disabled="isLoadingMore" @click="loadMoreBuilds">
+                        {{ isLoadingMore ? 'Loading…' : 'Load older builds' }}
+                    </button>
+                </div>
             </div>
         </template>
     </div>
@@ -144,6 +149,11 @@ const isLoading = ref(true);
 const isLoadingBuilds = ref(true);
 const buildsFailed = ref(false);
 const accessDenied = ref<string | null>(null);
+const hasMoreBuilds = ref(false);
+const isLoadingMore = ref(false);
+// Bumped on every fresh load so a slow page for a previous branch can't append to the current list
+let buildsGeneration = 0;
+const BUILDS_PAGE_SIZE = 50;
 
 onMounted(() => {
     if (store.selectedBranchId) selectedBranchId.value = store.selectedBranchId;
@@ -176,24 +186,51 @@ async function loadBranches() {
 }
 
 async function loadBuilds() {
+    const generation = ++buildsGeneration;
     try {
         isLoadingBuilds.value = true;
+        isLoadingMore.value = false;
         buildsFailed.value = false;
+        hasMoreBuilds.value = false;
 
         const appResponse = await AppsApi.getAppsShow({ path: { id: String(route.params.id) } });
         app.value = dataFrom(appResponse);
         const buildsResponse = await BuildsApi.getBuildsIndex({
             path: { appId: String(route.params.id) },
-            query: { branchId: selectedBranchId.value || undefined }
+            query: { branchId: selectedBranchId.value || undefined, limit: BUILDS_PAGE_SIZE }
         });
+        if (generation !== buildsGeneration) return;
         builds.value = dataFrom(buildsResponse);
+        hasMoreBuilds.value = builds.value.length >= BUILDS_PAGE_SIZE;
     } catch (err) {
+        if (generation !== buildsGeneration) return;
         handleError(err);
         accessDenied.value = accessDeniedMessage(err);
         buildsFailed.value = true;
         builds.value = [];
     } finally {
-        isLoadingBuilds.value = false;
+        if (generation === buildsGeneration) isLoadingBuilds.value = false;
+    }
+}
+
+async function loadMoreBuilds() {
+    const before = builds.value[builds.value.length - 1]?.id;
+    if (!before || isLoadingMore.value) return;
+    const generation = buildsGeneration;
+    try {
+        isLoadingMore.value = true;
+        const response = await BuildsApi.getBuildsIndex({
+            path: { appId: String(route.params.id) },
+            query: { branchId: selectedBranchId.value || undefined, limit: BUILDS_PAGE_SIZE, before }
+        });
+        if (generation !== buildsGeneration) return;
+        const page = dataFrom(response);
+        builds.value = [...builds.value, ...page];
+        hasMoreBuilds.value = page.length >= BUILDS_PAGE_SIZE;
+    } catch (err) {
+        if (generation === buildsGeneration) handleError(err);
+    } finally {
+        if (generation === buildsGeneration) isLoadingMore.value = false;
     }
 }
 
@@ -274,6 +311,12 @@ function getStatusText(status: IBuildResponse['status']) {
     }
     .branches-failed {
         font-size: 12px;
+    }
+    .load-more {
+        display: flex;
+        justify-content: center;
+        padding: 14px 18px;
+        border-top: 1px solid var(--border);
     }
     .build-list > .notice {
         margin: 16px;

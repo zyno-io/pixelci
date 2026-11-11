@@ -144,3 +144,38 @@ test('login and onboarding have working theme controls on mobile', async ({ page
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(width).toBeLessThanOrEqual(360);
 });
+
+test('build list pages 50 at a time and appends older builds', async ({ page }) => {
+    await mockApi(page);
+    const makeBuild = (i: number) => ({
+        id: `00000000-0000-7000-8000-${String(1000 - i).padStart(12, '0')}`,
+        branchId: appId,
+        branchName: 'main',
+        createdAt: '2026-10-05T00:00:00Z',
+        commitHash: `${String(i).padStart(8, '0')}c8036dfdd37c10c1914fb1f94c5f93acc3a77392`,
+        commitSubject: `Commit ${i}`,
+        commitAuthor: 'Design Reviewer',
+        status: 'no changes'
+    });
+    const requests: URL[] = [];
+    // Registered after mockApi, so it takes precedence for the builds list.
+    await page.route(new RegExp(`/api/apps/${appId}/builds(\\?.*)?$`), async route => {
+        const url = new URL(route.request().url());
+        requests.push(url);
+        const first = !url.searchParams.has('before');
+        const items = first ? Array.from({ length: 50 }, (_, i) => makeBuild(i)) : Array.from({ length: 5 }, (_, i) => makeBuild(50 + i));
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(items) });
+    });
+
+    await page.goto(`/apps/${appId}`);
+    await expect(page.locator('.build')).toHaveCount(50);
+    const button = page.getByRole('button', { name: 'Load older builds' });
+    await expect(button).toBeVisible();
+    expect(requests[0].searchParams.get('limit')).toBe('50');
+
+    await button.click();
+    await expect(page.locator('.build')).toHaveCount(55);
+    expect(requests[1].searchParams.get('before')).toBe(makeBuild(49).id);
+    // A short page means there is nothing older
+    await expect(button).toBeHidden();
+});
