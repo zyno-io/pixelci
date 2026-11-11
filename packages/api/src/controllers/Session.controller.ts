@@ -50,6 +50,8 @@ interface IOnboardingStatusResponse {
     isOnboarded: boolean;
     // True when SETUP_TOKEN is configured (>= 16 chars); first-run setup is impossible otherwise.
     setupEnabled: boolean;
+    // The OAuth callback URL providers must have registered (`${PUBLIC_URL}/login`); absent when PUBLIC_URL is not configured.
+    oauthRedirectUri?: string;
     // True once at least one admin user exists. While false (and setupEnabled), login accepts the setup token to claim admin.
     hasAdmin: boolean;
 }
@@ -145,7 +147,13 @@ export class SessionController {
     async getOnboardingStatus(): Promise<IOnboardingStatusResponse> {
         const count = await VcsIntegrationEntity.query().count();
         const adminCount = await UserEntity.query().filter({ isAdmin: true }).count();
-        return { isOnboarded: count > 0, setupEnabled: !!this.setupToken, hasAdmin: adminCount > 0 };
+        let oauthRedirectUri: string | undefined;
+        try {
+            oauthRedirectUri = this.getRedirectUri();
+        } catch {
+            // PUBLIC_URL missing or invalid: the UI falls back to its own origin
+        }
+        return { isOnboarded: count > 0, setupEnabled: !!this.setupToken, hasAdmin: adminCount > 0, oauthRedirectUri };
     }
 
     @http.POST('onboarding/vcs-integration')

@@ -982,6 +982,8 @@ components:
           type: boolean
         setupEnabled:
           type: boolean
+        oauthRedirectUri:
+          type: string
         hasAdmin:
           type: boolean
       required:

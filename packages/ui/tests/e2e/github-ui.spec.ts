@@ -165,4 +165,29 @@ test.describe('GitHub UI', () => {
         await expect(page.getByRole('button', { name: /Login via Mock GitHub/ })).toBeVisible();
         expect(requests.filter(r => r.method === 'POST' && r.path === '/api/session/login')).toHaveLength(0);
     });
+
+    test('after the install prompt, signing in lands off /login (not back on the login screen)', async ({ page }) => {
+        let loggedIn = false;
+        await mockApi(page, { authenticated: false, providers: [GITHUB] });
+        await page.route(/\/api\/session\/providers\/[^/]+\/login-url/, route => {
+            const returnTo = new URL(route.request().url()).searchParams.get('returnTo');
+            expect(returnTo).toBe('/login');
+            return json(route, { url: '/login?code=abc&state=issued-state', state: 'issued-state' });
+        });
+        await page.route(/\/api\/session\/login$/, route => {
+            loggedIn = true;
+            // the server maps a /login returnTo to /
+            return json(route, { jwt: JWT, returnTo: '/' });
+        });
+        await page.route(/\/api\/session\/me$/, route =>
+            loggedIn ? json(route, { id: 'u1', vcsId: GITHUB.id, name: 'Mock Admin', isAdmin: true }) : json(route, { message: 'Unauthorized' }, 401)
+        );
+        await page.goto('/login?code=abc');
+        await expect(page.getByRole('alert')).toContainText('GitHub App installed');
+
+        await page.getByRole('button', { name: /Login via Mock GitHub/ }).click();
+        await expect.poll(() => loggedIn).toBe(true);
+        await expect(page.getByRole('button', { name: /Login via Mock GitHub/ })).toHaveCount(0);
+        await expect.poll(() => new URL(page.url()).pathname).not.toBe('/login'); // / redirects to the apps list
+    });
 });

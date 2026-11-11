@@ -537,6 +537,9 @@ async function run() {
         assert(!url.searchParams.has('scope'), 'no scope expected');
         validState = res.json.state;
 
+        const onboarding = await get(facade, '/api/session/onboarding-status');
+        assert(onboarding.json.oauthRedirectUri === 'https://pixelci.test/login', `oauthRedirectUri: ${onboarding.body}`);
+
         status(await get(facade, '/api/session/providers/e3234567-aaaa-bbbb-cccc-00000000ffff/login-url'), 404, 'login-url unknown provider');
     }
 

@@ -51,7 +51,23 @@ describe('OAuthState', () => {
     it('sanitizeReturnTo', () => {
         assert.equal(sanitizeReturnTo('/apps/1?a=b#c'), '/apps/1?a=b#c');
         assert.equal(sanitizeReturnTo('/'), '/');
-        for (const bad of ['//evil', 'https://evil.example', '/\\evil', '/a b', 'apps', '', undefined, 5, `/${'a'.repeat(2048)}`]) {
+        assert.equal(sanitizeReturnTo('/loginx'), '/loginx');
+        assert.equal(sanitizeReturnTo('/apps/login'), '/apps/login');
+        for (const bad of [
+            '//evil',
+            'https://evil.example',
+            '/\\evil',
+            '/login',
+            '/login?code=x',
+            '/login/',
+            '/login#x',
+            '/a b',
+            'apps',
+            '',
+            undefined,
+            5,
+            `/${'a'.repeat(2048)}`
+        ]) {
             assert.equal(sanitizeReturnTo(bad), '/', String(bad));
         }
     });
@@ -60,6 +76,8 @@ describe('OAuthState', () => {
         const a = deriveStateKey({ AUTH_JWT_ED_SECRET: 'ed' });
         assert.equal(a.length, 32);
         assert.notDeepEqual(deriveStateKey({ AUTH_JWT_SECRET_B64: 'x' }), deriveStateKey({ AUTH_JWT_SECRET: 'y' }));
+        assert.deepEqual(deriveStateKey({ AUTH_JWT_SECRET: '', AUTH_JWT_ED_SECRET: 'ed' }), a);
         assert.throws(() => deriveStateKey({}));
+        assert.throws(() => deriveStateKey({ AUTH_JWT_SECRET: '' }));
     });
 });
