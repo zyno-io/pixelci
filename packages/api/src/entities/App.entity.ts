@@ -7,7 +7,7 @@ export class AppEntity extends BaseEntity {
     vcsId!: UuidString;
     projectPath!: string;
     vcsProjectId!: (number & DatabaseField<{ type: 'bigint' }>) | null;
-    defaultBranchId!: UuidString;
+    defaultBranchId!: UuidString | null;
     name!: string;
     deletedAt!: Date | null;
 }

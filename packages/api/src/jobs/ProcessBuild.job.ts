@@ -69,10 +69,12 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         const previousBuildScreens = previousBuild ? await BuildScreenEntity.query().filter({ appId, buildId: previousBuild.id }).find() : [];
         const previousBuildScreensById = keyBy(previousBuildScreens, 'screenId');
 
-        const referenceBuild = await BuildEntity.query()
-            .filter({ appId, branchId: app.defaultBranchId, status: 'changes approved', id: { $lt: currentBuild.id } })
-            .orderBy('id', 'desc')
-            .findOneOrUndefined();
+        const referenceBuild = app.defaultBranchId
+            ? await BuildEntity.query()
+                  .filter({ appId, branchId: app.defaultBranchId, status: 'changes approved', id: { $lt: currentBuild.id } })
+                  .orderBy('id', 'desc')
+                  .findOneOrUndefined()
+            : undefined;
         const referenceBuildScreens = referenceBuild ? await BuildScreenEntity.query().filter({ appId, buildId: referenceBuild.id }).find() : [];
         const referenceBuildScreensById = keyBy(referenceBuildScreens, 'screenId');
 

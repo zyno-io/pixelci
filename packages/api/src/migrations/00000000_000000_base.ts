@@ -8,7 +8,7 @@ export default createMigration(async db => {
             "vcsId" uuid NOT NULL,
             "projectPath" varchar(255) NOT NULL,
             "vcsProjectId" bigint,
-            "defaultBranchId" uuid NOT NULL,
+            "defaultBranchId" uuid,
             "name" varchar(255) NOT NULL,
             "deletedAt" timestamp,
             PRIMARY KEY ("id")
