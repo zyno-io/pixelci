@@ -1,5 +1,8 @@
 import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, mock } from 'node:test';
 import { Readable } from 'stream';
 
@@ -46,6 +49,24 @@ describe('S3Service', () => {
             assert.equal(sendMock.mock.callCount(), 1);
             const command = sendMock.mock.calls[0].arguments[0];
             assert.ok(command instanceof PutObjectCommand);
+        });
+
+        it('should send a path input as a Buffer body', async () => {
+            const dir = mkdtempSync(join(tmpdir(), 's3-spec-'));
+            const file = join(dir, 'a.png');
+            writeFileSync(file, Buffer.alloc(1234, 1));
+            const service = new S3Service(createMockConfig());
+            const sendMock = mock.method(service['s3Client'], 'send', async () => ({}));
+
+            try {
+                await service.uploadFile(file, 'test/path.png', 'image/png');
+                const command = sendMock.mock.calls[0].arguments[0] as PutObjectCommand;
+                assert.ok(command instanceof PutObjectCommand);
+                assert.ok(Buffer.isBuffer(command.input.Body));
+                assert.deepEqual(command.input.Body, Buffer.alloc(1234, 1));
+            } finally {
+                rmSync(dir, { recursive: true, force: true });
+            }
         });
 
         it('should propagate upload errors', async () => {
