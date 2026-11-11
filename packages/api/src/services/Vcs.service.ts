@@ -79,6 +79,11 @@ export interface IVcsServiceImpl {
         ciJobId: string,
         options?: IVcsRerunOptions
     ): Promise<IVcsRerunResult>;
+    /**
+     * The distinct CI re-run targets for the CI job ids of a sharded build's jobs (one re-run request per target).
+     * GitLab retries each job; GitHub can only re-run per workflow run, so job ids collapse to their run id.
+     */
+    rerunTargets(ciJobIds: string[]): string[];
     searchProjects(user: UserEntity, search: string): Promise<IVcsProject[]>;
     getProjectByPath(user: UserEntity, projectPath: string): Promise<IVcsProject>;
     /** Extracts the project path from a pasted repository URL; null when the URL doesn't belong to this provider. */
@@ -158,6 +163,12 @@ export class VcsService {
             await app.save();
         }
         return result;
+    }
+
+    /** Distinct CI re-run targets for a sharded build's job ids (see IVcsServiceImpl.rerunTargets). */
+    async getRerunTargets(app: Pick<AppEntity, 'vcsId'>, ciJobIds: string[]): Promise<string[]> {
+        const provider = await this.getProvider(app.vcsId);
+        return provider.rerunTargets(ciJobIds);
     }
 
     async resolveProjectUrl(user: UserEntity, vcsId: string, url: string): Promise<IVcsProject> {

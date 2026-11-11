@@ -21,6 +21,7 @@ import { AppEntity } from '../entities/App.entity';
 import { BranchEntity } from '../entities/Branch.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
+import { BuildShardEntity } from '../entities/BuildShard.entity';
 import { UserEntity } from '../entities/User.entity';
 import { ProcessBuildJob } from '../jobs/ProcessBuild.job';
 import { RERUN_DEFERRED_NOTICE, RERUN_RETRY_DELAY_MS, RerunCiJobJob } from '../jobs/RerunCiJob.job';
@@ -29,19 +30,29 @@ import { AppAccessService } from '../services/AppAccess.service';
 import { screenManifestHash, uploadedScreenNames } from '../services/ScreenManifest';
 import { VcsService } from '../services/Vcs.service';
 
+interface IShardSpec {
+    index: number;
+    total: number;
+}
 interface IScreenManifest {
     count: number;
     hash: string;
 }
-type IBuildBasicResponse = Pick<BuildEntity, 'status'>;
+type IBuildBasicResponse = Pick<BuildEntity, 'status'> & {
+    /** Sharded drafts only: how many shards have finished uploading. */
+    shards?: { uploaded: number; total: number };
+};
 
 /** A draft older than this is considered abandoned: it may be taken over by a new job or canceled by another build's processing. */
 export const STALE_DRAFT_MS = 15 * 60 * 1000;
 export { CI_TOKEN_TTL_MS };
 const MAX_MANIFEST_COUNT = 100_000;
+const MAX_SHARDS = 64;
 const MANIFEST_HASH_RE = /^[0-9a-f]{64}$/;
 const MAX_READ_TOKEN_HASHES = 20;
 const MAX_DEADLOCK_ATTEMPTS = 3;
+/** Sharded drafts are kept alive by status polls, at most this often. */
+const DRAFT_KEEPALIVE_MS = 30_000;
 
 export function isDeadlockError(err: unknown): boolean {
     for (let e = err as { code?: string; errno?: number; message?: string; cause?: unknown } | undefined, depth = 0; e && depth < 5; depth++) {
@@ -84,11 +95,23 @@ function validateRunId(runId: string | undefined): string | undefined {
     return runId;
 }
 
+/** Validates `shard`; `total = 1` means unsharded and yields undefined. */
+function validateShard(shard: IShardSpec | undefined): IShardSpec | undefined {
+    if (shard === undefined) return undefined;
+    const { index, total } = shard ?? {};
+    if (!Number.isInteger(index) || !Number.isInteger(total) || total < 1 || total > MAX_SHARDS || index < 1 || index > total) {
+        throw new HttpBadRequestError(`shard must be { index, total } with integers and 1 <= index <= total <= ${MAX_SHARDS}`);
+    }
+    return total === 1 ? undefined : { index, total };
+}
+
 /** Adds a read-only (status polling) token hash, de-duplicated and capped to the most recent entries. */
 function addReadTokenHash(build: BuildEntity, hash: string) {
     if (build.ciTokenHash === hash) return;
     const current = (build.ciReadTokenHashes ?? []).filter(h => h !== hash);
-    build.ciReadTokenHashes = [...current, hash].slice(-MAX_READ_TOKEN_HASHES);
+    // A sharded build can have duplicate pipelines for every shard, so its cap scales with the shard count
+    const cap = build.shardTotal > 1 ? MAX_READ_TOKEN_HASHES + build.shardTotal * 2 : MAX_READ_TOKEN_HASHES;
+    build.ciReadTokenHashes = [...current, hash].slice(-cap);
 }
 
 const BUILDS_DEFAULT_PAGE_SIZE = 50;
@@ -158,7 +181,18 @@ export class BuildsController {
         if (!build) throw new HttpNotFoundError();
 
         // A draft is never reported to pollers (the CLI would treat it as final and exit 0)
-        if (build.status === 'draft') return { status: 'processing' };
+        if (build.status === 'draft') {
+            if (build.shardTotal > 1) {
+                // A sharded draft waits for its slowest shard; pollers (every shard job and its observers) keep it from going stale
+                // and being taken over (which would wipe the shards already uploaded). Throttled compare-and-set on the draft.
+                if (Date.now() - build.draftActiveAt.getTime() > DRAFT_KEEPALIVE_MS) {
+                    await BuildEntity.query().filter({ id, status: 'draft' }).patchOne({ draftActiveAt: new Date() });
+                }
+                const uploaded = await BuildShardEntity.query().filter({ buildId: id, state: 'uploaded' }).count();
+                return { status: 'processing', shards: { uploaded, total: build.shardTotal } };
+            }
+            return { status: 'processing' };
+        }
         // The CLI doesn't know `canceled`; report it as a clean failure
         const reportedStatus: BuildEntity['status'] = build.status === 'canceled' ? 'failed' : build.status;
 
@@ -184,14 +218,8 @@ export class BuildsController {
         const ciToken = authHeader.slice(7);
         const manifest = validateManifest(body?.screens);
         const runId = validateRunId(body?.runId);
-        // MR7 replaces this; until then sharded builds must not create (and strand) a draft on a server that can't merge them
-        if (body?.shard !== undefined) {
-            const { index, total } = body.shard ?? {};
-            if (!Number.isInteger(index) || !Number.isInteger(total) || total < 1 || index < 1 || index > total) {
-                throw new HttpBadRequestError('shard must be { index, total } with 1 <= index <= total');
-            }
-            if (total > 1) throw new HttpBadRequestError('Sharded builds are not supported by this server version');
-        }
+        const shard = validateShard(body?.shard);
+        if (shard && !manifest) throw new HttpBadRequestError('screens (count and hash) are required for a sharded build');
 
         const app = await AppEntity.query().filter({ id: appId, deletedAt: null }).findOneOrUndefined();
         if (!app) throw new HttpBadRequestError('invalid appId');
@@ -204,17 +232,30 @@ export class BuildsController {
         // Creation is serialized per (app, branch) by an advisory lock, but retry the whole transaction on a deadlock anyway
         for (let attempt = 1; ; attempt++) {
             try {
-                const result = await this.createInTransaction(
-                    appId,
-                    branchName,
-                    commitHash,
-                    commitSubject,
-                    commitAuthor,
-                    ciJobId,
-                    ciTokenHash,
-                    manifest,
-                    runId
-                );
+                const result = shard
+                    ? await this.createShardedInTransaction(
+                          appId,
+                          branchName,
+                          commitHash,
+                          commitSubject,
+                          commitAuthor,
+                          ciJobId,
+                          ciTokenHash,
+                          manifest!,
+                          runId,
+                          shard
+                      )
+                    : await this.createInTransaction(
+                          appId,
+                          branchName,
+                          commitHash,
+                          commitSubject,
+                          commitAuthor,
+                          ciJobId,
+                          ciTokenHash,
+                          manifest,
+                          runId
+                      );
                 if (result instanceof HttpError) throw result;
                 return result;
             } catch (err) {
@@ -264,6 +305,10 @@ export class BuildsController {
 
                 if (isStaleDraft || existingBuild.status === 'canceled' || existingBuild.status === 'failed') {
                     // Abandoned/canceled/failed build: the caller takes over (reviving it) as the uploader and re-uploads
+                    if (existingBuild.shardTotal > 1) {
+                        await txn.query(BuildShardEntity).filter({ buildId: existingBuild.id }).deleteMany();
+                        existingBuild.shardTotal = 1;
+                    }
                     await txn.query(BuildScreenEntity).filter({ buildId: existingBuild.id }).deleteMany();
                     existingBuild.ciTokensExpireAt = expireAt;
                     existingBuild.ciRunId = runId ?? null;
@@ -275,6 +320,11 @@ export class BuildsController {
                     existingBuild.manifestCount = manifest?.count ?? null;
                     existingBuild.manifestHash = manifest?.hash ?? null;
                     reportedStatus = 'draft';
+                } else if (existingBuild.shardTotal > 1) {
+                    return new HttpConflictError(
+                        `shard count mismatch: this commit's build is split across ${existingBuild.shardTotal} shards, but this job did not declare PIXELCI_SHARD. ` +
+                            `Set PIXELCI_SHARD=<index>/${existingBuild.shardTotal} on every job (see docs).`
+                    );
                 } else if (isDraft && (existingBuild.ciTokenHash === ciTokenHash || (isPerJobId(ciJobId) && existingBuild.ciJobId === ciJobId))) {
                     // The uploader itself re-creating (a new CLI run may carry a new token within the same job)
                     existingBuild.ciTokenHash = ciTokenHash;
@@ -340,6 +390,171 @@ export class BuildsController {
         });
     }
 
+    private createShardedInTransaction(
+        appId: UuidString,
+        branchName: string,
+        commitHash: string,
+        commitSubject: string,
+        commitAuthor: string,
+        ciJobId: string,
+        ciTokenHash: string,
+        manifest: IScreenManifest,
+        runId: string | undefined,
+        shard: IShardSpec
+    ): Promise<IBuildResponse | HttpError> {
+        return this.db.transaction(async txn => {
+            // Same serialisation and branch upsert as createInTransaction. Lock order everywhere: build row, shard row, screens.
+            await txn.acquireSessionLock(['pixelci:build-create', appId, branchName]);
+            let branch = await txn.query(BranchEntity).filter({ appId, name: branchName }).forUpdate().findOneOrUndefined();
+            if (!branch) {
+                branch = await createPersistedEntity(BranchEntity, { id: uuid7(), appId, name: branchName }, txn);
+            }
+
+            const registerShard = (buildId: string, now: Date) =>
+                createPersistedEntity(
+                    BuildShardEntity,
+                    {
+                        id: uuid7(),
+                        buildId,
+                        shardIndex: shard.index,
+                        ciTokenHash,
+                        ciJobId,
+                        state: 'uploading',
+                        manifestCount: manifest.count,
+                        manifestHash: manifest.hash,
+                        runId: runId ?? null,
+                        activeAt: now
+                    },
+                    txn
+                );
+
+            const existingBuild = await txn.query(BuildEntity).filter({ appId, branchId: branch.id, commitHash }).forUpdate().findOneOrUndefined();
+            if (!existingBuild) {
+                const now = new Date();
+                const newBuild = await createPersistedEntity(
+                    BuildEntity,
+                    {
+                        id: uuid7(),
+                        appId,
+                        branchId: branch.id,
+                        commitHash,
+                        commitSubject,
+                        commitAuthor,
+                        ciJobId,
+                        // Sharded builds have no single uploader; each shard row holds its own token
+                        ciTokenHash: null,
+                        ciReadTokenHashes: [],
+                        status: 'draft',
+                        createdAt: now,
+                        draftActiveAt: now,
+                        ciTokensExpireAt: new Date(now.getTime() + CI_TOKEN_TTL_MS),
+                        manifestCount: null,
+                        manifestHash: null,
+                        shardTotal: shard.total
+                    },
+                    txn
+                );
+                await registerShard(newBuild.id, now);
+                return toBuildResponse(newBuild, branch.name, newBuild.status, shard);
+            }
+
+            const now = new Date();
+            const expireAt = new Date(now.getTime() + CI_TOKEN_TTL_MS);
+            const isDraft = existingBuild.status === 'draft';
+            const isStaleDraft = isDraft && now.getTime() - existingBuild.draftActiveAt.getTime() > STALE_DRAFT_MS;
+            let reportedStatus: BuildEntity['status'] = existingBuild.status;
+
+            if (isStaleDraft || existingBuild.status === 'canceled' || existingBuild.status === 'failed') {
+                // Whole-build takeover: abandoned/canceled/failed. Every shard starts over with the caller's shard count.
+                await txn.query(BuildShardEntity).filter({ buildId: existingBuild.id }).deleteMany();
+                await txn.query(BuildScreenEntity).filter({ buildId: existingBuild.id }).deleteMany();
+                existingBuild.ciTokensExpireAt = expireAt;
+                existingBuild.status = 'draft';
+                existingBuild.shardTotal = shard.total;
+                existingBuild.ciTokenHash = null;
+                existingBuild.ciReadTokenHashes = [];
+                existingBuild.ciJobId = ciJobId;
+                existingBuild.draftActiveAt = now;
+                existingBuild.manifestCount = null;
+                existingBuild.manifestHash = null;
+                await registerShard(existingBuild.id, now);
+                reportedStatus = 'draft';
+            } else if (existingBuild.shardTotal !== shard.total) {
+                return new HttpConflictError(
+                    `shard count mismatch: this commit's build is ${existingBuild.shardTotal > 1 ? `split across ${existingBuild.shardTotal} shards` : 'not sharded'}, ` +
+                        `but this job declared ${shard.index}/${shard.total}. Every job must set the same PIXELCI_SHARD total.`
+                );
+            } else {
+                const row = await txn
+                    .query(BuildShardEntity)
+                    .filter({ buildId: existingBuild.id, shardIndex: shard.index })
+                    .forUpdate()
+                    .findOneOrUndefined();
+                const observe = (): HttpError | undefined => {
+                    if (row && row.manifestHash !== manifest.hash) {
+                        return new HttpConflictError(
+                            `This job's screenshots for shard ${shard.index}/${shard.total} (${manifest.count}, ${manifest.hash.slice(0, 12)}) differ from the ones ` +
+                                `already uploaded for it (${row.manifestCount}, ${row.manifestHash.slice(0, 12)}). Is another suite running with the same PIXELCI_SHARD?`
+                        );
+                    }
+                    existingBuild.ciTokensExpireAt = expireAt;
+                    existingBuild.ciReadTokenHashes = (existingBuild.ciReadTokenHashes ?? []).filter(h => h !== ciTokenHash);
+                    addReadTokenHash(existingBuild, ciTokenHash);
+                    return undefined;
+                };
+
+                if (isDraft) {
+                    if (!row) {
+                        existingBuild.draftActiveAt = now;
+                        existingBuild.ciTokensExpireAt = expireAt;
+                        await registerShard(existingBuild.id, now);
+                        reportedStatus = 'draft';
+                    } else if (
+                        row.ciTokenHash === ciTokenHash ||
+                        (isPerJobId(ciJobId) && row.ciJobId === ciJobId) ||
+                        (row.state === 'uploading' && now.getTime() - row.activeAt.getTime() > STALE_DRAFT_MS)
+                    ) {
+                        // The shard's own job re-creating, or a takeover of an abandoned shard: clean slate for this shard only
+                        // A repeat of the same CLI run (a late duplicate of a create it timed out on) must not wipe uploads that started since.
+                        const sameRun = !!runId && row.runId === runId;
+                        row.ciTokenHash = ciTokenHash;
+                        row.ciJobId = ciJobId;
+                        row.activeAt = now;
+                        if (!sameRun) {
+                            row.state = 'uploading';
+                            row.manifestCount = manifest.count;
+                            row.manifestHash = manifest.hash;
+                            row.runId = runId ?? null;
+                            await txn.query(BuildScreenEntity).filter({ buildId: existingBuild.id, shardIndex: shard.index }).deleteMany();
+                        }
+                        txn.add(row);
+                        existingBuild.draftActiveAt = now;
+                        existingBuild.ciTokensExpireAt = expireAt;
+                        existingBuild.ciReadTokenHashes = (existingBuild.ciReadTokenHashes ?? []).filter(h => h !== ciTokenHash);
+                        reportedStatus = 'draft';
+                    } else {
+                        const err = observe();
+                        if (err) return err;
+                        existingBuild.draftActiveAt = now;
+                        reportedStatus = 'processing';
+                    }
+                } else {
+                    // processing / needs review / final: observers only
+                    if (!row) return new HttpConflictError(`shard ${shard.index}/${shard.total} is not part of this build`);
+                    const err = observe();
+                    if (err) return err;
+                    if (existingBuild.status === 'processing' || existingBuild.status === 'needs review') {
+                        // A re-run attempt gets a new job id; approval must target the latest one.
+                        row.ciJobId = ciJobId;
+                        txn.add(row);
+                    }
+                }
+            }
+            txn.add(existingBuild);
+            return toBuildResponse(existingBuild, branch.name, reportedStatus, shard);
+        });
+    }
+
     @http.POST(':id/process')
     @http.middleware(BuildCiTokenMiddleware)
     async process(
@@ -356,15 +571,46 @@ export class BuildsController {
             // Re-check under lock: a takeover may have replaced the uploader (and its screens) since the middleware ran.
             const build = await txn.query(BuildEntity).filter({ id, appId }).forUpdate().findOneOrUndefined();
             if (!build) return new HttpNotFoundError();
-            if (build.ciTokenHash !== callerHash) return new HttpUnauthorizedError();
+            // Sharded builds authenticate with the shard's own token (lock order: build, shard, screens)
+            let shard: BuildShardEntity | undefined;
+            if (build.shardTotal > 1) {
+                shard = await txn.query(BuildShardEntity).filter({ buildId: id, ciTokenHash: callerHash }).forUpdate().findOneOrUndefined();
+                if (!shard) return new HttpUnauthorizedError();
+            } else if (build.ciTokenHash !== callerHash) return new HttpUnauthorizedError();
             if (build.status === 'canceled' || build.status === 'failed') return new HttpBadRequestError('Build is not in draft status');
             // Retry-safe: a repeated process call (lost response) succeeds without re-enqueueing
             if (build.status !== 'draft') return 'already' as const;
 
-            const names = await uploadedScreenNames(txn, id);
-            if (names.length === 0) return new HttpBadRequestError('Build has no screens');
-            if (manifest && (manifest.count !== names.length || manifest.hash !== screenManifestHash(names))) {
-                return new HttpBadRequestError(`Upload incomplete: the server has ${names.length} screens, the CLI uploaded ${manifest.count}`);
+            if (shard) {
+                // An empty shard (no screens) is fine; the build as a whole must have some
+                const names = await uploadedScreenNames(txn, id, shard.shardIndex);
+                const expected = manifest ?? { count: shard.manifestCount, hash: shard.manifestHash };
+                if (expected.count !== names.length || expected.hash !== screenManifestHash(names)) {
+                    return new HttpBadRequestError(
+                        `Upload incomplete: the server has ${names.length} screens for shard ${shard.shardIndex}, the CLI uploaded ${expected.count}`
+                    );
+                }
+                build.draftActiveAt = new Date();
+                txn.add(build);
+                if (shard.state !== 'uploaded') {
+                    shard.state = 'uploaded';
+                    shard.activeAt = new Date();
+                    txn.add(shard);
+                }
+                const othersUploaded = await txn
+                    .query(BuildShardEntity)
+                    .filter({ buildId: id, shardIndex: { $ne: shard.shardIndex }, state: 'uploaded' })
+                    .count();
+                // Still waiting for other shards: this call only records the shard as uploaded
+                if (othersUploaded + 1 < build.shardTotal) return 'already' as const;
+                if ((await txn.query(BuildScreenEntity).filter({ buildId: id }).count()) === 0)
+                    return new HttpBadRequestError('Build has no screens');
+            } else {
+                const names = await uploadedScreenNames(txn, id);
+                if (names.length === 0) return new HttpBadRequestError('Build has no screens');
+                if (manifest && (manifest.count !== names.length || manifest.hash !== screenManifestHash(names))) {
+                    return new HttpBadRequestError(`Upload incomplete: the server has ${names.length} screens, the CLI uploaded ${manifest.count}`);
+                }
             }
 
             await txn
@@ -444,6 +690,7 @@ export class BuildsController {
 
         try {
             const app = await AppEntity.query().filter({ id: appId }).findOne();
+            if (build.shardTotal > 1) return await this.rerunShardedBuild(user, app, build);
             const result = await this.vcsSvc.rerunCiJob(user, app, build.ciJobId);
             if (result.ok) return { vcsUrl: result.url };
             if (result.deferred) {
@@ -459,5 +706,46 @@ export class BuildsController {
             this.logger.error('Failed to rerun CI job', err);
             return { vcsUrl: false, vcsError: 'Failed to re-run the CI job; please re-run it from your CI provider.' };
         }
+    }
+
+    /** Re-runs every CI job of a sharded build (one request per target; GitHub collapses a run's jobs to the run). */
+    private async rerunShardedBuild(user: UserEntity, app: AppEntity, build: BuildEntity): Promise<IBuildApprovalResponse> {
+        const shards = await BuildShardEntity.query().filter({ buildId: build.id }).orderBy('shardIndex', 'asc').find();
+        const targets = await this.vcsSvc.getRerunTargets(
+            app,
+            shards.map(shard => shard.ciJobId)
+        );
+        if (!targets.length) targets.push(build.ciJobId);
+
+        let vcsUrl: string | false = false;
+        let notice: string | undefined;
+        const errors: string[] = [];
+        for (const target of targets) {
+            const result = await this.vcsSvc.rerunCiJob(user, app, target);
+            if (result.ok) {
+                vcsUrl ||= result.url;
+            } else if (result.deferred) {
+                await this.workerSvc.queueJob(
+                    RerunCiJobJob,
+                    { buildId: build.id, userId: user.id, ciJobId: target, runAttempt: result.runAttempt, attempt: 1 },
+                    { delay: RERUN_RETRY_DELAY_MS }
+                );
+                vcsUrl ||= result.url;
+                notice = RERUN_DEFERRED_NOTICE;
+            } else {
+                errors.push(result.error);
+            }
+        }
+        // A partial failure comes back as a notice: the UI shows vcsError only when no job was re-run at all
+        const rerun = targets.length - errors.length;
+        const partial =
+            errors.length && vcsUrl
+                ? `Re-ran ${rerun} of ${targets.length} shard jobs; the rest could not be re-run: ${errors.join(' ')}`
+                : undefined;
+        return {
+            vcsUrl,
+            ...(errors.length && !vcsUrl && { vcsError: errors.join(' ') }),
+            ...((notice || partial) && { vcsNotice: [partial, notice].filter(Boolean).join(' ') })
+        };
     }
 }

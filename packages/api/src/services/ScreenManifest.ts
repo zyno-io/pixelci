@@ -14,9 +14,13 @@ export function screenManifestHash(names: string[]): string {
         .digest('hex');
 }
 
-/** Names of the screens uploaded to a build (join of builds_screens to screens). */
-export async function uploadedScreenNames(session: DatabaseSession, buildId: string): Promise<string[]> {
-    const rows = await session.query(BuildScreenEntity).filter({ buildId }).select('screenId').find();
+/** Names of the screens uploaded to a build (join of builds_screens to screens), optionally only one shard's. */
+export async function uploadedScreenNames(session: DatabaseSession, buildId: string, shardIndex?: number): Promise<string[]> {
+    const rows = await session
+        .query(BuildScreenEntity)
+        .filter({ buildId, ...(shardIndex !== undefined && { shardIndex }) })
+        .select('screenId')
+        .find();
     if (!rows.length) return [];
     const screens = await session
         .query(ScreenEntity)

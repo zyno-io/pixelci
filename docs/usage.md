@@ -105,6 +105,42 @@ Otherwise the build is approved:
 
 You don't have to re-approve the same screen on every build. When a new build is processed, any screen that was individually approved or rejected since this branch's last approval is **pre-marked with that same decision (and comment)** — as long as the screenshot still matches. Unchanged screens arrive already reviewed and collapsed, so you only review what's genuinely new.
 
+## Sharded Suites
+
+If your screenshots come from a test suite split across several CI jobs (parallel jobs, a matrix), tell PixelCI which slice each job uploads with `PIXELCI_SHARD=<index>/<total>` (1-based, for example `2/4`). `total` can be at most 64; `1/1` means unsharded.
+
+- Each job uploads only its own screenshots. Screen names must be unique across shards (a duplicate is rejected with a 409).
+- PixelCI starts comparing once **every** shard has uploaded. Until then the build reports `processing`.
+- Every job waits for, and exits with, the same single build result. Approving the build re-runs every shard's CI job (on GitHub, the workflow run).
+- Every shard must use the same total, and all shards must start within the CLI timeout of each other, or the early ones give up waiting. The build stays open while any shard job is polling, so a slow shard can join as long as the earlier shards are still waiting.
+- A job that has no screenshots for its slice may upload none; at least one shard must upload something.
+- Without `PIXELCI_SHARD`, two jobs for the same commit that upload different screenshots are rejected with a 409 rather than silently comparing the wrong set.
+
+Requires `@zyno-io/pixelci-cli` 2.x and a server that supports shards.
+
+GitLab (`parallel:`):
+
+```yaml
+visual-test:
+    parallel: 4
+    variables:
+        PIXELCI_SHARD: $CI_NODE_INDEX/$CI_NODE_TOTAL
+```
+
+GitHub Actions (matrix):
+
+```yaml
+jobs:
+    visual-test:
+        strategy:
+            matrix:
+                shard: [1, 2, 3, 4]
+        steps:
+            - run: npx @zyno-io/pixelci-cli ./screenshots
+              env:
+                  PIXELCI_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
+```
+
 ## Build Status Flow
 
 Every build moves through these statuses:
