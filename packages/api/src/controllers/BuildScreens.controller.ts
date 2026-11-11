@@ -140,6 +140,8 @@ export class BuildScreensController {
         const screen = await this.findOrCreateScreen(appId, screenName);
 
         // The S3 PUT happens outside any transaction so a slow upload never holds a DB connection or row locks.
+        // TODO(phase 1): the key is per build+screen, so a late PUT from a superseded uploader (after a takeover) can overwrite the
+        // new uploader's image. Content-addressed storage removes that race.
         await this.s3Svc.uploadFile(body.image.path, this.s3Svc.getPathForScreen(appId, id, screen.id), 'image/png');
 
         // Returned (not thrown) from the transaction, like `process`, so a rejection doesn't roll back anything.

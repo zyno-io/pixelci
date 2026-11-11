@@ -5,6 +5,8 @@ import { crc32 } from 'zlib';
 export const MAX_SCREEN_NAME_LENGTH = 200;
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const MAX_CHUNK_LENGTH = 2 ** 31 - 1;
+const MAX_CHUNKS = 100_000; // bounds the walk below; real PNGs have a few thousand chunks at most
 const PNG_HEADER_LENGTH = 33; // signature (8) + IHDR chunk: length (4) + type (4) + data (13) + CRC (4)
 
 // Control characters, line/paragraph separators, and bidi override/isolate controls
@@ -26,29 +28,44 @@ export function parseScreenName(originalName: string | undefined): string {
 export async function readPngHeader(path: string, maxPixels: number): Promise<{ width: number; height: number }> {
     const header = Buffer.alloc(PNG_HEADER_LENGTH);
     const fh = await open(path, 'r');
-    let bytesRead: number;
     try {
-        ({ bytesRead } = await fh.read(header, 0, PNG_HEADER_LENGTH, 0));
+        const { bytesRead } = await fh.read(header, 0, PNG_HEADER_LENGTH, 0);
+
+        if (bytesRead < PNG_HEADER_LENGTH || !header.subarray(0, 8).equals(PNG_SIGNATURE)) {
+            throw new HttpBadRequestError('Image is not a valid PNG');
+        }
+        if (header.readUInt32BE(8) !== 13 || header.toString('latin1', 12, 16) !== 'IHDR') {
+            throw new HttpBadRequestError('Image has an invalid PNG header');
+        }
+        if (crc32(header.subarray(12, 29)) !== header.readUInt32BE(29)) {
+            throw new HttpBadRequestError('Image has a corrupt PNG header');
+        }
+
+        const width = header.readUInt32BE(16);
+        const height = header.readUInt32BE(20);
+        if (width < 1 || height < 1) throw new HttpBadRequestError('Image has invalid dimensions');
+        if (header[26] !== 0 || header[27] !== 0) throw new HttpBadRequestError('Image has an invalid PNG header');
+        if (width * height > maxPixels) {
+            throw new HttpBadRequestError(`Image is too large (${width}x${height}); the maximum is ${maxPixels} pixels`);
+        }
+
+        // The decoder lets a later IHDR override the dimensions, so walk the chunk headers (never the data) and reject any other IHDR.
+        const { size } = await fh.stat();
+        const chunkHead = Buffer.alloc(8);
+        let pos = PNG_HEADER_LENGTH;
+        for (let i = 0; ; i++) {
+            if (i >= MAX_CHUNKS) throw new HttpBadRequestError('Image has too many PNG chunks');
+            const { bytesRead: n } = await fh.read(chunkHead, 0, 8, pos);
+            if (n < 8) throw new HttpBadRequestError('Image is truncated');
+            const length = chunkHead.readUInt32BE(0);
+            const type = chunkHead.toString('latin1', 4, 8);
+            if (type === 'IHDR') throw new HttpBadRequestError('Image has more than one PNG header');
+            if (length > MAX_CHUNK_LENGTH || pos + 8 + length + 4 > size) throw new HttpBadRequestError('Image is truncated');
+            if (type === 'IEND') break;
+            pos += 8 + length + 4;
+        }
+        return { width, height };
     } finally {
         await fh.close();
     }
-
-    if (bytesRead < PNG_HEADER_LENGTH || !header.subarray(0, 8).equals(PNG_SIGNATURE)) {
-        throw new HttpBadRequestError('Image is not a valid PNG');
-    }
-    if (header.readUInt32BE(8) !== 13 || header.toString('latin1', 12, 16) !== 'IHDR') {
-        throw new HttpBadRequestError('Image has an invalid PNG header');
-    }
-    if (crc32(header.subarray(12, 29)) !== header.readUInt32BE(29)) {
-        throw new HttpBadRequestError('Image has a corrupt PNG header');
-    }
-
-    const width = header.readUInt32BE(16);
-    const height = header.readUInt32BE(20);
-    if (width < 1 || height < 1) throw new HttpBadRequestError('Image has invalid dimensions');
-    if (header[26] !== 0 || header[27] !== 0) throw new HttpBadRequestError('Image has an invalid PNG header');
-    if (width * height > maxPixels) {
-        throw new HttpBadRequestError(`Image is too large (${width}x${height}); the maximum is ${maxPixels} pixels`);
-    }
-    return { width, height };
 }

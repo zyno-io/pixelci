@@ -139,7 +139,15 @@ function fakePng(width: number, height: number, size = 64) {
     const crc = Buffer.alloc(4);
     crc.writeUInt32BE(crc32(ihdr));
     const head = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), len, ihdr, crc]);
-    return Buffer.concat([head, Buffer.alloc(Math.max(0, size - head.length))]);
+    // header + one IDAT chunk of padding (never decoded in these tests) + IEND
+    const iend = Buffer.from('0000000049454e44ae426082', 'hex');
+    const pad = Math.max(0, size - head.length - iend.length - 12);
+    const idatData = Buffer.concat([Buffer.from('IDAT'), Buffer.alloc(pad)]);
+    const idatLen = Buffer.alloc(4);
+    idatLen.writeUInt32BE(pad);
+    const idatCrc = Buffer.alloc(4);
+    idatCrc.writeUInt32BE(crc32(idatData));
+    return Buffer.concat([head, idatLen, idatData, idatCrc, iend]);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -492,10 +500,16 @@ async function testUploadValidation(f: Facade) {
 
     await expectCode(uploadRaw(f, id, t, Buffer.from('definitely not a png, but long enough to have a header'), 'bad.png'), 400, 'bad signature');
     await expectCode(uploadRaw(f, id, t, fakePng(100000, 100000), 'huge.png'), 400, 'IHDR claims 100000x100000');
+    // NOTE: the testing facade delivers the whole multipart body as a single chunk, so this exercises the up-front size rejection
+    // (HTTP_MAX_REQUEST_BODY_BYTES) rather than per-chunk streaming accounting.
     await expectCode(uploadRaw(f, id, t, fakePng(100, 100, 17 * 1024 * 1024), 'big.png'), 413, '17MB file');
-    await expectCode(uploadRaw(f, id, t, fakePng(10, 10), '.png'), 400, 'empty name');
-    await expectCode(uploadRaw(f, id, t, fakePng(10, 10), 'bad\u0001name.png'), 400, 'control character in name');
-    await expectCode(uploadRaw(f, id, t, fakePng(10, 10), `${'a'.repeat(201)}.png`), 400, 'name too long');
+    const empty = await expectCode(uploadRaw(f, id, t, fakePng(10, 10), '.png'), 400, 'empty name');
+    assert(/must not be empty/.test(String(empty.body)), `empty-name 400 comes from parseScreenName, got ${empty.body}`);
+    // These names get past the multipart parser, so the 400 must come from parseScreenName
+    const bidi = await expectCode(uploadRaw(f, id, t, fakePng(10, 10), 'bidi\u202Ename.png'), 400, 'bidi override in name');
+    assert(/forbidden characters/.test(String(bidi.body)), `bidi 400 comes from parseScreenName, got ${bidi.body}`);
+    const long = await expectCode(uploadRaw(f, id, t, fakePng(10, 10), `${'a'.repeat(201)}.png`), 400, 'name too long');
+    assert(/at most 200 characters/.test(String(long.body)), `length 400 comes from parseScreenName, got ${long.body}`);
     assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 0, 'rejected uploads leave no rows');
     assert((await ScreenEntity.query().filter({ appId: APP_ID, name: 'bad' }).find()).length === 0, 'rejected uploads leave no screens');
     // A header-valid image that is not truncated passes validation (the real fixture, and a bare header)
@@ -504,16 +518,19 @@ async function testUploadValidation(f: Facade) {
     console.log('  PASS');
 }
 
+// Kept below the test DB pool size: each in-flight upload holds a pooled connection while waiting on the build row lock
+const CONCURRENT_UPLOADS = 8;
+
 async function testConcurrentUploads(f: Facade) {
     console.log('\nTest (j): concurrent uploads');
     const t = newJob('branch-conc-upload');
     const id = (await expectCode(create(f, t), 200, 'create')).json.id;
-    const names = Array.from({ length: 16 }, (_, i) => `conc-${i}`);
+    const names = Array.from({ length: CONCURRENT_UPLOADS }, (_, i) => `conc-${i}`);
     const results = await Promise.all(names.map(n => upload(f, id, t, n)));
     for (const r of results) assert(r.statusCode === 200, `concurrent upload returned ${r.statusCode}: ${r.body}`);
     const rows = await BuildScreenEntity.query().filter({ buildId: id }).find();
-    assert(rows.length === 16, `expected 16 rows, got ${rows.length}`);
-    assert(new Set(rows.map(r => r.screenId)).size === 16, '16 distinct screens');
+    assert(rows.length === CONCURRENT_UPLOADS, `expected ${CONCURRENT_UPLOADS} rows, got ${rows.length}`);
+    assert(new Set(rows.map(r => r.screenId)).size === CONCURRENT_UPLOADS, `${CONCURRENT_UPLOADS} distinct screens`);
 
     // The same brand-new screen name uploaded from two builds at once creates exactly one screen
     for (let round = 0; round < 3; round++) {

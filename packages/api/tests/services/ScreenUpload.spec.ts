@@ -31,6 +31,17 @@ function pngHeader(
     return Buffer.concat([SIGNATURE, len, ihdr, crc]);
 }
 
+function chunk(type: string, data: Buffer) {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const typeAndData = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(typeAndData));
+    return Buffer.concat([len, typeAndData, crc]);
+}
+const iend = () => chunk('IEND', Buffer.alloc(0));
+const secondIhdr = (w: number, h: number) => pngHeader({ width: w, height: h }).subarray(8);
+
 let n = 0;
 function file(buf: Buffer) {
     const p = join(dir, `f${n++}.png`);
@@ -76,7 +87,7 @@ describe('parseScreenName', () => {
 
 describe('readPngHeader', () => {
     it('returns dimensions for a valid header', async () => {
-        assert.deepEqual(await readPngHeader(file(pngHeader()), 25_000_000), { width: 100, height: 50 });
+        assert.deepEqual(await readPngHeader(file(Buffer.concat([pngHeader(), iend()])), 25_000_000), { width: 100, height: 50 });
     });
 
     it('rejects a bad signature', async () => {
@@ -109,8 +120,40 @@ describe('readPngHeader', () => {
         await assert.rejects(readPngHeader(file(pngHeader({ filter: 1 })), 1e9), { httpCode: 400 });
     });
 
+    it('accepts a complete chunk sequence ending in IEND', async () => {
+        const buf = Buffer.concat([pngHeader(), chunk('IDAT', Buffer.alloc(100)), iend()]);
+        assert.deepEqual(await readPngHeader(file(buf), 1e9), { width: 100, height: 50 });
+    });
+
+    it('rejects a second IHDR (which would override the checked dimensions)', async () => {
+        const buf = Buffer.concat([pngHeader(), secondIhdr(6000, 6000), chunk('IDAT', Buffer.alloc(10)), iend()]);
+        await assert.rejects(readPngHeader(file(buf), 25_000_000), { httpCode: 400 });
+        // also after other chunks
+        const late = Buffer.concat([pngHeader(), chunk('IDAT', Buffer.alloc(10)), secondIhdr(6000, 6000), iend()]);
+        await assert.rejects(readPngHeader(file(late), 25_000_000), { httpCode: 400 });
+    });
+
+    it('rejects a truncated chunk', async () => {
+        const buf = Buffer.concat([pngHeader(), chunk('IDAT', Buffer.alloc(100)), iend()]);
+        await assert.rejects(readPngHeader(file(buf.subarray(0, buf.length - 20)), 1e9), { httpCode: 400 });
+        // IDAT whose declared length runs past EOF
+        const lying = Buffer.concat([pngHeader(), chunk('IDAT', Buffer.alloc(100)).subarray(0, 50)]);
+        await assert.rejects(readPngHeader(file(lying), 1e9), { httpCode: 400 });
+    });
+
+    it('rejects a file with no IEND and a chunk length above 2^31-1', async () => {
+        await assert.rejects(readPngHeader(file(Buffer.concat([pngHeader(), chunk('IDAT', Buffer.alloc(10))])), 1e9), { httpCode: 400 });
+        const huge = Buffer.alloc(12);
+        huge.writeUInt32BE(0x80000000, 0);
+        huge.write('IDAT', 4, 'latin1');
+        await assert.rejects(readPngHeader(file(Buffer.concat([pngHeader(), huge])), 1e9), { httpCode: 400 });
+    });
+
     it('enforces the pixel cap', async () => {
-        assert.deepEqual(await readPngHeader(file(pngHeader({ width: 5000, height: 5000 })), 25_000_000), { width: 5000, height: 5000 });
+        assert.deepEqual(await readPngHeader(file(Buffer.concat([pngHeader({ width: 5000, height: 5000 }), iend()])), 25_000_000), {
+            width: 5000,
+            height: 5000
+        });
         await assert.rejects(readPngHeader(file(pngHeader({ width: 5001, height: 5000 })), 25_000_000), { httpCode: 400 });
         await assert.rejects(readPngHeader(file(pngHeader({ width: 0xffffffff, height: 0xffffffff })), 25_000_000), { httpCode: 400 });
     });
