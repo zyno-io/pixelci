@@ -463,6 +463,7 @@ async function seedBuilds(facade: Facade): Promise<ICtx> {
     const create = async (token: string) => {
         const response = await facade.request(ci(HttpRequest.POST(`/api/apps/${APP_ID}/builds`), token));
         if (response.statusCode !== 200) throw new Error(`seed: create build failed: ${response.statusCode} ${response.bodyString}`);
+        scanBody(`seed POST builds (${token === CI_TOKEN ? 'uploader' : 'other'})`, response.bodyString, response.headers);
         return response.json as { id: string };
     };
     const upload = async (buildId: string, token: string, name: string) => {
@@ -472,6 +473,7 @@ async function seedBuilds(facade: Facade): Promise<ICtx> {
             ])
         );
         if (response.statusCode !== 200) throw new Error(`seed: upload failed: ${response.statusCode} ${response.bodyString}`);
+        scanBody('seed POST screens', response.bodyString, response.headers);
         return response.json as { screenId: string };
     };
 
