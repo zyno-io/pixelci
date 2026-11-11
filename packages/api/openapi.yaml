@@ -53,6 +53,8 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: redirectUri
           in: query
           required: true
@@ -160,6 +162,8 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
     put:
       operationId: putAppsUpdate
       tags:
@@ -177,6 +181,8 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
       requestBody:
         required: true
         content:
@@ -196,6 +202,8 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/apps/vcs-projects/search:
     get:
       operationId: getAppsSearchVcsProjects
@@ -216,6 +224,8 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: search
           in: query
           required: true
@@ -239,6 +249,8 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: url
           in: query
           required: true
@@ -264,6 +276,8 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/apps/{appId}/builds:
     get:
       operationId: getBuildsIndex
@@ -284,11 +298,15 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: branchId
           in: query
           required: false
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
     post:
       operationId: postBuildsCreate
       tags:
@@ -306,6 +324,8 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/apps/{appId}/builds/{id}:
     get:
       operationId: getBuildsGet
@@ -324,11 +344,15 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: id
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/apps/{appId}/builds/{id}/status:
     get:
       operationId: getBuildsShow
@@ -347,11 +371,15 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: id
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/apps/{appId}/builds/{id}/process:
     post:
       operationId: postBuildsProcess
@@ -369,11 +397,15 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: id
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/apps/{appId}/builds/{id}/approve:
     post:
       operationId: postBuildsApprove
@@ -392,11 +424,15 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: id
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/apps/{appId}/builds/{id}/screens:
     get:
       operationId: getBuildScreensGetScreens
@@ -417,11 +453,15 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: id
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
     post:
       operationId: postBuildScreensUploadScreen
       tags:
@@ -446,11 +486,15 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: id
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
       requestBody:
         required: true
         content:
@@ -480,16 +524,22 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: id
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: screenId
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/apps/{appId}/builds/{id}/screens/{screenId}/diff:
     get:
       operationId: getBuildScreensGetScreenDiff
@@ -507,16 +557,22 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: id
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: screenId
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/apps/{appId}/builds/{id}/screens/{screenId}/review:
     post:
       operationId: postBuildScreensReviewScreen
@@ -535,16 +591,22 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: id
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: screenId
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
       requestBody:
         required: true
         content:
@@ -611,6 +673,8 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
     put:
       operationId: putVcsIntegrationsUpdate
       tags:
@@ -628,6 +692,8 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
       requestBody:
         required: true
         content:
@@ -647,6 +713,8 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/admin/users:
     get:
       operationId: getUsersIndex
@@ -687,6 +755,8 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
       requestBody:
         required: true
         content:
@@ -727,11 +797,15 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: branchId
           in: query
           required: false
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: limit
           in: query
           required: false
@@ -755,11 +829,15 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: buildId
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/ext/apps/{appId}/builds/{buildId}/screens/{screenId}/image:
     get:
       operationId: getExternalReadGetScreenImage
@@ -777,16 +855,22 @@ paths:
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: buildId
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: screenId
           in: path
           required: true
           schema:
             type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         - name: kind
           in: query
           required: false
@@ -803,11 +887,11 @@ components:
         id:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         vcsId:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         name:
           type: string
         isAdmin:
@@ -823,7 +907,7 @@ components:
         id:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         name:
           type: string
         platform:
@@ -923,7 +1007,7 @@ components:
         id:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         name:
           type: string
         platform:
@@ -940,6 +1024,8 @@ components:
       properties:
         providerId:
           type: string
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         redirectUri:
           type: string
         code:
@@ -961,11 +1047,11 @@ components:
         id:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         defaultBranchId:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         name:
           type: string
         buildCount:
@@ -976,11 +1062,11 @@ components:
         id:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         vcsId:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         projectPath:
           type: string
         vcsProjectId:
@@ -990,7 +1076,7 @@ components:
         defaultBranchId:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         name:
           type: string
         deletedAt:
@@ -1018,6 +1104,8 @@ components:
           type: string
         vcsId:
           type: string
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         projectPath:
           type: string
         vcsProjectId:
@@ -1034,7 +1122,7 @@ components:
         defaultBranchId:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         name:
           type: string
     IVcsProject:
@@ -1064,7 +1152,7 @@ components:
         id:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         name:
           type: string
       required:
@@ -1076,11 +1164,11 @@ components:
         id:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         branchId:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         createdAt:
           type: string
           format: date-time
@@ -1163,27 +1251,27 @@ components:
         id:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         buildId:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         screenId:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         matchedBuildId:
           type:
             - string
             - "null"
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         approvalBuildId:
           type:
             - string
             - "null"
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         status:
           enum:
             - new
@@ -1211,7 +1299,7 @@ components:
             - string
             - "null"
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         reviewedAt:
           type:
             - string
@@ -1234,11 +1322,11 @@ components:
         id:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         screenId:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         status:
           enum:
             - new
@@ -1276,7 +1364,7 @@ components:
             - string
             - "null"
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         reviewedAt:
           type:
             - string
@@ -1293,7 +1381,7 @@ components:
         id:
           type: string
           format: uuid
-          pattern: ^(?:urn:uuid:)?[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         name:
           type: string
         platform:

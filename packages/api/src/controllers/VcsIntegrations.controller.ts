@@ -1,4 +1,4 @@
-import { http, HttpBadRequestError, HttpBody, HttpNotFoundError } from '@zyno-io/ts-server-foundation';
+import { http, HttpBadRequestError, HttpBody, HttpNotFoundError, UuidString } from '@zyno-io/ts-server-foundation';
 import { uuid } from '@zyno-io/ts-server-foundation';
 import { createEntity } from '@zyno-io/ts-server-foundation';
 
@@ -73,7 +73,7 @@ export class VcsIntegrationsController {
     }
 
     @http.GET('/:id')
-    async show(id: string): Promise<IVcsIntegrationDetailResponse> {
+    async show(id: UuidString): Promise<IVcsIntegrationDetailResponse> {
         const integration = await VcsIntegrationEntity.query().filter({ id }).findOneOrUndefined();
         if (!integration) throw new HttpNotFoundError();
 
@@ -100,7 +100,7 @@ export class VcsIntegrationsController {
     }
 
     @http.PUT('/:id')
-    async update(id: string, body: HttpBody<IVcsIntegrationUpdateInput>): Promise<IVcsIntegrationListResponse> {
+    async update(id: UuidString, body: HttpBody<IVcsIntegrationUpdateInput>): Promise<IVcsIntegrationListResponse> {
         const integration = await VcsIntegrationEntity.query().filter({ id }).findOneOrUndefined();
         if (!integration) throw new HttpNotFoundError();
 
@@ -123,7 +123,7 @@ export class VcsIntegrationsController {
     }
 
     @http.DELETE('/:id')
-    async delete(id: string): Promise<void> {
+    async delete(id: UuidString): Promise<void> {
         const integration = await VcsIntegrationEntity.query().filter({ id }).findOneOrUndefined();
         if (!integration) throw new HttpNotFoundError();
 

@@ -1,4 +1,12 @@
-import { http, HttpBadRequestError, HttpNotFoundError, HttpQueries, HttpRequest, HttpUnauthorizedError } from '@zyno-io/ts-server-foundation';
+import {
+    http,
+    HttpBadRequestError,
+    HttpNotFoundError,
+    HttpQueries,
+    HttpRequest,
+    HttpUnauthorizedError,
+    UuidString
+} from '@zyno-io/ts-server-foundation';
 import { ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { createPersistedEntity, OkResponse, uuid7, WorkerService } from '@zyno-io/ts-server-foundation';
 import { keyBy, uniq } from 'lodash';
@@ -74,7 +82,7 @@ export class BuildsController {
 
     @http.GET()
     @http.middleware(UserAuthMiddleware)
-    async index(appId: string, user: UserEntity, query: HttpQueries<{ branchId?: string }>): Promise<IBuildResponse[]> {
+    async index(appId: UuidString, user: UserEntity, query: HttpQueries<{ branchId?: UuidString }>): Promise<IBuildResponse[]> {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
 
         const { branchId } = query;
@@ -103,7 +111,7 @@ export class BuildsController {
 
     @http.GET(':id')
     @http.middleware(UserAuthMiddleware)
-    async get(appId: string, id: string, user: UserEntity): Promise<IBuildResponse> {
+    async get(appId: UuidString, id: UuidString, user: UserEntity): Promise<IBuildResponse> {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
 
         const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
@@ -119,7 +127,7 @@ export class BuildsController {
 
     @http.GET(':id/status')
     @http.middleware(BuildCiTokenMiddleware)
-    async show(request: HttpRequest, appId: string, id: string): Promise<IBuildBasicResponse> {
+    async show(request: HttpRequest, appId: UuidString, id: UuidString): Promise<IBuildBasicResponse> {
         const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
 
@@ -140,7 +148,7 @@ export class BuildsController {
     }
 
     @http.POST()
-    async create(request: HttpRequest, appId: string): Promise<IBuildResponse> {
+    async create(request: HttpRequest, appId: UuidString): Promise<IBuildResponse> {
         const authHeader = request.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             this.logger.warn('Build creation failed: missing or malformed Authorization header');
@@ -169,7 +177,7 @@ export class BuildsController {
     }
 
     private createInTransaction(
-        appId: string,
+        appId: UuidString,
         branchName: string,
         commitHash: string,
         commitSubject: string,
@@ -261,7 +269,7 @@ export class BuildsController {
 
     @http.POST(':id/process')
     @http.middleware(BuildCiTokenMiddleware)
-    async process(request: HttpRequest, appId: string, id: string): OkResponse {
+    async process(request: HttpRequest, appId: UuidString, id: UuidString): OkResponse {
         const callerHash = hashCiToken((request.headers.authorization ?? '').slice(7));
 
         // Validation failures are returned from the transaction (not thrown inside it) so a rejected request doesn't roll back anything.
@@ -292,7 +300,7 @@ export class BuildsController {
 
     @http.POST(':id/approve')
     @http.middleware(UserAuthMiddleware)
-    async approve(user: UserEntity, appId: string, id: string): Promise<IBuildApprovalResponse> {
+    async approve(user: UserEntity, appId: UuidString, id: UuidString): Promise<IBuildApprovalResponse> {
         let build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);

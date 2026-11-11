@@ -47,7 +47,7 @@ envValueFrom: {}
 
 secret:
   # Name of the Kubernetes Secret to mount into the containers as env vars.
-  # Defaults to the release name when unset; here it matches the OnePasswordItem.
+  # Defaults to the release name when unset; here it matches the Hemlig secret import.
   name: pixelci-envsecrets
 
   # Set `values` to have the chart create the Secret for you.

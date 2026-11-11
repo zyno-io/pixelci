@@ -100,6 +100,34 @@ async function run() {
         await runScenario(facade, index, scenario);
         console.log(`Scenario ${Number(index) + 1} completed.`);
     }
+
+    await testMalformedIds(facade);
+}
+
+async function testMalformedIds(facade: TestingFacade) {
+    console.log('\nTest: malformed ids are rejected with 400 before reaching the database');
+    const jwt = await JWT.generate({ subject: ZERO_ID });
+    const get = (path: string) => facade.request(HttpRequest.GET(path).header('authorization', `Bearer ${jwt}`));
+
+    for (const path of [
+        '/api/apps/not-a-uuid',
+        `/api/apps/${APP_ID}/builds/not-a-uuid`,
+        `/api/apps/${APP_ID}/builds?branchId=not-a-uuid`,
+        '/api/apps/not-a-uuid/builds',
+        '/api/apps/vcs-projects/search?vcsId=not-a-uuid&search=x'
+    ]) {
+        const response = await get(path);
+        if (response.statusCode !== 400) {
+            throw new Error(`Expected 400 for ${path} but got ${response.statusCode}: ${response.body}`);
+        }
+    }
+
+    // A well-formed id that doesn't exist is still a plain 404
+    const missing = await get(`/api/apps/${ZERO_ID}`);
+    if (missing.statusCode !== 404) {
+        throw new Error(`Expected 404 for unknown app but got ${missing.statusCode}: ${missing.body}`);
+    }
+    console.log('  PASS');
 }
 
 async function createBaseEntities(mockGitLabPort: number) {

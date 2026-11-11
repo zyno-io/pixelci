@@ -1,4 +1,14 @@
-import { createEntity, EntityFields, http, HttpBadRequestError, HttpBody, HttpNotFoundError, HttpQueries, uuid } from '@zyno-io/ts-server-foundation';
+import {
+    createEntity,
+    EntityFields,
+    http,
+    HttpBadRequestError,
+    HttpBody,
+    HttpNotFoundError,
+    HttpQueries,
+    uuid,
+    UuidString
+} from '@zyno-io/ts-server-foundation';
 
 import { AdminAuthMiddleware, UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
@@ -15,7 +25,7 @@ export type IAppShowResponse = EntityFields<AppEntity> & { commitUrlBase: string
 
 interface IAppCreateInput {
     name: string;
-    vcsId: string;
+    vcsId: UuidString;
     projectPath: string;
     vcsProjectId?: number;
     defaultBranchName?: string;
@@ -52,7 +62,7 @@ export class AppsController {
     }
 
     @http.GET('/:id')
-    async show(id: string, user: UserEntity): Promise<IAppShowResponse> {
+    async show(id: UuidString, user: UserEntity): Promise<IAppShowResponse> {
         const app = await AppEntity.query().filter({ id, deletedAt: null }).findOneOrUndefined();
         if (!app) throw new HttpNotFoundError();
         await this.appAccessSvc.assertCanAccess({ kind: 'user', user }, app);
@@ -100,7 +110,7 @@ export class AppsController {
 
     @http.PUT('/:id')
     @http.middleware(AdminAuthMiddleware)
-    async update(id: string, body: HttpBody<IAppUpdateInput>): Promise<IAppIndexResponse> {
+    async update(id: UuidString, body: HttpBody<IAppUpdateInput>): Promise<IAppIndexResponse> {
         const app = await AppEntity.query().filter({ id }).findOneOrUndefined();
         if (!app) throw new HttpNotFoundError();
 
@@ -117,7 +127,7 @@ export class AppsController {
 
     @http.DELETE('/:id')
     @http.middleware(AdminAuthMiddleware)
-    async delete(id: string): Promise<void> {
+    async delete(id: UuidString): Promise<void> {
         const app = await AppEntity.query().filter({ id, deletedAt: null }).findOneOrUndefined();
         if (!app) throw new HttpNotFoundError();
 
@@ -127,13 +137,13 @@ export class AppsController {
 
     @http.GET('vcs-projects/search')
     @http.middleware(AdminAuthMiddleware)
-    async searchVcsProjects(query: HttpQueries<{ vcsId: string; search: string }>, user: UserEntity): Promise<IVcsProject[]> {
+    async searchVcsProjects(query: HttpQueries<{ vcsId: UuidString; search: string }>, user: UserEntity): Promise<IVcsProject[]> {
         return this.vcsService.searchProjects(user, query.vcsId, query.search);
     }
 
     @http.GET('vcs-projects/resolve')
     @http.middleware(AdminAuthMiddleware)
-    async resolveVcsProject(query: HttpQueries<{ vcsId: string; url: string }>, user: UserEntity): Promise<IVcsProject> {
+    async resolveVcsProject(query: HttpQueries<{ vcsId: UuidString; url: string }>, user: UserEntity): Promise<IVcsProject> {
         return this.vcsService.resolveProjectUrl(user, query.vcsId, query.url);
     }
 }

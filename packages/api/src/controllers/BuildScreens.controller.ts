@@ -1,4 +1,4 @@
-import { http, HttpBadRequestError, HttpBody, HttpNotFoundError, Redirect, FileUpload } from '@zyno-io/ts-server-foundation';
+import { http, HttpBadRequestError, HttpBody, HttpNotFoundError, Redirect, FileUpload, UuidString } from '@zyno-io/ts-server-foundation';
 import { AnyResponse, createPersistedEntity, uuid7 } from '@zyno-io/ts-server-foundation';
 import { keyBy, uniq } from 'lodash';
 
@@ -61,7 +61,7 @@ export class BuildScreensController {
 
     @http.GET('screens')
     @http.middleware(UserAuthMiddleware)
-    async getScreens(appId: string, id: string, user: UserEntity): Promise<IBuildScreenResponse[]> {
+    async getScreens(appId: UuidString, id: UuidString, user: UserEntity): Promise<IBuildScreenResponse[]> {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
 
         const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
@@ -102,7 +102,11 @@ export class BuildScreensController {
 
     @http.POST('screens')
     @http.middleware(BuildCiTokenMiddleware)
-    async uploadScreen(appId: string, id: string, body: HttpBody<{ image: FileUpload }>): Promise<IBuildScreenCreateResponse | { status: string }> {
+    async uploadScreen(
+        appId: UuidString,
+        id: UuidString,
+        body: HttpBody<{ image: FileUpload }>
+    ): Promise<IBuildScreenCreateResponse | { status: string }> {
         const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
         if (build.status !== 'draft') throw new HttpBadRequestError('build is not in draft state');
@@ -154,7 +158,7 @@ export class BuildScreensController {
     // TEST for getting images
     @http.GET('screens/:screenId/image')
     @http.middleware(UserAuthMiddleware)
-    async getScreenImage(appId: string, id: string, screenId: string, user: UserEntity): AnyResponse {
+    async getScreenImage(appId: UuidString, id: UuidString, screenId: UuidString, user: UserEntity): AnyResponse {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
         const url = await this.s3Svc.getSignedUrl(this.s3Svc.getPathForScreen(appId, id, screenId));
         return Redirect.toUrl(url);
@@ -162,7 +166,7 @@ export class BuildScreensController {
 
     @http.GET('screens/:screenId/diff')
     @http.middleware(UserAuthMiddleware)
-    async getScreenDiff(appId: string, id: string, screenId: string, user: UserEntity): AnyResponse {
+    async getScreenDiff(appId: UuidString, id: UuidString, screenId: UuidString, user: UserEntity): AnyResponse {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
         const url = await this.s3Svc.getSignedUrl(this.s3Svc.getPathForDiff(appId, id, screenId));
         return Redirect.toUrl(url);
@@ -172,9 +176,9 @@ export class BuildScreensController {
     @http.middleware(UserAuthMiddleware)
     async reviewScreen(
         user: UserEntity,
-        appId: string,
-        id: string,
-        screenId: string,
+        appId: UuidString,
+        id: UuidString,
+        screenId: UuidString,
         body: HttpBody<{ reviewStatus: 'approved' | 'rejected'; comment: string }>
     ): Promise<IBuildScreenReviewResponse> {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);

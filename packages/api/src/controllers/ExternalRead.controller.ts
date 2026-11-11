@@ -1,4 +1,4 @@
-import { http, HttpNotFoundError, HttpQueries, HttpRequest, HttpUnauthorizedError, Redirect } from '@zyno-io/ts-server-foundation';
+import { http, HttpNotFoundError, HttpQueries, HttpRequest, HttpUnauthorizedError, Redirect, UuidString } from '@zyno-io/ts-server-foundation';
 import { AnyResponse } from '@zyno-io/ts-server-foundation';
 import { keyBy, uniq } from 'lodash';
 
@@ -62,7 +62,11 @@ export class ExternalReadController {
     }
 
     @http.GET('apps/:appId/builds')
-    async listBuilds(appId: string, request: HttpRequest, query: HttpQueries<{ branchId?: string; limit?: number }>): Promise<IExtBuildResponse[]> {
+    async listBuilds(
+        appId: UuidString,
+        request: HttpRequest,
+        query: HttpQueries<{ branchId?: UuidString; limit?: number }>
+    ): Promise<IExtBuildResponse[]> {
         await this.appAccessSvc.assertCanAccessAppId(this.principal(request), appId);
 
         const builds = await BuildEntity.query()
@@ -79,7 +83,7 @@ export class ExternalReadController {
     }
 
     @http.GET('apps/:appId/builds/:buildId')
-    async getBuild(appId: string, buildId: string, request: HttpRequest): Promise<IExtBuildDetailResponse> {
+    async getBuild(appId: UuidString, buildId: UuidString, request: HttpRequest): Promise<IExtBuildDetailResponse> {
         await this.appAccessSvc.assertCanAccessAppId(this.principal(request), appId);
 
         const build = await BuildEntity.query()
@@ -121,9 +125,9 @@ export class ExternalReadController {
 
     @http.GET('apps/:appId/builds/:buildId/screens/:screenId/image')
     async getScreenImage(
-        appId: string,
-        buildId: string,
-        screenId: string,
+        appId: UuidString,
+        buildId: UuidString,
+        screenId: UuidString,
         request: HttpRequest,
         query: HttpQueries<{ kind?: 'new' | 'diff' }>
     ): AnyResponse {

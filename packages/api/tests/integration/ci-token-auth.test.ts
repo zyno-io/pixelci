@@ -95,6 +95,7 @@ async function run() {
     await testValidToken(facade);
     await testHashBasedAuth(facade);
     await testWrongTokenOnSubsequentCall(facade);
+    await testMalformedBuildId(facade);
 
     // Mock GitLab failure scenarios
     await testGitLabJobEndpointDown(facade);
@@ -218,6 +219,17 @@ async function testWrongTokenOnSubsequentCall(facade: Facade) {
     );
     if (statusResponse.statusCode !== 401) {
         throw new Error(`Expected 401 but got ${statusResponse.statusCode}: ${statusResponse.body}`);
+    }
+    console.log('  PASS');
+}
+
+async function testMalformedBuildId(facade: Facade) {
+    console.log('\nTest: malformed buildId in URL → 401 (no DB lookup)');
+    const response = await facade.request(
+        HttpRequest.GET(`/api/apps/${APP_ID}/builds/not-a-uuid/status`).header('authorization', `Bearer ${TEST_CI_TOKEN}`)
+    );
+    if (response.statusCode !== 401) {
+        throw new Error(`Expected 401 but got ${response.statusCode}: ${response.body}`);
     }
     console.log('  PASS');
 }

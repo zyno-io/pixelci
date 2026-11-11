@@ -1,4 +1,4 @@
-import { http } from '@zyno-io/ts-server-foundation';
+import { http, UuidString } from '@zyno-io/ts-server-foundation';
 
 import { UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
@@ -14,7 +14,7 @@ export class BranchesController {
     constructor(private appAccessSvc: AppAccessService) {}
 
     @http.GET()
-    async index(appId: string, user: UserEntity): Promise<IBranchResponse[]> {
+    async index(appId: UuidString, user: UserEntity): Promise<IBranchResponse[]> {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
         return BranchEntity.query().filter({ appId }).find();
     }
