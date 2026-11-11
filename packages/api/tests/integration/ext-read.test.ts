@@ -138,6 +138,7 @@ async function run() {
     await testImageRedirectsWithAccess(facade);
     await testGitHubTokenNeverReachesGitLab(facade);
     await testMultiProviderRequiresVcsId(facade);
+    await testMalformedIds(facade);
 
     mockGitLabServer.close();
 }
@@ -373,6 +374,19 @@ async function testMultiProviderRequiresVcsId(facade: Facade) {
 
     const withHint = await facade.request(authed(HttpRequest.GET('/api/ext/apps'), MULTI_PAT).header('x-pixelci-vcs-id', VCS_ID));
     expectStatus(withHint.statusCode, 200);
+    console.log('  PASS');
+}
+
+async function testMalformedIds(facade: Facade) {
+    console.log('\nTest: malformed X-PixelCI-Vcs-Id → 401; malformed path ids → 400');
+    const badHeader = await facade.request(authed(HttpRequest.GET('/api/ext/apps'), VALID_PAT).header('x-pixelci-vcs-id', 'not-a-uuid'));
+    expectStatus(badHeader.statusCode, 401);
+
+    const badApp = await facade.request(authed(HttpRequest.GET('/api/ext/apps/not-a-uuid/builds'), VALID_PAT));
+    expectStatus(badApp.statusCode, 400);
+
+    const badBranch = await facade.request(authed(HttpRequest.GET(`/api/ext/apps/${APP_ID}/builds?branchId=not-a-uuid`), VALID_PAT));
+    expectStatus(badBranch.statusCode, 400);
     console.log('  PASS');
 }
 
