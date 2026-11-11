@@ -114,11 +114,14 @@ export class VcsIntegrationsController {
                 throw new HttpBadRequestError(`Cannot apply ${bodyPlatform} config to a ${integration.platform} integration`);
             }
             // Merge on plaintext (GitHub validation parses the PEM), then seal before it reaches the entity.
-            integration.config = sealIntegrationConfig(
-                integration.id,
-                integration.platform,
-                mergeConfigUpdate(integration.platform, openIntegrationConfig(integration), body.config)
-            );
+            // Unreadable stored secrets (lost key) open as '' so a PUT that supplies replacements can recover the integration.
+            const unreadable: string[] = [];
+            const merged = mergeConfigUpdate(integration.platform, openIntegrationConfig(integration, unreadable), body.config);
+            const stillMissing = unreadable.filter(f => !(merged as unknown as Record<string, unknown>)[f]);
+            if (stillMissing.length) {
+                throw new HttpBadRequestError(`Stored ${stillMissing.join(' and ')} cannot be decrypted; supply a new value`);
+            }
+            integration.config = sealIntegrationConfig(integration.id, integration.platform, merged);
         }
         await integration.save();
 

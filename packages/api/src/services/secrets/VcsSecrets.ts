@@ -2,7 +2,7 @@ import { HttpBadRequestError } from '@zyno-io/ts-server-foundation';
 
 import { IUserVcsSession, UserEntity } from '../../entities/User.entity';
 import { IGitHubConfig, IGitLabConfig } from '../../entities/VcsIntegration.entity';
-import { getSecretBox, SecretKeyUnavailableError } from './SecretBox';
+import { getSecretBox, SecretUnreadableError } from './SecretBox';
 
 type IConfig = IGitLabConfig | IGitHubConfig;
 
@@ -20,11 +20,19 @@ export function sealIntegrationConfig<T extends IConfig>(id: string, _platform: 
 }
 
 /** Returns a plaintext copy of the stored config; never assign the result back to the entity. */
-export function openIntegrationConfig<T extends IConfig>(integration: { id: string; config: T }): T {
+export function openIntegrationConfig<T extends IConfig>(integration: { id: string; config: T }, unreadable?: string[]): T {
     const box = getSecretBox();
     const out: Record<string, unknown> = { ...integration.config };
     for (const field of ['clientSecret', 'privateKey'] as const) {
-        if (typeof out[field] === 'string') out[field] = box.open(out[field] as string, integrationSecretCtx(integration.id, field));
+        if (typeof out[field] !== 'string') continue;
+        try {
+            out[field] = box.open(out[field] as string, integrationSecretCtx(integration.id, field));
+        } catch (err) {
+            // With `unreadable` supplied (lost-key recovery), an unreadable field becomes '' and is reported instead of throwing.
+            if (!unreadable || !(err instanceof SecretUnreadableError)) throw err;
+            out[field] = '';
+            unreadable.push(field);
+        }
     }
     return out as T;
 }
@@ -55,7 +63,7 @@ export function vcsAccessToken(user: Pick<UserEntity, 'id' | 'vcsSession'>): str
     try {
         return getSecretBox().open(user.vcsSession.accessToken, sessionSecretCtx(user.id, 'accessToken'));
     } catch (err) {
-        if (err instanceof SecretKeyUnavailableError) throw new HttpBadRequestError(SIGN_IN_AGAIN);
+        if (err instanceof SecretUnreadableError) throw new HttpBadRequestError(SIGN_IN_AGAIN);
         throw err;
     }
 }

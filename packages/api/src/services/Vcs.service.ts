@@ -3,7 +3,7 @@ import { HttpBadRequestError, HttpUnauthorizedError, ScopedLogger } from '@zyno-
 import { AppEntity } from '../entities/App.entity';
 import { IUserVcsSession, UserEntity } from '../entities/User.entity';
 import { IGitHubConfig, IGitLabConfig, VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
-import { SecretKeyUnavailableError } from './secrets/SecretBox';
+import { SecretKeyUnavailableError, SecretUnreadableError } from './secrets/SecretBox';
 import { openIntegrationConfig } from './secrets/VcsSecrets';
 import { VcsGitHubService } from './VcsGitHub.service';
 import { VcsGitLabService } from './VcsGitLab.service';
@@ -257,6 +257,8 @@ export class VcsService {
                 this.logger.error(
                     `VCS integration ${provider.id} has secrets sealed with key "${err.keyId}", which is not configured (SECRETS_ENCRYPTION_KEYS)`
                 );
+            } else if (err instanceof SecretUnreadableError) {
+                this.logger.error(`VCS integration ${provider.id} has secrets that cannot be decrypted with the configured SECRETS_ENCRYPTION_KEYS`);
             }
             throw err;
         }

@@ -2,7 +2,14 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { describe, it } from 'node:test';
 
-import { assertSecretsConfig, parseKeyring, SEALED_PREFIX, SecretBox, SecretKeyUnavailableError } from '../../src/services/secrets/SecretBox';
+import {
+    assertSecretsConfig,
+    parseKeyring,
+    SEALED_PREFIX,
+    SecretBox,
+    SecretKeyUnavailableError,
+    SecretUnreadableError
+} from '../../src/services/secrets/SecretBox';
 
 const key = () => randomBytes(32).toString('base64');
 const CTX = 'vcsIntegrations/abc/clientSecret';
@@ -28,6 +35,13 @@ describe('SecretBox', () => {
 
         assert.throws(() => box.open(`${SEALED_PREFIX}k1:AAAA`, CTX), /Malformed/);
         assert.throws(() => box.open(`${SEALED_PREFIX}k1`, CTX), /Malformed/);
+    });
+
+    it('raises SecretUnreadableError for a different key under the same id, and for malformed input', () => {
+        const sealed = new SecretBox(`k1:${key()}`).seal('x', CTX);
+        assert.throws(() => new SecretBox(`k1:${key()}`).open(sealed, CTX), SecretUnreadableError);
+        assert.throws(() => new SecretBox(`k1:${key()}`).open(`${SEALED_PREFIX}k1:AAAA`, CTX), SecretUnreadableError);
+        assert.ok(new SecretKeyUnavailableError('k1') instanceof SecretUnreadableError);
     });
 
     it('does not leak plaintext or sealed values in error messages', () => {

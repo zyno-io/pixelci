@@ -1,7 +1,7 @@
 import { HttpBadRequestError } from '@zyno-io/ts-server-foundation';
 
 import { IUserVcsSession, UserEntity } from '../entities/User.entity';
-import { SecretKeyUnavailableError } from './secrets/SecretBox';
+import { SecretUnreadableError } from './secrets/SecretBox';
 import { openVcsSession, sealVcsSession, SIGN_IN_AGAIN } from './secrets/VcsSecrets';
 
 /** Refresh this long before the access token actually expires. */
@@ -67,7 +67,7 @@ export async function ensureFreshVcsSession(
         user.vcsSession = await pending; // stays sealed in memory, so a later save() never writes plaintext
     } catch (err) {
         // A session sealed with a key that is no longer configured is unusable: the user must sign in again.
-        if (err instanceof SecretKeyUnavailableError) throw new HttpBadRequestError(SIGN_IN_AGAIN);
+        if (err instanceof SecretUnreadableError) throw new HttpBadRequestError(SIGN_IN_AGAIN);
         throw err;
     }
 }

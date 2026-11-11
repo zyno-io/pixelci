@@ -6,7 +6,15 @@ const KEY_ID_PATTERN = /^[a-z0-9]{1,16}$/;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 
-export class SecretKeyUnavailableError extends Error {
+/** A sealed value that cannot be opened: malformed, failed authentication (wrong key under the same id, wrong context, tampering), or unknown key id. */
+export class SecretUnreadableError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'SecretUnreadableError';
+    }
+}
+
+export class SecretKeyUnavailableError extends SecretUnreadableError {
     constructor(public readonly keyId: string) {
         super(`Secret was sealed with key "${keyId}", which is not in SECRETS_ENCRYPTION_KEYS`);
         this.name = 'SecretKeyUnavailableError';
@@ -44,7 +52,7 @@ export function parseKeyring(spec: string): IKeyring {
 function parseSealed(value: string): { kid: string; payload: Buffer } {
     const rest = value.slice(SEALED_PREFIX.length);
     const sep = rest.indexOf(':');
-    if (sep < 0) throw new Error('Malformed sealed secret');
+    if (sep < 0) throw new SecretUnreadableError('Malformed sealed secret');
     return { kid: rest.slice(0, sep), payload: Buffer.from(rest.slice(sep + 1), 'base64url') };
 }
 
@@ -79,14 +87,14 @@ export class SecretBox {
         const { kid, payload } = parseSealed(value);
         const key = this.ring?.keys.get(kid);
         if (!key) throw new SecretKeyUnavailableError(kid);
-        if (payload.length < IV_BYTES + TAG_BYTES) throw new Error('Malformed sealed secret');
+        if (payload.length < IV_BYTES + TAG_BYTES) throw new SecretUnreadableError('Malformed sealed secret');
         const decipher = createDecipheriv('aes-256-gcm', key, payload.subarray(0, IV_BYTES));
         decipher.setAAD(Buffer.from(ctx, 'utf8'));
         decipher.setAuthTag(payload.subarray(payload.length - TAG_BYTES));
         try {
             return Buffer.concat([decipher.update(payload.subarray(IV_BYTES, payload.length - TAG_BYTES)), decipher.final()]).toString('utf8');
         } catch {
-            throw new Error('Sealed secret failed authentication (wrong key, context or tampered value)');
+            throw new SecretUnreadableError('Sealed secret failed authentication (wrong key, context or tampered value)');
         }
     }
 

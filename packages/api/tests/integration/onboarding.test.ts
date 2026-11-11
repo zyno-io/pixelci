@@ -5,8 +5,8 @@ import { generateKeyPairSync } from 'crypto';
 import { CoreAppOptions } from '../../src/app';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
-import { SEALED_PREFIX } from '../../src/services/secrets/SecretBox';
-import { openIntegrationConfig } from '../../src/services/secrets/VcsSecrets';
+import { SEALED_PREFIX, SecretBox, setSecretBoxForTesting } from '../../src/services/secrets/SecretBox';
+import { openIntegrationConfig, sealIntegrationConfig } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
@@ -81,6 +81,7 @@ async function run() {
     await testGitHubIntegrationLifecycle(facade, adminJwt);
     await testGitHubValidation(facade, adminJwt);
     await testLegacyGitHubRowPartialUpdate(facade, adminJwt);
+    await testLostKeyRecovery(facade, adminJwt);
     await testSessionIncludesVcsId(facade, adminJwt);
     await testAppCreateRequiresVcsProjectId(facade, adminJwt);
     await testOnboardingGitHubOnFreshDb();
@@ -704,4 +705,50 @@ function assertStatus(response: { statusCode: number; body?: Buffer | string }, 
     if (response.statusCode !== expected) {
         throw new Error(`Expected ${expected} but got ${response.statusCode}: ${response.body}`);
     }
+}
+
+async function testLostKeyRecovery(facade: Facade, jwt: string) {
+    console.log('\nTest: integration with unreadable secrets (lost key) can be recovered by PUT with new secrets');
+    const b64 = (n: number) => Buffer.alloc(32, n).toString('base64');
+    const create = async (input: object) => {
+        const r = await facade.request(adminReq(HttpRequest.POST('/api/admin/vcs-integrations'), jwt).json(input));
+        assertStatus(r, 200);
+        return (r.json as { id: string }).id;
+    };
+    const glId = await create({
+        name: 'Lost GL',
+        platform: 'gitlab',
+        config: { url: 'https://gl-lost.example.com', clientId: 'c', clientSecret: 'old-gl' }
+    });
+    const ghId = await create(githubInput({ oidcAudience: 'https://lost.example.com' }));
+    const put = (id: string, body: object) => facade.request(adminReq(HttpRequest.PUT(`/api/admin/vcs-integrations/${id}`), jwt).json(body));
+
+    // k9 lacks the original key id; "dev1" under a different key fails GCM authentication instead.
+    for (const spec of [`k9:${b64(9)}`, `dev1:${b64(7)}`]) {
+        setSecretBoxForTesting(new SecretBox(spec));
+        try {
+            assertStatus(await put(glId, { config: { clientId: 'c2', clientSecret: '' } }), 400);
+            assertStatus(await put(ghId, { platform: 'github', config: { clientSecret: 'new-gh' } }), 400);
+            assertStatus(await put(glId, { config: { clientSecret: 'new-gl' } }), 200);
+            assertStatus(await put(ghId, { platform: 'github', config: { clientSecret: 'new-gh', privateKey: GITHUB_KEY } }), 200);
+
+            const gl = openIntegrationConfig(await VcsIntegrationEntity.query().filter({ id: glId }).findOne()) as unknown as Record<string, string>;
+            const gh = openIntegrationConfig(await VcsIntegrationEntity.query().filter({ id: ghId }).findOne()) as unknown as Record<string, string>;
+            if (gl.clientSecret !== 'new-gl' || gh.clientSecret !== 'new-gh' || gh.privateKey !== GITHUB_KEY.trim()) {
+                throw new Error('Recovered config does not hold the new secrets');
+            }
+        } finally {
+            setSecretBoxForTesting(undefined);
+        }
+        // Make them unreadable again for the next key spec (sealed under the original dev key).
+        for (const [id, platform, cfg] of [
+            [glId, 'gitlab', { url: 'https://gl-lost.example.com', clientId: 'c', clientSecret: 'old-gl' }],
+            [ghId, 'github', { ...githubInput().config, privateKey: GITHUB_KEY.trim(), oidcAudience: 'https://lost.example.com' }]
+        ] as const) {
+            await VcsIntegrationEntity.query()
+                .filter({ id })
+                .patchMany({ config: sealIntegrationConfig(id, platform, cfg as never) });
+        }
+    }
+    console.log('  PASS');
 }
