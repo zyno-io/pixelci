@@ -30,7 +30,7 @@ The build list shows all builds for an app, grouped by branch. Each build displa
 <img src="/images/build-list-light.png" alt="Build list" class="light-only">
 <img src="/images/build-list-dark.png" alt="Build list" class="dark-only">
 
-Click a build to view its screenshots.
+Click a build to view its screenshots. **Screens** in the header opens the app's [screen gallery](#screen-gallery).
 
 ## Screen Comparison
 
@@ -161,6 +161,39 @@ draft → processing → no changes
 | **changes approved** | All changes approved (manually or via cross-branch matching) |
 | **changes rejected** | A reviewer rejected one or more screens when submitting      |
 
+## Screen Gallery
+
+The gallery shows screens as thumbnails, without the side-by-side review layout. There are two of them:
+
+- **An app's screens.** Open it with **Screens** on the build list. It shows each screen as new builds will be compared against it: the image from the latest approved build on the default branch. A screen that has been uploaded since but isn't part of that baseline yet is tagged **Not in baseline** and shows its latest upload.
+- **A build's screens.** Open it with the grid button in the header of the screen comparison view. It shows every screen in that build with its status.
+
+Type in **Find a screen** to filter by name, use the buttons beside it to show only changed, unchanged or custom-tolerance screens, and pick a thumbnail size. Thumbnails take the shape of your screenshots; a screenshot much taller than its thumbnail shows its top.
+
+Click a thumbnail to open the screen at full size. There, the **left and right arrow keys** step through the screens, **Fit**, **100%** and **200%** set the zoom, and in a build's gallery you can switch between the new build, the reference and the diff (or hold **D** for the diff). The panel beside the image shows the screen's details and its [tolerances](#tolerances).
+
+## Tolerances
+
+Three values decide when a screen counts as changed:
+
+| Value                      | What it does                                                                                                                                                           | Default |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| **Color tolerance**        | How far a pixel's color may drift before it counts as changed, from 0 (exact match) to 1                                                                               | `0.2`   |
+| **Shift tolerance**        | Content that only moved by up to this many pixels is not counted (0 to 5; 0 turns it off). This is what stops text that renders a pixel to the side from being flagged | `1` px  |
+| **Changed pixels allowed** | The percentage of the screenshot that may still differ before the screen is flagged                                                                                    | `0.01`% |
+
+Each value can be set at three levels, and the most specific one that is set wins:
+
+1. **Instance** — the defaults above, which an operator can change with [environment variables](/deployment#tuning).
+2. **App** — click **Tolerances** in the app's screen gallery. Administrators can change these; everyone else can read them.
+3. **Screen** — open the screen from a gallery, or click **Tolerance** on its card in the screen comparison view. Anyone who can review the app can change these.
+
+Leave a field empty to follow the level above; the field shows the value it would use. The reset button beside a field returns it to following.
+
+When you open a screen from a build, the tolerance panel runs the comparison again with the values in the fields and tells you whether the screen **would pass** or **would be flagged**, how many pixels differ, and how many were ignored as shifted. Choose **Diff** above the image to see the diff those values produce. Nothing is saved until you click **Save for this screen**.
+
+Saved tolerances apply from the next build. A build that has already been processed keeps its result, so a screen you are reviewing still needs its Approve or Reject.
+
 ## How Comparisons Work
 
 When a build is processed, PixelCI runs a multi-stage comparison:
@@ -170,4 +203,4 @@ When a build is processed, PixelCI runs a multi-stage comparison:
 3. **Cross-branch matching** — looks for identical approved changes on other branches since the baseline
 4. **New screen detection** — screens not present in the baseline are flagged as new
 
-Changes are flagged only when pixel differences exceed the configured threshold (default 1%). This approach minimizes false positives — once a change is approved anywhere, it's recognized across all branches.
+Changes are flagged only when the share of differing pixels exceeds the screen's [tolerance](#tolerances) (by default, 0.01% of the screenshot). This approach minimizes false positives — once a change is approved anywhere, it's recognized across all branches.

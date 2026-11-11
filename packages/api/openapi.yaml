@@ -553,6 +553,48 @@ paths:
                   type: string
               required:
                 - image
+  /api/apps/{appId}/builds/{id}/screens/{screenId}/compare:
+    post:
+      operationId: postBuildScreensCompareScreen
+      tags:
+        - buildScreens
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IBuildScreenCompareResponse"
+      summary: Previews a comparison of this build's screen against the reference
+        build's screen with arbitrary tolerances. Writes nothing.
+      parameters:
+        - name: appId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        - name: screenId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ITolerances"
   /api/apps/{appId}/builds/{id}/screens/{screenId}/image:
     get:
       operationId: getBuildScreensGetScreenImage
@@ -670,6 +712,59 @@ paths:
               required:
                 - reviewStatus
                 - comment
+  /api/apps/{appId}/screens:
+    get:
+      operationId: getScreensIndex
+      tags:
+        - screens
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IAppGalleryResponse"
+      parameters:
+        - name: appId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+  /api/apps/{appId}/screens/{screenId}/tolerances:
+    put:
+      operationId: putScreensUpdateTolerances
+      tags:
+        - screens
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IToleranceOverrides"
+      parameters:
+        - name: appId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        - name: screenId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IToleranceOverrides"
   /api/admin/vcs-integrations:
     get:
       operationId: getVcsIntegrationsIndex
@@ -1163,12 +1258,26 @@ components:
           format: date-time
         approvalMinRole:
           $ref: "#/components/schemas/IApprovalMinRole"
+        colorTolerance:
+          type:
+            - number
+            - "null"
+        shiftTolerance:
+          type:
+            - number
+            - "null"
+        diffPctTolerance:
+          type:
+            - number
+            - "null"
         commitUrlBase:
           type:
             - string
             - "null"
         canReview:
           type: boolean
+        instanceTolerances:
+          $ref: "#/components/schemas/ITolerances"
       required:
         - id
         - vcsId
@@ -1186,6 +1295,24 @@ components:
         - write
         - maintain
       type: string
+        - colorTolerance
+        - shiftTolerance
+        - diffPctTolerance
+        - commitUrlBase
+        - instanceTolerances
+    ITolerances:
+      type: object
+      properties:
+        colorTolerance:
+          type: number
+        shiftTolerance:
+          type: number
+        diffPctTolerance:
+          type: number
+      required:
+        - colorTolerance
+        - shiftTolerance
+        - diffPctTolerance
     IAppCreateInput:
       type: object
       properties:
@@ -1220,6 +1347,18 @@ components:
           type: string
         approvalMinRole:
           $ref: "#/components/schemas/IApprovalMinRole"
+        colorTolerance:
+          type:
+            - number
+            - "null"
+        shiftTolerance:
+          type:
+            - number
+            - "null"
+        diffPctTolerance:
+          type:
+            - number
+            - "null"
     IVcsProject:
       type: object
       properties:
@@ -1353,6 +1492,8 @@ components:
           type: string
         name:
           type: string
+        tolerances:
+          $ref: "#/components/schemas/IToleranceOverrides"
         currentBuildScreen:
           $ref: "#/components/schemas/PickBuildScreenEntity"
         referenceBuildScreen:
@@ -1362,6 +1503,26 @@ components:
       required:
         - screenId
         - name
+        - tolerances
+    IToleranceOverrides:
+      type: object
+      properties:
+        colorTolerance:
+          type:
+            - number
+            - "null"
+        shiftTolerance:
+          type:
+            - number
+            - "null"
+        diffPctTolerance:
+          type:
+            - number
+            - "null"
+      required:
+        - colorTolerance
+        - shiftTolerance
+        - diffPctTolerance
     PickBuildScreenEntity:
       type: object
       properties:
@@ -1480,6 +1641,28 @@ components:
         - reviewComment
         - reviewedById
         - reviewedAt
+    IBuildScreenCompareResponse:
+      type: object
+      properties:
+        diffPct:
+          type: number
+        diffPixels:
+          type: number
+        totalPixels:
+          type: number
+        shiftTolerantPixels:
+          type: number
+        passes:
+          type: boolean
+        diffImage:
+          type: string
+      required:
+        - diffPct
+        - diffPixels
+        - totalPixels
+        - shiftTolerantPixels
+        - passes
+        - diffImage
     IBuildScreenCreateResponse:
       type: object
       properties:
@@ -1539,6 +1722,47 @@ components:
         - reviewComment
         - reviewedById
         - reviewedAt
+    IAppGalleryResponse:
+      type: object
+      properties:
+        baselineBuild:
+          anyOf:
+            - $ref: "#/components/schemas/IBuildResponse"
+            - type: "null"
+        screens:
+          type: array
+          items:
+            $ref: "#/components/schemas/IAppGalleryScreen"
+      required:
+        - baselineBuild
+        - screens
+    IAppGalleryScreen:
+      type: object
+      properties:
+        screenId:
+          type: string
+        name:
+          type: string
+        tolerances:
+          $ref: "#/components/schemas/IToleranceOverrides"
+        image:
+          type: object
+          properties:
+            buildId:
+              type: string
+            sourceBuildId:
+              type: string
+            isBaseline:
+              type: boolean
+          required:
+            - buildId
+            - sourceBuildId
+            - isBaseline
+      required:
+        - screenId
+        - name
+        - tolerances
+        - image
     IVcsIntegrationListResponse:
       type: object
       properties:

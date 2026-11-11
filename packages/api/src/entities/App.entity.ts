@@ -15,4 +15,7 @@ export class AppEntity extends BaseEntity {
     deletedAt!: Date | null;
     // varchar, not a Postgres enum: TSF's schema reader can't strip the quoted cast of a camelCase enum default and reports drift.
     approvalMinRole: IApprovalMinRole & DatabaseField<{ type: 'varchar(16)' }> & HasDefault = 'write';
+    colorTolerance!: (number & DatabaseField<{ type: 'double precision' }>) | null;
+    shiftTolerance!: (number & DatabaseField<{ type: 'integer' }>) | null;
+    diffPctTolerance!: (number & DatabaseField<{ type: 'double precision' }>) | null;
 }

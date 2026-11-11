@@ -12,12 +12,14 @@ import {
 
 import { AdminAuthMiddleware, UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
+import { AppConfig } from '../config';
 import { AppEntity, IApprovalMinRole } from '../entities/App.entity';
 import { BranchEntity } from '../entities/Branch.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { AppAccessService } from '../services/AppAccess.service';
+import { ITolerances, instanceTolerances, IToleranceOverrides, validateToleranceOverrides } from '../services/Tolerance';
 import { IVcsProject, VcsService } from '../services/Vcs.service';
 
 export type IAppIndexResponse = Partial<Pick<AppEntity, 'id' | 'defaultBranchId' | 'name'> & { buildCount: number }>;
@@ -25,6 +27,7 @@ export type IAppShowResponse = EntityFields<AppEntity> & {
     commitUrlBase: string | null;
     /** Whether the signed-in user may review screens and approve builds of this app. */
     canReview: boolean;
+    instanceTolerances: ITolerances;
 };
 
 function toAppIndexResponse(app: AppEntity, buildCount: number): IAppIndexResponse {
@@ -40,14 +43,15 @@ interface IAppCreateInput {
     approvalMinRole?: IApprovalMinRole;
 }
 
-export type IAppUpdateInput = Partial<Pick<AppEntity, 'name' | 'defaultBranchId'>> & { approvalMinRole?: IApprovalMinRole };
+export type IAppUpdateInput = Partial<Pick<AppEntity, 'name' | 'defaultBranchId'>> & { approvalMinRole?: IApprovalMinRole } & Partial<IToleranceOverrides>;
 
 @ApiController('/api/apps')
 @http.middleware(UserAuthMiddleware)
 export class AppsController {
     constructor(
         private vcsService: VcsService,
-        private appAccessSvc: AppAccessService
+        private appAccessSvc: AppAccessService,
+        private appConfig: AppConfig
     ) {}
 
     @http.GET()
@@ -76,7 +80,7 @@ export class AppsController {
         const commitUrlBase = vcs ? this.vcsService.getCommitUrlBase(vcs, app.projectPath) : null;
         const canReview = await this.appAccessSvc.canReview(user, app);
 
-        return { ...app, commitUrlBase, canReview };
+        return { ...app, commitUrlBase, canReview, instanceTolerances: instanceTolerances(this.appConfig) };
     }
 
     @http.POST()
@@ -125,6 +129,8 @@ export class AppsController {
             const branch = await BranchEntity.query().filter({ appId: id, id: body.defaultBranchId }).findOneOrUndefined();
             if (!branch) throw new HttpBadRequestError('invalid defaultBranchId');
         }
+
+        validateToleranceOverrides(body);
 
         Object.assign(app, body);
         await app.save();

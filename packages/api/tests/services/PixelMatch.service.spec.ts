@@ -46,6 +46,22 @@ function createPng(width: number, height: number, fill: [number, number, number,
     return PNG.sync.write(png);
 }
 
+// white canvas with a black rectangle
+function createPngWithRect(width: number, height: number, rx: number, ry: number, rw: number, rh: number): Buffer {
+    const png = new PNG({ width, height });
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const idx = (width * y + x) << 2;
+            const v = x >= rx && x < rx + rw && y >= ry && y < ry + rh ? 0 : 255;
+            png.data[idx] = v;
+            png.data[idx + 1] = v;
+            png.data[idx + 2] = v;
+            png.data[idx + 3] = 255;
+        }
+    }
+    return PNG.sync.write(png);
+}
+
 function createMockLogger() {
     return {
         info: mock.fn(),
@@ -175,5 +191,65 @@ describe('PixelMatchService', () => {
         const [message, data] = logger.info.mock.calls[0].arguments;
         assert.equal(message, 'Diff completed');
         assert.equal(data.sizesDiffer, true);
+    });
+
+    describe('shift tolerance', () => {
+        const base = createPngWithRect(12, 12, 3, 3, 4, 4);
+        const shifted1 = createPngWithRect(12, 12, 4, 3, 4, 4);
+        const shifted2 = createPngWithRect(12, 12, 5, 3, 4, 4);
+
+        it('should count a 1px shift as a diff when tolerance is disabled', async () => {
+            const service = new PixelMatchService(createMockLogger());
+            const result = await service.getDiff(base, shifted1, 0.2, 0);
+            assert.equal(result.diffPixels, 8);
+            assert.equal(result.shiftTolerantPixels, 0);
+        });
+
+        it('should forgive a 1px shift within tolerance and paint it yellow', async () => {
+            const service = new PixelMatchService(createMockLogger());
+            const result = await service.getDiff(base, shifted1, 0.2, 1);
+            assert.equal(result.diffPixels, 0);
+            assert.equal(result.diffPct, 0);
+            assert.equal(result.shiftTolerantPixels, 8);
+
+            const parsed = PNG.sync.read(Buffer.from(result.getDiffPng()));
+            const idx = (12 * 4 + 3) << 2; // left edge of the original rect
+            assert.deepEqual([...parsed.data.subarray(idx, idx + 4)], [255, 255, 0, 255]);
+        });
+
+        it('should still flag a shift larger than the tolerance', async () => {
+            const service = new PixelMatchService(createMockLogger());
+            const result = await service.getDiff(base, shifted2, 0.2, 1);
+            assert.ok(result.diffPixels > 0);
+            assert.equal((await service.getDiff(base, shifted2, 0.2, 2)).diffPixels, 0);
+        });
+
+        it('should not forgive added or recoloured content', async () => {
+            const service = new PixelMatchService(createMockLogger());
+            const blank = createPng(12, 12, [255, 255, 255, 255]);
+            const added = await service.getDiff(blank, base, 0.2, 2);
+            assert.equal(added.diffPixels, 16);
+
+            // a recolour the old YIQ-based pass forgave with no shift involved (red -> amber)
+            const recolour = (from: [number, number, number], to: [number, number, number]) => {
+                const make = (c: [number, number, number]) => {
+                    const png = PNG.sync.read(blank);
+                    for (let y = 3; y < 7; y++) for (let x = 3; x < 7; x++) png.data.set([...c, 255], (12 * y + x) << 2);
+                    return PNG.sync.write(png);
+                };
+                return service.getDiff(make(from), make(to), 0.2, 1);
+            };
+            assert.equal((await recolour([0xef, 0x44, 0x44], [0xca, 0x8a, 0x04])).diffPixels, 16);
+            assert.equal((await recolour([0xf9, 0x73, 0x16], [0xec, 0x48, 0x99])).diffPixels, 16);
+
+            // a transparent background turning white is a change, not a shift
+            const transparent = createPng(12, 12, [0, 0, 0, 0]);
+            assert.equal((await service.getDiff(transparent, blank, 0.2, 2)).diffPixels, 144);
+
+            const red = PNG.sync.read(base);
+            for (let i = 0; i < red.data.length; i += 4) if (red.data[i] === 0) red.data[i] = 255;
+            const recoloured = await service.getDiff(base, PNG.sync.write(red), 0.2, 2);
+            assert.equal(recoloured.diffPixels, 16);
+        });
     });
 });

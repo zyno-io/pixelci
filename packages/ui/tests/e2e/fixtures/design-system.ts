@@ -1,4 +1,4 @@
-import type { IApprovalMinRole, IAppShowResponse, IBuildResponse, IBuildScreenResponse } from '../../../src/openapi-client-generated';
+import type { IApprovalMinRole, IAppGalleryResponse, IAppShowResponse, IBuildResponse, IBuildScreenResponse } from '../../../src/openapi-client-generated';
 
 export const appId = '00000000-0000-0000-0000-000000000001';
 export const buildId = '00000000-0000-0000-0000-000000000002';
@@ -18,7 +18,11 @@ export function createDesignApi(
         deletedAt: null,
         approvalMinRole: options.approvalMinRole ?? 'write',
         commitUrlBase: null,
-        canReview: options.canReview !== false
+        canReview: options.canReview !== false,
+        colorTolerance: null,
+        shiftTolerance: null,
+        diffPctTolerance: null,
+        instanceTolerances: { colorTolerance: 0.2, shiftTolerance: 1, diffPctTolerance: 0.01 }
     };
     const build: IBuildResponse = {
         id: buildId,
@@ -33,6 +37,7 @@ export function createDesignApi(
     const screens: IBuildScreenResponse[] = ['Dashboard', 'Login'].map((name, index) => ({
         name,
         screenId: `screen-${index}`,
+        tolerances: { colorTolerance: null, shiftTolerance: null, diffPctTolerance: null },
         currentBuildScreen: {
             id: appId,
             buildId,
@@ -62,7 +67,19 @@ export function createDesignApi(
                 : undefined
     }));
 
-    return (path: string, method = 'GET', body?: { reviewStatus: 'approved' | 'rejected'; comment: string }) => {
+    // The app gallery: the two build screens as the baseline, plus enough others to fill a grid.
+    const gallery: IAppGalleryResponse = {
+        baselineBuild: { ...build, status: 'changes approved' },
+        screens: ['Dashboard', 'Login', 'Settings', 'Billing', 'Team members', 'Audit log', 'Onboarding', 'Empty state'].map((name, index) => ({
+            name,
+            screenId: `screen-${index}`,
+            tolerances: screens[index]?.tolerances ?? { colorTolerance: null, shiftTolerance: null, diffPctTolerance: null },
+            image: { buildId, sourceBuildId: buildId, isBaseline: index !== 7 }
+        }))
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (path: string, method = 'GET', body?: any) => {
         const json = (data: unknown, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(data) });
         if (path === '/api/session/onboarding-status')
             return json({ isOnboarded: !options.onboarding, setupEnabled: true, hasAdmin: !options.onboarding });
@@ -80,7 +97,35 @@ export function createDesignApi(
                 { ...app, buildCount: 8 },
                 { id: branchId, name: 'Marketing Site', buildCount: 3 }
             ]);
+        if (path === `/api/apps/${appId}` && method === 'PUT' && body) {
+            Object.assign(app, body);
+            return json(app);
+        }
         if (path === `/api/apps/${appId}`) return json(app);
+        if (path === `/api/apps/${appId}/screens`) return json(gallery);
+        if (path.endsWith('/tolerances') && method === 'PUT' && body) {
+            const screenId = path.split('/').at(-2);
+            for (const list of [screens, gallery.screens]) {
+                const screen = list.find(item => item.screenId === screenId);
+                if (screen) screen.tolerances = body;
+            }
+            return json(body);
+        }
+        // A fixed measured difference of 0.5%, so the verdict depends only on the allowance sent.
+        if (path.endsWith('/compare') && method === 'POST' && body) {
+            return json({
+                diffPct: 0.5,
+                diffPixels: 2080,
+                totalPixels: 416000,
+                shiftTolerantPixels: body.shiftTolerance > 0 ? 312 : 0,
+                passes: body.diffPctTolerance >= 0.5,
+                diffImage:
+                    'data:image/svg+xml;utf8,' +
+                    encodeURIComponent(
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="520"><rect width="800" height="520" fill="#fef1ee"/><rect x="52" y="168" width="696" height="60" fill="#ff0000"/></svg>'
+                    )
+            });
+        }
         if (path === `/api/apps/${appId}/branches`) return json([{ id: branchId, name: 'main' }]);
         if (path === `/api/apps/${appId}/builds`)
             return json(

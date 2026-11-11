@@ -9,6 +9,7 @@ import { BranchesController } from './controllers/Branches.controller';
 import { BuildsController } from './controllers/Builds.controller';
 import { BuildScreensController } from './controllers/BuildScreens.controller';
 import { ExternalReadController } from './controllers/ExternalRead.controller';
+import { ScreensController } from './controllers/Screens.controller';
 import { SessionController } from './controllers/Session.controller';
 import { UsersController } from './controllers/Users.controller';
 import { VcsIntegrationsController } from './controllers/VcsIntegrations.controller';
@@ -42,6 +43,7 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         BranchesController,
         BuildsController,
         BuildScreensController,
+        ScreensController,
         VcsIntegrationsController,
         UsersController,
         ExternalReadController

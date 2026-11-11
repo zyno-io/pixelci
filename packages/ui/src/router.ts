@@ -5,6 +5,7 @@ import Apps from '@/screens/apps.vue';
 import AdminUsers from './screens/admin/users.vue';
 import AdminVcsIntegrations from './screens/admin/vcs-integrations.vue';
 import Builds from './screens/builds.vue';
+import Gallery from './screens/gallery.vue';
 import Login from './screens/login.vue';
 import NotFound from './screens/not-found.vue';
 import Screens from './screens/screens.vue';
@@ -29,9 +30,19 @@ const routes: RouteRecordRaw[] = [
         component: Builds
     },
     {
+        path: '/apps/:id/screens',
+        name: 'app-gallery',
+        component: Gallery
+    },
+    {
         path: '/apps/:id/builds/:buildId',
         name: 'screens',
         component: Screens
+    },
+    {
+        path: '/apps/:id/builds/:buildId/screens',
+        name: 'build-gallery',
+        component: Gallery
     },
     {
         path: '/admin/vcs-integrations',

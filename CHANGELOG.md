@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Breaking:** `DEFAULT_PIXEL_DIFF_PCT_THRESHOLD` is now a true percentage of pixels. It used to be divided by 100 a second
+  time, so the old default of `1` really flagged screens above 0.01%. The default is now `0.01` and behaves the same as
+  before. If you set this variable yourself, divide your value by 100 to keep your current behaviour
+- Shift tolerance: content that only moved by a pixel or two (text that renders slightly to the side) is no longer counted
+  as changed. On by default at 1px (`DEFAULT_PIXEL_SHIFT_TOLERANCE`, `0` turns it off), so some screens that were flagged
+  before will now pass. An edge that grows or shrinks by no more than the radius is forgiven too
+- Comparison tolerances (color tolerance, shift tolerance, changed pixels allowed) can be set per app by administrators and
+  per screen by anyone who can review the app, each falling back to the level above. The tolerance panel previews proposed
+  values against the build you are looking at before you save
+- Screen gallery: browse an app's baseline screens, or one build's screens, as thumbnails and open any of them at full size
 - License updated to the PixelCI Source Available License, Version 1.2
     - Anything you mark “Not a Contribution” (for example, code from your own app pasted into an issue) is excluded from
       the contribution terms, matching the CLA

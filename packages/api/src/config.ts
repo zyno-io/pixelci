@@ -8,7 +8,10 @@ export class AppConfig extends BaseAppConfig {
     S3_ACCESS_SECRET?: string;
 
     DEFAULT_PIXEL_MATCH_THRESHOLD = 0.2;
-    DEFAULT_PIXEL_DIFF_PCT_THRESHOLD = 1;
+    // A true percentage of pixels (0..100): 0.01 means 0.01% of pixels may differ.
+    DEFAULT_PIXEL_DIFF_PCT_THRESHOLD = 0.01;
+    // Radius (px) within which shifted content is not counted as a diff. 0 disables.
+    DEFAULT_PIXEL_SHIFT_TOLERANCE = 1;
 
     // When true (default), reads are filtered/gated by whether the caller can access the app's
     // project in the VCS provider. Set false for environments without a reachable VCS (e.g. e2e).

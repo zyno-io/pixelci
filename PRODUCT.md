@@ -48,7 +48,7 @@ Success: a reviewer reaches a confident approve/reject decision quickly, and the
 - **UI routes:** login, apps, builds, screens, admin (users, VCS integrations), first-run onboarding.
 - **Build statuses (fixed terminology):** `draft`, `processing`, `no changes`, `needs review`, `changes approved`.
 - **Other fixed terms:** app, branch, build, screen, reference build, baseline, diff, threshold.
-- **Comparison:** pixel-by-pixel, flagged only above a configurable threshold (default 1%). Screens absent from the baseline are marked new.
+- **Comparison:** pixel-by-pixel, flagged only above a tolerance configurable per instance, app, and screen (by default, more than 0.01% of pixels differing). Screens absent from the baseline are marked new.
 - **VCS/CI:** GitLab (OAuth login, GitLab CI) and GitHub (GitHub Actions). Setup guides: `docs/gitlab-setup.md`, `docs/github-setup.md`.
 - **Themes:** the UI ships in light and dark.
 - **Auth:** login is via the configured OAuth provider; there are no local passwords.

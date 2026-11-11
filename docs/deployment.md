@@ -288,10 +288,11 @@ Reviewing screens and approving builds needs more than read access: the user mus
 
 ### Tuning
 
-| Variable                           | Required | Default | Description                                                                                                                                                                   |
-| ---------------------------------- | -------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DEFAULT_PIXEL_MATCH_THRESHOLD`    | No       | `0.2`   | Per-pixel color sensitivity for comparison (0–1, smaller = more sensitive). Higher values reduce false positives from sub-pixel text rendering and anti-aliasing differences. |
-| `DEFAULT_PIXEL_DIFF_PCT_THRESHOLD` | No       | `1`     | Percentage of total pixels that must differ to flag a screen as changed (e.g. `0.5` for 0.5%)                                                                                 |
+| Variable                           | Required | Default | Description                                                                                                                                                                                                                       |
+| ---------------------------------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEFAULT_PIXEL_MATCH_THRESHOLD`    | No       | `0.2`   | Per-pixel color sensitivity for comparison (0–1, smaller = more sensitive). Higher values reduce false positives from sub-pixel text rendering and anti-aliasing differences. Instance default; apps and screens can override it. |
+| `DEFAULT_PIXEL_DIFF_PCT_THRESHOLD` | No       | `0.01`  | Real percentage of total pixels (0–100) that must differ to flag a screen as changed (e.g. `0.01` = 0.01% of pixels). Instance default; apps and screens can override it.                                                         |
+| `DEFAULT_PIXEL_SHIFT_TOLERANCE`    | No       | `1`     | Radius in pixels within which shifted content (e.g. text nudged by 1px) is not counted as a difference. `0` disables. Instance default; apps and screens can override it.                                                         |
 
 ## Architecture Overview
 

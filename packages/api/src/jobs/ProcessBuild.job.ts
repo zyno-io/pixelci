@@ -8,9 +8,11 @@ import { AppEntity } from '../entities/App.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
 import { claimBuildLease, Lease, LeaseLostError } from '../services/BuildProcessingLease';
+import { ScreenEntity } from '../entities/Screen.entity';
 import { PixelMatchService } from '../services/PixelMatch.service';
 import { computeRemovals } from '../services/RemovedScreens';
 import { S3Service } from '../services/S3.service';
+import { ITolerances, resolveTolerances } from '../services/Tolerance';
 
 interface IProcessBuildJobData {
     buildId: string;
@@ -65,8 +67,6 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
 
     private async processScreens(buildId: string, lease: Lease): AnyResponse {
         const logger = this.logger.scoped(buildId);
-        const diffThreshold = this.appConfig.DEFAULT_PIXEL_DIFF_PCT_THRESHOLD / 100;
-        logger.info('Using diff threshold', { diffThreshold });
 
         const currentBuild = await BuildEntity.query().filter({ id: buildId }).findOne();
 
@@ -74,6 +74,13 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         const appId = app.id;
 
         const currentBuildScreens = await BuildScreenEntity.query().filter({ appId, buildId: currentBuild.id }).find();
+
+        const screenEntities = await ScreenEntity.query()
+            .filter({ id: { $in: currentBuildScreens.map(bs => bs.screenId) } })
+            .find();
+        const screenEntitiesById = keyBy(screenEntities, 'id');
+        const tolerancesFor = (screenId: string): ITolerances => resolveTolerances(this.appConfig, app, screenEntitiesById[screenId]);
+        logger.info('Using diff threshold', { diffThreshold: this.appConfig.DEFAULT_PIXEL_DIFF_PCT_THRESHOLD });
 
         const isDefaultBranch = currentBuild.branchId === app.defaultBranchId;
         const previousBuild = isDefaultBranch
@@ -135,7 +142,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                     screen.previousBuildScreen.matchedBuildId ?? screen.previousBuildScreen.buildId,
                     currentBuild.id,
                     screen.screenId,
-                    diffThreshold
+                    tolerancesFor(screen.screenId)
                 );
 
                 if (isMatch) {
@@ -151,7 +158,13 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
 
             // if we have a reference build screen, compare the current screen with the reference build screen
             if (screen.referenceBuildScreen) {
-                const isMatch = await this.performDiff(appId, screen.referenceBuildScreen.buildId, currentBuild.id, screen.screenId, diffThreshold);
+                const isMatch = await this.performDiff(
+                    appId,
+                    screen.referenceBuildScreen.buildId,
+                    currentBuild.id,
+                    screen.screenId,
+                    tolerancesFor(screen.screenId)
+                );
 
                 if (isMatch) {
                     logger.info('Current build screen matches reference', {
@@ -195,7 +208,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                     approvedBuildScreen.matchedBuildId ?? approvedBuildScreen.buildId,
                     currentBuild.id,
                     screen.screenId,
-                    diffThreshold
+                    tolerancesFor(screen.screenId)
                 );
 
                 if (isMatch) {
@@ -255,7 +268,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                         priorReviewedScreen.matchedBuildId ?? priorReviewedScreen.buildId,
                         currentBuild.id,
                         screen.screenId,
-                        diffThreshold
+                        tolerancesFor(screen.screenId)
                     );
                 } catch (err) {
                     logger.info('Failed to compare against prior reviewed screen; skipping candidate', {
@@ -331,19 +344,19 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         });
     }
 
-    private async loadAndDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string) {
+    private async loadAndDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, tolerances: ITolerances) {
         const leftScreenData = await this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, leftBuildId, screenId));
         const rightScreenData = await this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, rightBuildId, screenId));
-        return this.pixelMatch.getDiff(leftScreenData, rightScreenData, this.appConfig.DEFAULT_PIXEL_MATCH_THRESHOLD);
+        return this.pixelMatch.getDiff(leftScreenData, rightScreenData, tolerances.colorTolerance, tolerances.shiftTolerance);
     }
 
-    private async performDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, diffThreshold: number) {
+    private async performDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, tolerances: ITolerances) {
         this.logger.info('Performing diff', { leftBuildId, rightBuildId, screenId });
 
-        const { getDiffPng, diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId);
+        const { getDiffPng, diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId, tolerances);
 
-        if (diffPct > diffThreshold) {
-            this.logger.info('Diff exceeds threshold. Storing diff.', { diffPct, diffThreshold });
+        if (diffPct > tolerances.diffPctTolerance) {
+            this.logger.info('Diff exceeds threshold. Storing diff.', { diffPct, diffThreshold: tolerances.diffPctTolerance });
             const diffBuf = getDiffPng();
             await this.s3Svc.uploadFile(diffBuf, this.s3Svc.getPathForDiff(appId, rightBuildId, screenId), 'image/png');
             return false;
@@ -354,8 +367,8 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
 
     // like performDiff, but only reports whether two screens match without storing a diff image,
     // so it can be used for speculative comparisons without clobbering the stored reference diff
-    private async screensMatch(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, diffThreshold: number) {
-        const { diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId);
-        return diffPct <= diffThreshold;
+    private async screensMatch(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, tolerances: ITolerances) {
+        const { diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId, tolerances);
+        return diffPct <= tolerances.diffPctTolerance;
     }
 }
