@@ -62,7 +62,9 @@ export class VcsGitLabService implements IVcsServiceImpl {
         let jobResponse: Response;
         try {
             jobResponse = await fetch(`${this.config.url}/api/v4/job`, {
-                headers: { 'JOB-TOKEN': ciToken }
+                headers: { 'JOB-TOKEN': ciToken },
+                // Bounded so a hung GitLab can't leave a create stuck long enough to run late, after the CLI has retried
+                signal: AbortSignal.timeout(10_000)
             });
         } catch (err) {
             this.logger.warn(`CI token validation failed: GitLab /api/v4/job request failed (${err})`);

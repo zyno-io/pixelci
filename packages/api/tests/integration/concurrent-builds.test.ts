@@ -115,9 +115,9 @@ function newJob(ref: string) {
 
 const auth = (r: HttpRequest, token: string) => r.header('authorization', `Bearer ${token}`);
 const manifestOf = (names: string[]) => ({ count: names.length, hash: screenManifestHash(names) });
-const create = (f: Facade, token: string, names?: string[]) => {
+const create = (f: Facade, token: string, names?: string[], extra: Record<string, unknown> = {}) => {
     const req = auth(HttpRequest.POST(`/api/apps/${APP_ID}/builds`), token);
-    return f.request(names ? req.json({ screens: manifestOf(names) }) : req);
+    return f.request(names || Object.keys(extra).length ? req.json({ ...(names && { screens: manifestOf(names) }), ...extra }) : req);
 };
 const status = (f: Facade, id: string, token: string) => f.request(auth(HttpRequest.GET(`/api/apps/${APP_ID}/builds/${id}/status`), token));
 const proc = (f: Facade, id: string, token: string, screens?: { count: number; hash: string }) => {
@@ -220,6 +220,9 @@ async function run() {
     await testProcessVerifiesManifest(facade);
     await testDuplicateManifestMismatch(facade);
     await testUploaderRecreateClearsScreens(facade);
+    await testRunIdKeepsScreens(facade);
+    await testShardRejectedBeforeWrite(facade);
+    await testScreenNameEncoding(facade);
     await testStaleTakeover(facade);
     await testReupload(facade);
     await testProcessCancelsOnlyStaleDrafts(facade);
@@ -396,6 +399,7 @@ async function testDuplicateManifestMismatch(f: Facade) {
     const after = await getBuild(id);
     assert(after.ciReadTokenHashes.length === before.ciReadTokenHashes.length, 'no read hash added');
     assert(after.manifestHash === before.manifestHash, 'manifest untouched');
+    assert(after.ciTokensExpireAt!.getTime() === before.ciTokensExpireAt!.getTime(), 'a 409 does not refresh ciTokensExpireAt');
 
     const rc = await expectCode(create(f, c, h1), 200, 'C (same manifest)');
     assert(rc.json.status === 'processing', `C is a reader, got ${rc.json.status}`);
@@ -403,6 +407,63 @@ async function testDuplicateManifestMismatch(f: Facade) {
     const rd = await expectCode(create(f, d), 200, 'D (old CLI, no manifest)');
     assert(rd.json.status === 'processing', `D is a reader, got ${rd.json.status}`);
     await expectCode(status(f, id, d), 200, 'D polls');
+    console.log('  PASS');
+}
+
+async function testRunIdKeepsScreens(f: Facade) {
+    console.log('\nTest: a repeated create with the same runId keeps the uploaded screens');
+    const t = newJob('branch-runid');
+    const id = (await expectCode(create(f, t, ['x-1'], { runId: 'run-aaa' }), 200, 'create')).json.id;
+    assert((await getBuild(id)).ciRunId === 'run-aaa', 'runId stored');
+    await expectCode(upload(f, id, t, 'x-1'), 200, 'upload');
+    // A late duplicate of the same create (the CLI timed out and retried) must not wipe the upload
+    await expectCode(create(f, t, ['x-1'], { runId: 'run-aaa' }), 200, 'duplicate create');
+    assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 1, 'screens kept for the same runId');
+    // A new run (or an old CLI without a runId) starts from a clean slate
+    await expectCode(create(f, t, ['x-1'], { runId: 'run-bbb' }), 200, 'new run create');
+    assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 0, 'screens cleared for a new runId');
+    assert((await getBuild(id)).ciRunId === 'run-bbb', 'runId replaced');
+    await expectCode(upload(f, id, t, 'x-1'), 200, 'upload again');
+    await expectCode(create(f, t, ['x-1']), 200, 'create without runId');
+    assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 0, 'screens cleared without a runId');
+    assert((await getBuild(id)).ciRunId === null, 'runId cleared');
+    await expectCode(create(f, newJob('branch-runid-bad'), undefined, { runId: 'bad id!' }), 400, 'malformed runId');
+    await expectCode(create(f, newJob('branch-runid-long'), undefined, { runId: 'a'.repeat(65) }), 400, 'overlong runId');
+    console.log('  PASS');
+}
+
+async function testShardRejectedBeforeWrite(f: Facade) {
+    console.log('\nTest: sharded creates are rejected before any write');
+    const t = newJob('branch-shard');
+    const sha = jobs.get(t)!.sha;
+    await expectCode(create(f, t, undefined, { shard: { index: 0, total: 2 } }), 400, 'shard total 2');
+    assert((await BuildEntity.query().filter({ appId: APP_ID, commitHash: sha }).find()).length === 0, 'no build created');
+    await expectCode(create(f, t, undefined, { shard: { index: 2, total: 2 } }), 400, 'shard index out of range');
+    await expectCode(create(f, t, undefined, { shard: { index: 0, total: 1 } }), 200, 'shard total 1 is unsharded');
+    console.log('  PASS');
+}
+
+async function testScreenNameEncoding(f: Facade) {
+    console.log('\nTest: screen names survive multipart (with and without the name field)');
+    const names = ['café', 'say "hi"', 'naïve', '日本語 ✓'];
+    const uploadNamed = (id: string, token: string, name: string, sendNameField: boolean) =>
+        f.request(
+            auth(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${id}/screens`), token).multiPart([
+                { name: 'image', file: FIXTURE, fileName: `${name}.png` },
+                ...(sendNameField ? [{ name: 'name', value: name }] : [])
+            ])
+        );
+    for (const sendNameField of [true, false]) {
+        const t = newJob(`branch-names-${sendNameField}`);
+        // Without the name field (old CLI) a name with a double quote can't survive the filename, so only the field path covers it.
+        const set = sendNameField ? names : names.filter(n => !n.includes('"'));
+        const id = (await expectCode(create(f, t, set), 200, 'create')).json.id;
+        for (const n of set) {
+            const r = await expectCode(uploadNamed(id, t, n, sendNameField), 200, `upload ${n}`);
+            assert(r.json.name === n, `stored name for ${n} (field=${sendNameField}), got ${r.json.name}`);
+        }
+        await expectCode(proc(f, id, t, manifestOf(set)), 200, `process verifies the UTF-8 manifest (field=${sendNameField})`);
+    }
     console.log('  PASS');
 }
 

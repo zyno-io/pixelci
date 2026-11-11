@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { crc32 } from 'node:zlib';
 
-import { MAX_CHUNKS, parseScreenName, readPngHeader as readPngHeaderSync } from '../../src/services/ScreenUpload';
+import { MAX_CHUNKS, parseScreenName, readPngHeader as readPngHeaderSync, repairLatin1Filename } from '../../src/services/ScreenUpload';
 
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -162,5 +162,18 @@ describe('readPngHeader', () => {
         });
         await assert.rejects(readPngHeader(file(pngHeader({ width: 5001, height: 5000 })), 25_000_000), { httpCode: 400 });
         await assert.rejects(readPngHeader(file(pngHeader({ width: 0xffffffff, height: 0xffffffff })), 25_000_000), { httpCode: 400 });
+    });
+});
+
+describe('repairLatin1Filename', () => {
+    it('repairs a UTF-8 name that was decoded as latin1', () => {
+        const mangled = Buffer.from('café 日本.png', 'utf8').toString('latin1');
+        assert.equal(repairLatin1Filename(mangled), 'café 日本.png');
+    });
+
+    it('leaves ASCII and genuine latin1 names alone', () => {
+        assert.equal(repairLatin1Filename('plain.png'), 'plain.png');
+        assert.equal(repairLatin1Filename('café.png'), 'café.png');
+        assert.equal(repairLatin1Filename(undefined), undefined);
     });
 });

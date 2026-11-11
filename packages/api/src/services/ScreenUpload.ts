@@ -23,6 +23,13 @@ export function parseScreenName(originalName: string | undefined): string {
     return name;
 }
 
+/** Re-decodes a filename that a multipart parser decoded as latin1 when its bytes were really UTF-8; otherwise returns it unchanged. */
+export function repairLatin1Filename(fileName: string | undefined): string | undefined {
+    if (!fileName) return fileName;
+    const decoded = Buffer.from(fileName, 'latin1').toString('utf8');
+    return !decoded.includes('\uFFFD') && decoded !== fileName ? decoded : fileName;
+}
+
 /** Validates the PNG signature and chunk structure of an in-memory file (without decoding it) and returns the dimensions. */
 export function readPngHeader(buf: Buffer, maxPixels: number): { width: number; height: number } {
     if (buf.length < PNG_HEADER_LENGTH || !buf.subarray(0, 8).equals(PNG_SIGNATURE)) {

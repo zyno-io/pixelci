@@ -357,6 +357,18 @@ paths:
                   required:
                     - count
                     - hash
+                runId:
+                  type: string
+                shard:
+                  type: object
+                  properties:
+                    index:
+                      type: number
+                    total:
+                      type: number
+                  required:
+                    - index
+                    - total
   /api/apps/{appId}/builds/{id}:
     get:
       operationId: getBuildsGet
@@ -547,6 +559,8 @@ paths:
                   type: string
                   format: binary
                   x-maxSizeBytes: 17825792
+                name:
+                  type: string
               required:
                 - image
   /api/apps/{appId}/builds/{id}/screens/{screenId}/image:

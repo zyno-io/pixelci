@@ -78,6 +78,13 @@ function validateManifest(screens: IScreenManifest | undefined): IScreenManifest
     return { count: screens.count, hash: screens.hash };
 }
 
+const RUN_ID_RE = /^[A-Za-z0-9-]{1,64}$/;
+function validateRunId(runId: string | undefined): string | undefined {
+    if (runId === undefined) return undefined;
+    if (typeof runId !== 'string' || !RUN_ID_RE.test(runId)) throw new HttpBadRequestError('runId must be 1-64 characters of [A-Za-z0-9-]');
+    return runId;
+}
+
 /** Adds a read-only (status polling) token hash, de-duplicated and capped to the most recent entries. */
 function addReadTokenHash(build: BuildEntity, hash: string) {
     if (build.ciTokenHash === hash) return;
@@ -166,6 +173,8 @@ export class BuildsController {
         body?: HttpBody<{
             projectUrl?: string;
             screens?: { count: number; hash: string };
+            runId?: string;
+            shard?: { index: number; total: number };
         }>
     ): Promise<IBuildResponse> {
         const authHeader = request.headers.authorization;
@@ -175,6 +184,15 @@ export class BuildsController {
         }
         const ciToken = authHeader.slice(7);
         const manifest = validateManifest(body?.screens);
+        const runId = validateRunId(body?.runId);
+        // MR7 replaces this; until then sharded builds must not create (and strand) a draft on a server that can't merge them
+        if (body?.shard !== undefined) {
+            const { index, total } = body.shard ?? {};
+            if (!Number.isInteger(index) || !Number.isInteger(total) || index < 0 || total < 1 || index >= total) {
+                throw new HttpBadRequestError('shard must be { index, total } with 0 <= index < total');
+            }
+            if (total > 1) throw new HttpBadRequestError('Sharded builds are not supported by this server version');
+        }
 
         const app = await AppEntity.query().filter({ id: appId, deletedAt: null }).findOneOrUndefined();
         if (!app) throw new HttpBadRequestError('invalid appId');
@@ -195,7 +213,8 @@ export class BuildsController {
                     commitAuthor,
                     ciJobId,
                     ciTokenHash,
-                    manifest
+                    manifest,
+                    runId
                 );
                 if (result instanceof HttpError) throw result;
                 return result;
@@ -215,7 +234,8 @@ export class BuildsController {
         commitAuthor: string,
         ciJobId: string,
         ciTokenHash: string,
-        manifest: IScreenManifest | undefined
+        manifest: IScreenManifest | undefined,
+        runId: string | undefined
     ): Promise<IBuildResponse | HttpError> {
         return this.db.transaction(async txn => {
             // Serialize concurrent creates for the same branch. Locking the branch row alone is not enough: under READ COMMITTED,
@@ -237,8 +257,8 @@ export class BuildsController {
 
             const existingBuild = await txn.query(BuildEntity).filter({ appId, branchId: branch.id, commitHash }).forUpdate().findOneOrUndefined();
             if (existingBuild) {
-                existingBuild.ciTokensExpireAt = new Date(Date.now() + CI_TOKEN_TTL_MS);
                 const now = new Date();
+                const expireAt = new Date(now.getTime() + CI_TOKEN_TTL_MS);
                 const isDraft = existingBuild.status === 'draft';
                 const isStaleDraft = isDraft && now.getTime() - existingBuild.draftActiveAt.getTime() > STALE_DRAFT_MS;
                 let reportedStatus: BuildEntity['status'] = existingBuild.status;
@@ -246,6 +266,8 @@ export class BuildsController {
                 if (isStaleDraft || existingBuild.status === 'canceled' || existingBuild.status === 'failed') {
                     // Abandoned/canceled/failed build: the caller takes over (reviving it) as the uploader and re-uploads
                     await txn.query(BuildScreenEntity).filter({ buildId: existingBuild.id }).deleteMany();
+                    existingBuild.ciTokensExpireAt = expireAt;
+                    existingBuild.ciRunId = runId ?? null;
                     existingBuild.status = 'draft';
                     existingBuild.ciTokenHash = ciTokenHash;
                     existingBuild.ciReadTokenHashes = (existingBuild.ciReadTokenHashes ?? []).filter(h => h !== ciTokenHash);
@@ -259,8 +281,13 @@ export class BuildsController {
                     existingBuild.ciTokenHash = ciTokenHash;
                     existingBuild.ciReadTokenHashes = (existingBuild.ciReadTokenHashes ?? []).filter(h => h !== ciTokenHash);
                     existingBuild.draftActiveAt = now;
-                    // Each CLI run is a clean slate: drop what a previous run of this job uploaded
-                    await txn.query(BuildScreenEntity).filter({ buildId: existingBuild.id }).deleteMany();
+                    existingBuild.ciTokensExpireAt = expireAt;
+                    // Each CLI run is a clean slate: drop what a previous run of this job uploaded. A repeat of the same run (a late
+                    // duplicate of a create the CLI timed out on) must not wipe uploads that have since started.
+                    if (!runId || existingBuild.ciRunId !== runId) {
+                        await txn.query(BuildScreenEntity).filter({ buildId: existingBuild.id }).deleteMany();
+                    }
+                    existingBuild.ciRunId = runId ?? null;
                     existingBuild.manifestCount = manifest?.count ?? null;
                     existingBuild.manifestHash = manifest?.hash ?? null;
                 } else {
@@ -272,6 +299,7 @@ export class BuildsController {
                                 `If the suite is split across jobs, set PIXELCI_SHARD (see docs).`
                         );
                     }
+                    existingBuild.ciTokensExpireAt = expireAt;
                     // Never overwrite the uploader's hash; additional jobs only get status-polling access
                     addReadTokenHash(existingBuild, ciTokenHash);
                     if (isDraft) {
@@ -302,6 +330,7 @@ export class BuildsController {
                     createdAt: new Date(),
                     draftActiveAt: new Date(),
                     ciTokensExpireAt: new Date(Date.now() + CI_TOKEN_TTL_MS),
+                    ciRunId: runId ?? null,
                     manifestCount: manifest?.count ?? null,
                     manifestHash: manifest?.hash ?? null
                 },
