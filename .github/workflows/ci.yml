@@ -29,15 +29,16 @@ jobs:
   test-api:
     runs-on: ubuntu-latest
     services:
-      mysql:
-        image: mysql:8
+      postgres:
+        image: postgres:18
         env:
-          MYSQL_ROOT_PASSWORD: secret
-          MYSQL_DATABASE: pixelci
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: pixelci
         ports:
-          - 3306:3306
+          - 5432:5432
         options: >-
-          --health-cmd "mysqladmin ping -h localhost -u root -psecret" --health-interval 5s --health-timeout 3s --health-retries 10
+          --health-cmd "pg_isready -U root -d pixelci" --health-interval 5s --health-timeout 3s --health-retries 10
       redis:
         image: redis:7-alpine
         ports:
@@ -79,15 +80,16 @@ jobs:
   test-e2e:
     runs-on: ubuntu-latest
     services:
-      mysql:
-        image: mysql:8
+      postgres:
+        image: postgres:18
         env:
-          MYSQL_ROOT_PASSWORD: secret
-          MYSQL_DATABASE: pixelci
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: secret
+          POSTGRES_DB: pixelci
         ports:
-          - 3306:3306
+          - 5432:5432
         options: >-
-          --health-cmd "mysqladmin ping -h localhost -u root -psecret" --health-interval 5s --health-timeout 3s --health-retries 10
+          --health-cmd "pg_isready -U root -d pixelci" --health-interval 5s --health-timeout 3s --health-retries 10
       redis:
         image: redis:7-alpine
         ports:
