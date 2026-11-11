@@ -12,7 +12,7 @@ import {
 
 import { AdminAuthMiddleware, UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
-import { AppEntity } from '../entities/App.entity';
+import { AppEntity, IApprovalMinRole } from '../entities/App.entity';
 import { BranchEntity } from '../entities/Branch.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { UserEntity } from '../entities/User.entity';
@@ -21,7 +21,11 @@ import { AppAccessService } from '../services/AppAccess.service';
 import { IVcsProject, VcsService } from '../services/Vcs.service';
 
 export type IAppIndexResponse = Partial<Pick<AppEntity, 'id' | 'defaultBranchId' | 'name'> & { buildCount: number }>;
-export type IAppShowResponse = EntityFields<AppEntity> & { commitUrlBase: string | null };
+export type IAppShowResponse = EntityFields<AppEntity> & {
+    commitUrlBase: string | null;
+    /** Whether the signed-in user may review screens and approve builds of this app. */
+    canReview: boolean;
+};
 
 interface IAppCreateInput {
     name: string;
@@ -29,9 +33,10 @@ interface IAppCreateInput {
     projectPath: string;
     vcsProjectId?: number;
     defaultBranchName?: string;
+    approvalMinRole?: IApprovalMinRole;
 }
 
-export type IAppUpdateInput = Partial<Pick<AppEntity, 'name' | 'defaultBranchId'>>;
+export type IAppUpdateInput = Partial<Pick<AppEntity, 'name' | 'defaultBranchId'>> & { approvalMinRole?: IApprovalMinRole };
 
 @ApiController('/api/apps')
 @http.middleware(UserAuthMiddleware)
@@ -69,8 +74,9 @@ export class AppsController {
 
         const vcs = await VcsIntegrationEntity.query().filterField('id', app.vcsId).findOneOrUndefined();
         const commitUrlBase = vcs ? this.vcsService.getCommitUrlBase(vcs, app.projectPath) : null;
+        const canReview = await this.appAccessSvc.canReview(user, app);
 
-        return { ...app, commitUrlBase };
+        return { ...app, commitUrlBase, canReview };
     }
 
     @http.POST()
@@ -101,7 +107,8 @@ export class AppsController {
             vcsId: body.vcsId,
             projectPath: body.projectPath,
             vcsProjectId: body.vcsProjectId ?? null,
-            defaultBranchId: defaultBranchId ?? null
+            defaultBranchId: defaultBranchId ?? null,
+            approvalMinRole: body.approvalMinRole ?? 'write'
         });
         await newApp.save();
 

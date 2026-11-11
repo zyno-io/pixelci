@@ -129,6 +129,14 @@
                         <input class="input" v-model="createForm.defaultBranchName" type="text" placeholder="e.g. main" />
                     </label>
 
+                    <label>
+                        Who Can Approve Builds
+                        <select class="select" v-model="createForm.approvalMinRole" data-testid="create-approval-min-role">
+                            <option v-for="option in APPROVAL_ROLE_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
+                        </select>
+                        <span class="hint">{{ APPROVAL_ROLE_HINT }}</span>
+                    </label>
+
                     <div class="form-actions">
                         <button class="btn" type="button" @click="closeCreateModal">Cancel</button>
                         <button type="submit" class="btn primary" :disabled="isSubmitting || !selectedProject">
@@ -170,6 +178,14 @@
                         </select>
                     </label>
 
+                    <label>
+                        Who Can Approve Builds
+                        <select class="select" v-model="editForm.approvalMinRole" :disabled="!editAppDetail" data-testid="edit-approval-min-role">
+                            <option v-for="option in APPROVAL_ROLE_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
+                        </select>
+                        <span class="hint">{{ APPROVAL_ROLE_HINT }}</span>
+                    </label>
+
                     <div class="form-actions">
                         <button type="button" class="btn danger" @click="deleteApp">Delete</button>
                         <div class="form-actions-right">
@@ -207,6 +223,7 @@ import {
     BranchesApi,
     VcsIntegrationsApi,
     type IAppIndexResponse,
+    type IApprovalMinRole,
     type IAppShowResponse,
     type IBranchResponse,
     type IVcsIntegrationListResponse,
@@ -241,8 +258,17 @@ const selectedProject = ref<IVcsProject | null>(null);
 const createForm = reactive({
     vcsId: '',
     name: '',
-    defaultBranchName: ''
+    defaultBranchName: '',
+    approvalMinRole: 'write' as IApprovalMinRole
 });
+
+const APPROVAL_ROLE_OPTIONS: { value: IApprovalMinRole; label: string }[] = [
+    { value: 'read', label: 'Anyone who can view the app' },
+    { value: 'write', label: 'Write access and above' },
+    { value: 'maintain', label: 'Maintainers only' }
+];
+const APPROVAL_ROLE_HINT =
+    'Write is Developer in GitLab or Write in GitHub. Maintainers are Maintainer or Owner in GitLab, Maintain or Admin in GitHub. PixelCI admins can always approve.';
 
 const apiUrl = computed(() => window.location.origin);
 
@@ -312,7 +338,8 @@ const editAppDetail = ref<IAppShowResponse | null>(null);
 const editBranches = ref<IBranchResponse[]>([]);
 const editForm = reactive({
     name: '',
-    defaultBranchId: ''
+    defaultBranchId: '',
+    approvalMinRole: 'write' as IApprovalMinRole
 });
 
 onMounted(load);
@@ -344,6 +371,7 @@ function showCreateForm() {
     createForm.vcsId = vcsIntegrations.value?.find(v => v.id === sessionVcsId)?.id ?? vcsIntegrations.value?.[0]?.id ?? '';
     createForm.name = '';
     createForm.defaultBranchName = '';
+    createForm.approvalMinRole = 'write';
     projectSearch.value = '';
     projectResults.value = [];
     searchError.value = '';
@@ -417,7 +445,8 @@ async function submitCreate() {
                     vcsId: createForm.vcsId,
                     projectPath: selectedProject.value.projectPath,
                     vcsProjectId: Number(selectedProject.value.id),
-                    defaultBranchName: createForm.defaultBranchName || undefined
+                    defaultBranchName: createForm.defaultBranchName || undefined,
+                    approvalMinRole: createForm.approvalMinRole
                 }
             })
         );
@@ -461,6 +490,7 @@ async function copyAppId() {
 
 async function openEditModal(app: IAppIndexResponse) {
     editApp.value = app;
+    editAppDetail.value = null;
     editForm.name = app.name ?? '';
     editForm.defaultBranchId = app.defaultBranchId ?? '';
 
@@ -469,6 +499,7 @@ async function openEditModal(app: IAppIndexResponse) {
             dataFromAsync(AppsApi.getAppsShow({ path: { id: app.id! } })),
             dataFromAsync(BranchesApi.getBranchesIndex({ path: { appId: app.id! } }))
         ]);
+        editForm.approvalMinRole = detail.approvalMinRole;
         editAppDetail.value = detail;
         editBranches.value = branches;
         await ensureOidcAudience(detail.vcsId);
@@ -493,7 +524,9 @@ async function submitEdit() {
                 path: { id: appId },
                 body: {
                     name: editForm.name,
-                    defaultBranchId: editForm.defaultBranchId || undefined
+                    defaultBranchId: editForm.defaultBranchId || undefined,
+                    // Only once the current value has loaded, so an early save can't reset it to the default.
+                    approvalMinRole: editAppDetail.value ? editForm.approvalMinRole : undefined
                 }
             })
         );
@@ -647,6 +680,11 @@ async function deleteApp() {
     border-radius: var(--radius);
     background: var(--surface-2);
     overflow-wrap: anywhere;
+}
+.hint {
+    color: var(--text-3);
+    font-size: 12px;
+    font-weight: 400;
 }
 .input-with-button {
     display: flex;
