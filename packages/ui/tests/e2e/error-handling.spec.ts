@@ -57,7 +57,7 @@ test.describe('Error Handling (authenticated)', () => {
 
         // The API refuses everything under this app, as it does for a user from another provider.
         await page.route(`**/api${appPath}**`, route =>
-            route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ message }) })
+            route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: message }) })
         );
 
         for (const path of [buildPath, appPath]) {
@@ -69,10 +69,12 @@ test.describe('Error Handling (authenticated)', () => {
             await expect(page.locator('.vf-modal')).toHaveCount(0);
         }
 
-        // Stub the provider so the single-provider auto-redirect doesn't hang on DNS.
-        await page.route('**/oauth/authorize**', route => route.fulfill({ status: 200, contentType: 'text/html', body: 'ok' }));
+        // Switching account shows the provider picker rather than auto-redirecting to the only
+        // provider, which would sign the same account straight back in.
         await page.getByTestId('switch-account').click();
-        await expect.poll(() => page.evaluate(() => window.localStorage.getItem('pixelci:jwt'))).toBeNull();
+        await expect(page.locator('#login button.btn.primary')).toHaveCount(1);
+        expect(new URL(page.url()).pathname).toBe(appPath);
+        expect(await page.evaluate(() => window.localStorage.getItem('pixelci:jwt'))).toBeNull();
     });
 
     test('bad app id shows one inline alert and no modal', async ({ page }) => {

@@ -10,12 +10,19 @@ import { useStore } from '@/store';
 export function accessDeniedMessage(err: unknown): string | null {
     if (!(err instanceof OpenApiError) || err.response?.status !== 403) return null;
     const body = err.body;
-    if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string' && body.message) return body.message;
+    // The API reports errors as `{ error: string }`.
+    if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' && body.error) return body.error;
     return "You don't have access to this.";
 }
 
-/** Clears the session; the app shell then shows the login screen in place, so the URL is kept. */
+/**
+ * Clears the session to switch account; the app shell then shows the login screen in place, so the
+ * URL is kept. The provider picker is shown even with a single provider: auto-redirecting would sign
+ * the same account straight back in.
+ */
 export function signOut() {
-    useStore().sessionUser = null;
+    const store = useStore();
+    store.showProviderPicker = true;
+    store.sessionUser = null;
     localStorage.removeItem(LOCAL_STORAGE_AUTH_KEY);
 }

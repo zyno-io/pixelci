@@ -9,7 +9,9 @@ export const useStore = defineStore('root', {
     state: () => ({
         sessionUser: null as SessionUser | null,
         globalError: null as string | null,
-        selectedBranchId: null as string | null
+        selectedBranchId: null as string | null,
+        // set when the user asked to switch account, so login shows the picker instead of auto-redirecting
+        showProviderPicker: false
     }),
 
     getters: {
