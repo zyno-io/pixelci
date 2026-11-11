@@ -16,6 +16,7 @@ import type {
     IVcsProject,
     IVcsRerunOptions,
     IVcsRerunResult,
+    IVcsProjectRole,
     IVcsServiceImpl,
     IVcsTokenUser
 } from './Vcs.service';
@@ -74,6 +75,18 @@ export function deriveBranch(eventName: string, ref: string, headRef: string): s
     if (ref.startsWith('refs/heads/') && ref.length > 'refs/heads/'.length) return ref.slice('refs/heads/'.length);
     if (ref.startsWith('refs/tags/') && ref.length > 'refs/tags/'.length) return ref.slice('refs/tags/'.length);
     return null;
+}
+
+/**
+ * Maps the `permissions` object GitHub returns on a repository (for the authenticated user) to a role.
+ * GitHub sends admin/maintain/push/triage/pull; anything missing or malformed fails closed to 'read'.
+ */
+export function githubRoleFromPermissions(permissions: unknown): IVcsProjectRole {
+    if (!permissions || typeof permissions !== 'object') return 'read';
+    const p = permissions as { admin?: unknown; maintain?: unknown; push?: unknown };
+    if (p.admin === true || p.maintain === true) return 'maintain';
+    if (p.push === true) return 'write';
+    return 'read';
 }
 
 /** First line of a commit message, at most 255 characters (the builds.commitSubject column). */
@@ -568,6 +581,23 @@ export class VcsGitHubService implements IVcsServiceImpl {
             this.logger.warn('GitHub project access check request failed', { projectIdentifier, error: String(err) });
             return false;
         }
+    }
+
+    async getUserProjectRole(user: UserEntity, projectIdentifier: string): Promise<IVcsProjectRole> {
+        if (!user.vcsSession) return 'none';
+        // Token renewal and transport failures propagate: the caller denies without caching a transient error.
+        await this.renewToken(user);
+
+        const path = /^\d+$/.test(projectIdentifier) ? `/repositories/${projectIdentifier}` : `/repos/${encodeRepoPath(projectIdentifier)}`;
+        const response = await createGitHubClient(this.urls, user.vcsSession.accessToken).get<{ permissions?: unknown; message?: unknown }>(path, {
+            validateStatus: () => true
+        });
+        if (response.status === 200) return githubRoleFromPermissions(response.data?.permissions);
+
+        const message = typeof response.data?.message === 'string' ? response.data.message : '';
+        const rateLimited = response.status === 429 || (response.status === 403 && /rate limit/i.test(message));
+        if (!rateLimited && (response.status === 401 || response.status === 403 || response.status === 404)) return 'none';
+        throw new Error(`GitHub role lookup for ${projectIdentifier} failed with HTTP ${response.status}${message ? `: ${message}` : ''}`);
     }
 
     async getTokenUser(token: string): Promise<IVcsTokenUser | null> {

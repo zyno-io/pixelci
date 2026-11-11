@@ -110,6 +110,60 @@ for (const colorScheme of ['light', 'dark'] as const) {
     });
 }
 
+test('a user without review rights sees the build read-only with a notice', async ({ page }) => {
+    await mockApi(page, { admin: false, canReview: false });
+    await page.goto(`/apps/${appId}/builds/${buildId}`);
+    const screen = page.locator('.screen').filter({ hasText: 'Dashboard' });
+    await expect(screen.locator('.image-wrapper.right img')).toBeVisible();
+    await expect(page.getByTestId('review-locked')).toContainText('You can view this build but not review it.');
+    await expect(page.getByTestId('review-locked')).toContainText('write access');
+    await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Reject', exact: true })).toHaveCount(0);
+    await expect(page.getByPlaceholder('Leave a comment (optional)')).toHaveCount(0);
+    await expect(page.getByTestId('decision-bar')).toHaveCount(0);
+    await expect(page.getByTestId('submit-build')).toHaveCount(0);
+
+    // The keyboard shortcuts are gated too: no review request may be sent.
+    const reviews: string[] = [];
+    page.on('request', request => {
+        if (request.url().endsWith('/review')) reviews.push(request.url());
+    });
+    await screen.click({ position: { x: 5, y: 5 } });
+    await expect(screen).toHaveClass(/is-active/);
+    await page.keyboard.press('a');
+    await page.keyboard.press('r');
+    await expect(screen.locator('.review-badge')).toHaveCount(0);
+    expect(reviews).toEqual([]);
+});
+
+test('a reviewer sees no read-only notice', async ({ page }) => {
+    await mockApi(page);
+    await page.goto(`/apps/${appId}/builds/${buildId}`);
+    await expect(page.getByTestId('decision-bar')).toBeVisible();
+    await expect(page.getByTestId('review-locked')).toHaveCount(0);
+});
+
+test('admins set who can approve builds in app settings', async ({ page }) => {
+    await mockApi(page, { approvalMinRole: 'maintain' });
+    const updates: unknown[] = [];
+    await page.route(`**/api/apps/${appId}`, async route => {
+        if (route.request().method() === 'PUT') {
+            updates.push(route.request().postDataJSON());
+            return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: appId, name: 'PixelCI UI' }) });
+        }
+        return route.fallback();
+    });
+    await page.goto('/apps');
+    await page.getByRole('button', { name: 'Settings for PixelCI UI' }).click();
+    const select = page.getByTestId('edit-approval-min-role');
+    await expect(select).toBeEnabled();
+    await expect(select).toHaveValue('maintain');
+    await select.selectOption('read');
+    await page.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => updates.length).toBe(1);
+    expect(updates[0]).toMatchObject({ approvalMinRole: 'read' });
+});
+
 test('mobile pages and app dialogs fit the viewport', async ({ page }) => {
     await mockApi(page);
     await page.setViewportSize({ width: 360, height: 800 });

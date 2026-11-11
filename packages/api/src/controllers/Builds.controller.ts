@@ -303,9 +303,10 @@ export class BuildsController {
     @http.POST(':id/approve')
     @http.middleware(UserAuthMiddleware)
     async approve(user: UserEntity, appId: UuidString, id: UuidString): Promise<IBuildApprovalResponse> {
+        // Authorize before touching the build, so a caller without review rights learns nothing about it.
+        await this.appAccessSvc.assertCanReviewAppId(user, appId);
         let build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
-        await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
         if (build.status !== 'needs review') throw new HttpBadRequestError('Build is not in needs review status');
 
         let rejected = false;

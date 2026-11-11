@@ -62,6 +62,9 @@ export interface IVcsTokenUser {
     id: string;
 }
 
+/** A user's role on a project, coarsened across providers. Ordered: none < read < write < maintain. */
+export type IVcsProjectRole = 'none' | 'read' | 'write' | 'maintain';
+
 export interface IVcsServiceImpl {
     /**
      * `expectedProjectId` is the app's bound project; providers that make further outbound calls after verifying
@@ -83,6 +86,11 @@ export interface IVcsServiceImpl {
     getCommitUrlBase(projectPath: string): string;
     userCanAccessProject(user: UserEntity, projectIdentifier: string): Promise<boolean>;
     tokenCanAccessProject(token: string, projectIdentifier: string): Promise<boolean>;
+    /**
+     * The user's role on the project. Resolves 'none' when the provider definitively refuses (no session, 401/403/404);
+     * throws on transient failures (network, 5xx) so the caller can deny without caching the result.
+     */
+    getUserProjectRole(user: UserEntity, projectIdentifier: string): Promise<IVcsProjectRole>;
     /** Resolves the provider user a personal access token belongs to; null if the token is invalid. */
     getTokenUser(token: string): Promise<IVcsTokenUser | null>;
 }
@@ -189,6 +197,11 @@ export class VcsService {
     async userCanAccessProject(user: UserEntity, vcsId: string, projectIdentifier: string): Promise<boolean> {
         if (user.vcsId !== vcsId) return false;
         return this.runWithProvider(vcsId, provider => provider.userCanAccessProject(user, projectIdentifier));
+    }
+
+    async getUserProjectRole(user: UserEntity, vcsId: string, projectIdentifier: string): Promise<IVcsProjectRole> {
+        if (user.vcsId !== vcsId) return 'none';
+        return this.runWithProvider(vcsId, provider => provider.getUserProjectRole(user, projectIdentifier));
     }
 
     async tokenCanAccessProject(token: string, vcsId: string, projectIdentifier: string): Promise<boolean> {

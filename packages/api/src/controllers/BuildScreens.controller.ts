@@ -187,29 +187,36 @@ export class BuildScreensController {
         screenId: UuidString,
         body: HttpBody<{ reviewStatus: 'approved' | 'rejected'; comment: string }>
     ): Promise<IBuildScreenReviewResponse> {
-        await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
+        await this.appAccessSvc.assertCanReviewAppId(user, appId);
 
-        const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
-        if (!build) throw new HttpNotFoundError();
-        if (build.status !== 'needs review') throw new HttpBadRequestError('Build is not in needs review status');
+        // Lock the build row first (the same order as approve and process), so a review can't land after approve has
+        // committed: approve holds this lock while it reads and promotes the screens. Validation failures are returned
+        // from the transaction (not thrown inside it), like process.
+        const result = await this.db.transaction(async txn => {
+            const build = await txn.query(BuildEntity).filter({ id, appId }).forUpdate().findOneOrUndefined();
+            if (!build) return new HttpNotFoundError();
+            if (build.status !== 'needs review') return new HttpBadRequestError('Build is not in needs review status');
 
-        const buildScreen = await BuildScreenEntity.query().filter({ appId, buildId: id, screenId }).findOneOrUndefined();
-        if (!buildScreen) throw new HttpNotFoundError();
-        if (buildScreen.status !== 'new' && buildScreen.status !== 'needs review') {
-            throw new HttpBadRequestError('Screen is not awaiting review');
-        }
+            const buildScreen = await txn.query(BuildScreenEntity).filter({ appId, buildId: id, screenId }).findOneOrUndefined();
+            if (!buildScreen) return new HttpNotFoundError();
+            if (buildScreen.status !== 'new' && buildScreen.status !== 'needs review') {
+                return new HttpBadRequestError('Screen is not awaiting review');
+            }
 
-        buildScreen.reviewStatus = body.reviewStatus;
-        buildScreen.reviewComment = body.comment?.trim() || null;
-        buildScreen.reviewedById = user.id;
-        buildScreen.reviewedAt = new Date();
-        await buildScreen.save();
+            buildScreen.reviewStatus = body.reviewStatus;
+            buildScreen.reviewComment = body.comment?.trim() || null;
+            buildScreen.reviewedById = user.id;
+            buildScreen.reviewedAt = new Date();
+            txn.add(buildScreen);
 
-        return {
-            reviewStatus: buildScreen.reviewStatus,
-            reviewComment: buildScreen.reviewComment,
-            reviewedById: buildScreen.reviewedById,
-            reviewedAt: buildScreen.reviewedAt
-        };
+            return {
+                reviewStatus: buildScreen.reviewStatus,
+                reviewComment: buildScreen.reviewComment,
+                reviewedById: buildScreen.reviewedById,
+                reviewedAt: buildScreen.reviewedAt
+            };
+        });
+        if (result instanceof Error) throw result;
+        return result;
     }
 }
