@@ -229,6 +229,8 @@ function getStatusText(status: IBuildResponse['status']) {
             return 'Failed';
         case 'changes rejected':
             return 'Changes Rejected';
+        case 'canceled':
+            return 'Canceled';
         default:
             return status;
     }
