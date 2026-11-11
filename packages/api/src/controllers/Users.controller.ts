@@ -1,4 +1,4 @@
-import { http, HttpBadRequestError, HttpBody, HttpNotFoundError } from '@zyno-io/ts-server-foundation';
+import { http, HttpBadRequestError, HttpBody, HttpNotFoundError, UuidString } from '@zyno-io/ts-server-foundation';
 
 import { AdminAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
@@ -44,7 +44,7 @@ export class UsersController {
     }
 
     @http.PUT('/:id')
-    async update(id: string, body: HttpBody<IUserUpdateInput>, currentUser: UserEntity): Promise<{ id: string; isAdmin: boolean }> {
+    async update(id: UuidString, body: HttpBody<IUserUpdateInput>, currentUser: UserEntity): Promise<{ id: string; isAdmin: boolean }> {
         if (id === currentUser.id) {
             throw new HttpBadRequestError('Cannot modify your own admin status');
         }

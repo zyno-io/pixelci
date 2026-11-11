@@ -8,6 +8,8 @@ import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { VcsService } from '../services/Vcs.service';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * User authentication
  */
@@ -51,6 +53,10 @@ export class BuildCiTokenMiddleware extends HttpMiddleware {
             throw new HttpUnauthorizedError();
         }
         const buildId = match[1];
+        if (!UUID_RE.test(buildId)) {
+            this.logger.warn('CI token auth failed: malformed buildId in URL');
+            throw new HttpUnauthorizedError();
+        }
 
         const build = await BuildEntity.query().filter({ id: buildId }).findOneOrUndefined();
         // Uploads/process require the creator's token; status polling also accepts read-only tokens of concurrent jobs
@@ -97,6 +103,11 @@ export async function resolveUserFromVcsToken(
     vcsService: VcsService
 ): Promise<{ user: UserEntity; vcsId: string }> {
     const tokenHash = createHash('sha256').update(vcsToken).digest('hex');
+    if (requestedVcsId && !UUID_RE.test(requestedVcsId)) {
+        logger.warn('VCS token auth failed: malformed X-PixelCI-Vcs-Id header');
+        throw new HttpUnauthorizedError();
+    }
+
     const cacheKey = `${tokenHash}:${requestedVcsId ?? ''}`;
 
     const cached = vcsTokenUserCache.get(cacheKey);

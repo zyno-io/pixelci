@@ -1,4 +1,4 @@
-import { http, HttpBadRequestError, HttpBody, HttpQueries } from '@zyno-io/ts-server-foundation';
+import { http, HttpBadRequestError, HttpBody, HttpQueries, UuidString } from '@zyno-io/ts-server-foundation';
 import { uuid } from '@zyno-io/ts-server-foundation';
 import { createEntity, JWT } from '@zyno-io/ts-server-foundation';
 
@@ -50,7 +50,7 @@ export class SessionController {
     }
 
     @http.GET('providers/:id/login-url')
-    async getProviderLoginUrl(id: string, query: HttpQueries<{ redirectUri: string; state?: string }>): Promise<{ url: string }> {
+    async getProviderLoginUrl(id: UuidString, query: HttpQueries<{ redirectUri: string; state?: string }>): Promise<{ url: string }> {
         const url = await this.vcsService.getProviderLoginUrl(id, query.redirectUri, query.state);
         return { url };
     }
