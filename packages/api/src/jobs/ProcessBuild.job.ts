@@ -7,6 +7,7 @@ import { Db } from '../database';
 import { AppEntity } from '../entities/App.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
+import { claimBuildLease, Lease, LeaseLostError } from '../services/BuildProcessingLease';
 import { PixelMatchService } from '../services/PixelMatch.service';
 import { computeRemovals } from '../services/RemovedScreens';
 import { S3Service } from '../services/S3.service';
@@ -34,16 +35,33 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         const logger = this.logger.scoped(data.buildId);
         logger.info('Processing build', { id: data.buildId });
 
+        const lease = await claimBuildLease(this.db, data.buildId, logger);
+        if (!lease) {
+            logger.info('Build is not claimable (not processing, already being processed, or out of attempts); skipping', { id: data.buildId });
+            return;
+        }
+        lease.startHeartbeat();
+
         try {
-            await this.processScreens(data.buildId);
+            await this.processScreens(data.buildId, lease);
         } catch (err) {
+            if (err instanceof LeaseLostError) {
+                logger.warn('Processing lease lost; abandoning attempt', { id: data.buildId });
+                return;
+            }
             logger.error('Build processing failed', err as Error);
-            await BuildEntity.query().filter({ id: data.buildId }).patchOne({ status: 'failed' });
+            try {
+                await lease.fail();
+            } catch (failErr) {
+                logger.error('Failed to mark build as failed', failErr as Error);
+            }
             throw err;
+        } finally {
+            lease.stopHeartbeat();
         }
     }
 
-    private async processScreens(buildId: string): AnyResponse {
+    private async processScreens(buildId: string, lease: Lease): AnyResponse {
         const logger = this.logger.scoped(buildId);
         const diffThreshold = this.appConfig.DEFAULT_PIXEL_DIFF_PCT_THRESHOLD / 100;
         logger.info('Using diff threshold', { diffThreshold });
@@ -286,8 +304,15 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
 
         logger.info('Updating build status', { status: currentBuild.status });
 
+        if (lease.lost) throw new LeaseLostError();
+
         await this.db.transaction(async txn => {
-            txn.add(currentBuild);
+            // Write the result through the locked row only, and only while this attempt still owns the build.
+            const locked = await lease.assertHeld(txn);
+            locked.status = currentBuild.status;
+            locked.processingAttemptId = null;
+            locked.processingHeartbeatAt = null;
+            txn.add(locked);
             txn.add(...currentBuildScreens);
             await txn.flush();
             // replace any tombstones from an earlier processing run of this build

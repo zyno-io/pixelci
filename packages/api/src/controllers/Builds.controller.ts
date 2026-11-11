@@ -618,14 +618,24 @@ export class BuildsController {
                 .filter({ appId, id: { $ne: id }, status: 'draft', draftActiveAt: { $lt: new Date(Date.now() - STALE_DRAFT_MS) } })
                 .patchMany({ status: 'canceled' });
 
+            const now = new Date();
             build.status = 'processing';
+            build.processingStartedAt = now;
+            build.processingHeartbeatAt = now;
+            build.processingAttemptId = null;
+            build.processingAttempts = 0;
             txn.add(build);
             return undefined;
         });
         if (outcome === 'already') return { ok: true };
         if (outcome) throw outcome;
 
-        await this.workerSvc.queueJob(ProcessBuildJob, { buildId: id });
+        try {
+            await this.workerSvc.queueJob(ProcessBuildJob, { buildId: id });
+        } catch (err) {
+            // The build is durably `processing`; the reaper re-enqueues it once its heartbeat goes stale.
+            this.logger.error('Failed to enqueue build processing; the reaper will retry', err as Error, { buildId: id });
+        }
 
         return { ok: true };
     }

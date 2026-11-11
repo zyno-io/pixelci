@@ -13,6 +13,7 @@ import { UsersController } from './controllers/Users.controller';
 import { VcsIntegrationsController } from './controllers/VcsIntegrations.controller';
 import { Db } from './database';
 import { ProcessBuildJob } from './jobs/ProcessBuild.job';
+import { ReapStuckBuildsJob } from './jobs/ReapStuckBuilds.job';
 import { RerunCiJobJob } from './jobs/RerunCiJob.job';
 import { AppAccessService } from './services/AppAccess.service';
 import { PixelMatchService } from './services/PixelMatch.service';
@@ -50,6 +51,7 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         VcsTokenAuthMiddleware,
         ProcessBuildJob,
         RerunCiJobJob,
+        ReapStuckBuildsJob,
         PixelMatchService,
         VcsService,
         AppAccessService,
