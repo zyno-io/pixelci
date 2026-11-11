@@ -1,7 +1,7 @@
 import { createMigration } from '@zyno-io/ts-server-foundation';
 
 const RETRYABLE_SQLSTATES = ['40P01', '55P03']; // deadlock_detected, lock_not_available (lock_timeout)
-const MAX_ATTEMPTS = 5;
+const MAX_ATTEMPTS = 10;
 
 const sqlState = (e: unknown): unknown => {
     const c = e as { code?: unknown; cause?: { code?: unknown } } | null;
@@ -15,7 +15,7 @@ export default createMigration(async db => {
             return;
         } catch (e) {
             if (attempt >= MAX_ATTEMPTS || !RETRYABLE_SQLSTATES.includes(String(sqlState(e)))) throw e;
-            const delayMs = 1000 * 2 ** (attempt - 1);
+            const delayMs = Math.min(500 * 2 ** (attempt - 1), 8000);
             console.warn(`unique_constraints migration attempt ${attempt} failed (${sqlState(e)}); retrying in ${delayMs}ms`);
             await new Promise(r => setTimeout(r, delayMs));
         }
@@ -27,11 +27,13 @@ type Db = Parameters<Parameters<typeof createMigration>[0]>[0];
 async function migrate(db: Db) {
     await db.transaction(async txn => {
         const run = (s: string) => txn.rawExecute(s);
-        await run(`SET LOCAL lock_timeout = '3s'`);
+        // Below deadlock_timeout (1s), so the migration always gives up first instead of a live transaction being picked as the victim.
+        await run(`SET LOCAL lock_timeout = '500ms'`);
         // Old pods serve during the pre-upgrade hook. Take the strongest lock up front (it also blocks readers, briefly):
         // a weaker lock would later be upgraded by DROP INDEX, which deadlocks with old pods' SELECT ... FOR UPDATE transactions.
         // If the lock can't be had in time, the whole transaction is retried.
-        await run(`LOCK TABLE users, apps, branches, builds, screens, builds_screens IN ACCESS EXCLUSIVE MODE`);
+        // Order matters: old pods' uploadScreen touches screens -> builds_screens -> builds, so lock in that order (builds last).
+        await run(`LOCK TABLE users, apps, branches, screens, builds_screens, builds IN ACCESS EXCLUSIVE MODE`);
 
         await run(`WITH k AS (SELECT "vcsId","vcsUserId",(array_agg(id ORDER BY "isAdmin" DESC,"lastLoginAt" DESC,id))[1] keeper
                                  FROM users GROUP BY 1,2 HAVING count(*)>1),
@@ -68,7 +70,7 @@ async function migrate(db: Db) {
                        WHERE screens.id=r.id AND r.rn>1`);
 
         await run(`DELETE FROM builds_screens USING (SELECT id,row_number() OVER (PARTITION BY "buildId","screenId"
-                         ORDER BY ("reviewStatus" IS NOT NULL) DESC, "reviewedAt" ASC NULLS LAST, id DESC) rn FROM builds_screens) r
+                         ORDER BY ("reviewStatus" IS NOT NULL) DESC, ("reviewStatus" = 'rejected') DESC, "reviewedAt" ASC NULLS LAST, id DESC) rn FROM builds_screens) r
                        WHERE builds_screens.id=r.id AND r.rn>1`);
 
         for (const [t, idx, cols] of [

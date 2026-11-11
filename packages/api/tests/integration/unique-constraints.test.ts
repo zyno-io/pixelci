@@ -31,6 +31,12 @@ const S_KEEP = id(41);
 const BS_DUP_REVIEWED = id(50);
 const BS_DUP_PLAIN = id(51);
 const BS_OLD_SCREEN = id(52);
+// A reviewer's later rejection beats a carried-forward approval with an earlier reviewedAt; neither id order nor reviewedAt ASC alone would keep it
+const BS_REJECTED = id(53);
+const BS_CARRIED = id(54);
+// Two approvals: the earlier explicit one (lower id) beats the later auto-approval, decided by reviewedAt ASC rather than id DESC
+const BS_EXPLICIT = id(55);
+const BS_AUTO = id(56);
 
 const INDEXES = [
     'idx_users_vcsId_vcsUserId',
@@ -83,6 +89,11 @@ async function run() {
         ('${BS_DUP_REVIEWED}','${APP}','${B_APPROVED}','${S_KEEP}','no changes','approved','${U_USER}'),
         ('${BS_DUP_PLAIN}','${APP}','${B_APPROVED}','${S_KEEP}','no changes',NULL,NULL),
         ('${BS_OLD_SCREEN}','${APP}','${B_REVIEW}','${S_OLD}','changes approved',NULL,NULL)`);
+    await x(`INSERT INTO builds_screens (id,"appId","buildId","screenId",status,"reviewStatus","reviewedById","reviewedAt") VALUES
+        ('${BS_REJECTED}','${APP}','${B_FEAT_HIGH}','${S_KEEP}','needs review','rejected','${U_USER}','2026-11-10T00:00:00Z'),
+        ('${BS_CARRIED}','${APP}','${B_FEAT_HIGH}','${S_KEEP}','needs review','approved','${U_USER}','2026-10-01T00:00:00Z'),
+        ('${BS_EXPLICIT}','${APP}','${B_FEAT_LOW}','${S_KEEP}','needs review','approved','${U_USER}','2026-11-01T00:00:00Z'),
+        ('${BS_AUTO}','${APP}','${B_FEAT_LOW}','${S_KEEP}','needs review','approved','${U_USER}','2026-11-02T00:00:00Z')`);
 
     console.log('Running migration');
     await uniqueConstraintsMigration(db);
@@ -119,7 +130,11 @@ async function run() {
     assert.strictEqual(screens.find(s => s.id === S_OLD)!.name, `home [duplicate ${S_OLD}]`, 'other screen is renamed');
 
     const bsIds = (await rows<{ id: string }>(`SELECT id FROM builds_screens ORDER BY id`)).map(r => r.id);
-    assert.deepStrictEqual(bsIds, [BS_DUP_REVIEWED, BS_OLD_SCREEN].sort(), 'reviewed duplicate builds_screens row kept');
+    assert.deepStrictEqual(
+        bsIds,
+        [BS_DUP_REVIEWED, BS_OLD_SCREEN, BS_REJECTED, BS_EXPLICIT].sort(),
+        'kept: reviewed over unreviewed, rejected over carried approval, earlier explicit approval over auto-approval'
+    );
 
     console.log('Asserting unique indexes exist and are enforced');
     const idx = await rows<{ indexname: string; indisunique: boolean }>(
