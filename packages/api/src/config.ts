@@ -25,8 +25,4 @@ export class AppConfig extends BaseAppConfig {
     // multipart parsing. The per-file FileUpload maxSize on the upload endpoint ('17MB') sits above it as a backstop.
     // 16 MiB image + 64 KiB for multipart framing.
     HTTP_MAX_REQUEST_BODY_BYTES = 16 * 1024 * 1024 + 64 * 1024;
-
-    // Keyring for sealing VCS secrets at rest: "k2:<base64 32B>,k1:<base64 32B>". The first key is active, the rest decrypt only.
-    // Required when APP_ENV=production. Generate a key with `openssl rand -base64 32`.
-    SECRETS_ENCRYPTION_KEYS?: string;
 }

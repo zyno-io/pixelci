@@ -2,53 +2,47 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { describe, it } from 'node:test';
 
-import {
-    assertSecretsConfig,
-    parseKeyring,
-    SEALED_PREFIX,
-    SecretBox,
-    SecretKeyUnavailableError,
-    SecretUnreadableError
-} from '../../src/services/secrets/SecretBox';
+import { assertSecretsConfig, SEALED_PREFIX, SecretBox, SecretUnreadableError } from '../../src/services/secrets/SecretBox';
 
-const key = () => randomBytes(32).toString('base64');
-const CTX = 'vcsIntegrations/abc/clientSecret';
+const key = () => randomBytes(32).toString('hex');
 
 describe('SecretBox', () => {
     it('round-trips and uses the sealed format', () => {
-        const box = new SecretBox(`k1:${key()}`);
-        const sealed = box.seal('hunter2', CTX);
-        assert.ok(sealed.startsWith(`${SEALED_PREFIX}k1:`));
+        const box = new SecretBox(key());
+        const sealed = box.seal('hunter2');
+        assert.ok(sealed.startsWith(SEALED_PREFIX));
         assert.ok(!sealed.includes('hunter2'));
-        assert.equal(box.open(sealed, CTX), 'hunter2');
-        assert.notEqual(box.seal('hunter2', CTX), sealed, 'fresh IV each time');
+        assert.equal(box.open(sealed), 'hunter2');
     });
 
-    it('fails on AAD mismatch, tampering and truncation', () => {
-        const box = new SecretBox(`k1:${key()}`);
-        const sealed = box.seal('hunter2', CTX);
-        assert.throws(() => box.open(sealed, 'vcsIntegrations/other/clientSecret'));
-
-        const payload = Buffer.from(sealed.split(':')[3], 'base64url');
-        payload[payload.length - 1] ^= 1;
-        assert.throws(() => box.open(`${SEALED_PREFIX}k1:${payload.toString('base64url')}`, CTX));
-
-        assert.throws(() => box.open(`${SEALED_PREFIX}k1:AAAA`, CTX), /Malformed/);
-        assert.throws(() => box.open(`${SEALED_PREFIX}k1`, CTX), /Malformed/);
+    it('produces different ciphertexts for the same plaintext', () => {
+        const box = new SecretBox(key());
+        assert.notEqual(box.seal('hunter2'), box.seal('hunter2'));
     });
 
-    it('raises SecretUnreadableError for a different key under the same id, and for malformed input', () => {
-        const sealed = new SecretBox(`k1:${key()}`).seal('x', CTX);
-        assert.throws(() => new SecretBox(`k1:${key()}`).open(sealed, CTX), SecretUnreadableError);
-        assert.throws(() => new SecretBox(`k1:${key()}`).open(`${SEALED_PREFIX}k1:AAAA`, CTX), SecretUnreadableError);
-        assert.ok(new SecretKeyUnavailableError('k1') instanceof SecretUnreadableError);
+    it('raises SecretUnreadableError for a different key', () => {
+        const sealed = new SecretBox(key()).seal('x');
+        assert.throws(() => new SecretBox(key()).open(sealed), SecretUnreadableError);
+    });
+
+    it('raises SecretUnreadableError for malformed or tampered prefixed values', () => {
+        const box = new SecretBox(key());
+        assert.throws(() => box.open(`${SEALED_PREFIX}AAAA`), SecretUnreadableError);
+        assert.throws(() => box.open(SEALED_PREFIX), SecretUnreadableError);
+        const raw = Buffer.from(box.seal('hunter2').slice(SEALED_PREFIX.length), 'base64');
+        raw[raw.length - 1] ^= 1;
+        assert.throws(() => box.open(SEALED_PREFIX + raw.toString('base64')), SecretUnreadableError);
+    });
+
+    it('raises SecretUnreadableError for a prefixed value when disabled', () => {
+        const sealed = new SecretBox(key()).seal('x');
+        assert.throws(() => new SecretBox().open(sealed), SecretUnreadableError);
     });
 
     it('does not leak plaintext or sealed values in error messages', () => {
-        const box = new SecretBox(`k1:${key()}`);
-        const sealed = box.seal('hunter2', CTX);
+        const sealed = new SecretBox(key()).seal('hunter2');
         try {
-            box.open(sealed, 'wrong');
+            new SecretBox(key()).open(sealed);
             assert.fail('should throw');
         } catch (err) {
             const msg = (err as Error).message;
@@ -56,78 +50,47 @@ describe('SecretBox', () => {
         }
     });
 
-    it('raises a typed error for an unknown key id', () => {
-        const sealed = new SecretBox(`k1:${key()}`).seal('x', CTX);
-        const other = new SecretBox(`k9:${key()}`);
-        assert.throws(
-            () => other.open(sealed, CTX),
-            err => err instanceof SecretKeyUnavailableError && err.keyId === 'k1'
-        );
-        assert.throws(() => new SecretBox().open(sealed, CTX), SecretKeyUnavailableError);
+    it('passes legacy plaintext through on open', () => {
+        assert.equal(new SecretBox(key()).open('legacy-plain'), 'legacy-plain');
+        assert.equal(new SecretBox().open('legacy-plain'), 'legacy-plain');
     });
 
-    it('passes plaintext through on open', () => {
-        const box = new SecretBox(`k1:${key()}`);
-        assert.equal(box.open('legacy-plain', CTX), 'legacy-plain');
-        assert.equal(new SecretBox().open('legacy-plain', CTX), 'legacy-plain');
-    });
-
-    it('is a no-op when disabled', () => {
+    it('seal is the identity when disabled', () => {
         const box = new SecretBox();
         assert.equal(box.enabled, false);
-        assert.equal(box.seal('plain', CTX), 'plain');
-        assert.equal(box.needsReseal('plain'), false);
+        assert.equal(box.seal('plain'), 'plain');
+        assert.equal(box.needsSeal('plain'), false);
     });
 
     it('leaves empty strings alone', () => {
-        const box = new SecretBox(`k1:${key()}`);
-        assert.equal(box.seal('', CTX), '');
-        assert.equal(box.needsReseal(''), false);
+        const box = new SecretBox(key());
+        assert.equal(box.seal(''), '');
+        assert.equal(box.needsSeal(''), false);
     });
 
-    it('needsReseal covers plaintext and non-active keys', () => {
-        const k1 = key();
-        const k2 = key();
-        const old = new SecretBox(`k1:${k1}`);
-        const sealedOld = old.seal('v', CTX);
-        const rotated = new SecretBox(`k2:${k2},k1:${k1}`);
-        assert.equal(old.needsReseal(sealedOld), false);
-        assert.equal(rotated.needsReseal(sealedOld), true);
-        assert.equal(rotated.needsReseal('plain'), true);
-        const resealed = rotated.seal(rotated.open(sealedOld, CTX), CTX);
-        assert.ok(resealed.startsWith(`${SEALED_PREFIX}k2:`));
-        assert.equal(rotated.needsReseal(resealed), false);
-        assert.equal(new SecretBox(`k2:${k2}`).open(resealed, CTX), 'v');
-    });
-});
-
-describe('parseKeyring', () => {
-    it('keeps order; first key is active', () => {
-        const ring = parseKeyring(`k2:${key()}, k1:${key()}`);
-        assert.equal(ring.activeId, 'k2');
-        assert.deepEqual([...ring.keys.keys()], ['k2', 'k1']);
+    it('needsSeal is true only for non-empty plaintext when enabled', () => {
+        const box = new SecretBox(key());
+        assert.equal(box.enabled, true);
+        assert.equal(box.needsSeal('plain'), true);
+        assert.equal(box.needsSeal(box.seal('plain')), false);
+        assert.equal(box.needsSeal(''), false);
     });
 
-    it('rejects malformed specs', () => {
-        assert.throws(() => parseKeyring(''), /empty/);
-        assert.throws(() => parseKeyring(key()), /<id>:<base64 key>/);
-        assert.throws(() => parseKeyring(`K1:${key()}`), /<id>:<base64 key>/);
-        assert.throws(() => parseKeyring(`${'a'.repeat(17)}:${key()}`), /<id>:<base64 key>/);
-        assert.throws(() => parseKeyring(`k1:${key()},k1:${key()}`), /duplicate/);
-        assert.throws(() => parseKeyring(`k1:${randomBytes(16).toString('base64')}`), /32 bytes/);
-        assert.throws(() => parseKeyring('k1:!!!notbase64'), /base64/);
+    it('throws on an invalid secret', () => {
+        assert.throws(() => new SecretBox('too-short'));
+        assert.throws(() => new SecretBox('z'.repeat(64)));
     });
 });
 
 describe('assertSecretsConfig', () => {
-    it('requires keys in production only', () => {
-        assert.throws(() => assertSecretsConfig({ APP_ENV: 'production' }), /required when APP_ENV=production/);
-        assert.doesNotThrow(() => assertSecretsConfig({ APP_ENV: 'production', SECRETS_ENCRYPTION_KEYS: `k1:${key()}` }));
+    it('requires a secret in production only', () => {
+        assert.throws(() => assertSecretsConfig({ APP_ENV: 'production' }), /CRYPTO_SECRET is required when APP_ENV=production/);
+        assert.doesNotThrow(() => assertSecretsConfig({ APP_ENV: 'production', CRYPTO_SECRET: key() }));
         assert.doesNotThrow(() => assertSecretsConfig({ APP_ENV: 'development' }));
         assert.doesNotThrow(() => assertSecretsConfig({ APP_ENV: 'test' }));
     });
 
-    it('throws on a malformed keyring in any environment', () => {
-        assert.throws(() => assertSecretsConfig({ APP_ENV: 'development', SECRETS_ENCRYPTION_KEYS: 'garbage' }));
+    it('throws on a malformed secret in any environment', () => {
+        assert.throws(() => assertSecretsConfig({ APP_ENV: 'development', CRYPTO_SECRET: 'garbage' }));
     });
 });

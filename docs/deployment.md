@@ -17,9 +17,9 @@ This guide covers self-hosting PixelCI — the API/UI server, background workers
 SETUP_TOKEN=$(openssl rand -hex 32)
 echo "$SETUP_TOKEN"
 
-# Generate the key that encrypts VCS secrets at rest ONCE, and save it (see "Secrets Encryption" below).
-# Never regenerate it: a new key cannot decrypt what the old one encrypted.
-[ -f pixelci-secrets.env ] || echo "SECRETS_ENCRYPTION_KEYS=k1:$(openssl rand -base64 32)" > pixelci-secrets.env
+# Generate the secret that encrypts VCS secrets at rest ONCE, and save it (see "Secrets Encryption" below).
+# Never regenerate it: a new secret cannot decrypt what the old one encrypted.
+[ -f pixelci-secrets.env ] || echo "CRYPTO_SECRET=$(openssl rand -hex 32)" > pixelci-secrets.env
 . ./pixelci-secrets.env
 
 docker run -d \
@@ -40,7 +40,7 @@ docker run -d \
   -e S3_ACCESS_SECRET=your-secret-key \
   -e S3_BUCKET=pixelci \
   -e SETUP_TOKEN="$SETUP_TOKEN" \
-  -e SECRETS_ENCRYPTION_KEYS="$SECRETS_ENCRYPTION_KEYS" \
+  -e CRYPTO_SECRET="$CRYPTO_SECRET" \
   ghcr.io/zyno-io/pixelci:latest
 ```
 
@@ -60,11 +60,11 @@ Visit `http://localhost:7924`. On first launch, the onboarding wizard asks for y
 
 A complete setup with PostgreSQL, Redis, and PixelCI:
 
-Set `SETUP_TOKEN` and `SECRETS_ENCRYPTION_KEYS` in an `.env` file next to the compose file. Generate each value once, write it into the file, and keep a copy elsewhere; never regenerate `SECRETS_ENCRYPTION_KEYS` (see [Secrets Encryption](#secrets-encryption)):
+Set `SETUP_TOKEN` and `CRYPTO_SECRET` in an `.env` file next to the compose file. Generate each value once, write it into the file, and keep a copy elsewhere; never regenerate `CRYPTO_SECRET` (see [Secrets Encryption](#secrets-encryption)):
 
 ```bash
 grep -q "^SETUP_TOKEN=" .env 2>/dev/null || echo "SETUP_TOKEN=$(openssl rand -hex 32)" >> .env
-grep -q "^SECRETS_ENCRYPTION_KEYS=" .env 2>/dev/null || echo "SECRETS_ENCRYPTION_KEYS=k1:$(openssl rand -base64 32)" >> .env
+grep -q "^CRYPTO_SECRET=" .env 2>/dev/null || echo "CRYPTO_SECRET=$(openssl rand -hex 32)" >> .env
 ```
 
 ```yaml
@@ -77,7 +77,7 @@ services:
             APP_ENV: production
             ENABLE_JOB_RUNNER: 'true'
             SETUP_TOKEN: ${SETUP_TOKEN}
-            SECRETS_ENCRYPTION_KEYS: ${SECRETS_ENCRYPTION_KEYS}
+            CRYPTO_SECRET: ${CRYPTO_SECRET}
             AUTH_JWT_SECRET: your-secret-key
             REDIS_HOST: redis
             REDIS_PREFIX: pixelci
@@ -215,39 +215,32 @@ Without this token, anyone who can reach a fresh instance could register their o
 
 ### Secrets Encryption
 
-| Variable                  | Required                       | Default | Description                                                                                                                                                                |
-| ------------------------- | ------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SECRETS_ENCRYPTION_KEYS` | Yes, when `APP_ENV=production` | unset   | Keyring for encrypting VCS secrets at rest: `<id>:<base64 32-byte key>`, comma-separated. The first key encrypts; the others only decrypt. Key ids match `[a-z0-9]{1,16}`. |
+| Variable        | Required                       | Default | Description                                                                                  |
+| --------------- | ------------------------------ | ------- | -------------------------------------------------------------------------------------------- |
+| `CRYPTO_SECRET` | Yes, when `APP_ENV=production` | unset   | Key for encrypting VCS secrets at rest (AES-256-GCM): a 32-byte string or 64 hex characters. |
 
-PixelCI encrypts these fields in the database with AES-256-GCM: each VCS integration's `clientSecret` and GitHub App `privateKey`, and each user's stored VCS session tokens (access and refresh). Each value is bound to its own row, so a copied ciphertext does not decrypt anywhere else. Without the key, a database dump or backup does not reveal them.
+PixelCI encrypts these fields in the database: each VCS integration's `clientSecret` and GitHub App `privateKey`, and each user's stored VCS session tokens (access and refresh). Without the secret, a database dump or backup does not reveal them.
 
-In production the server and `migrate:run` refuse to start without `SECRETS_ENCRYPTION_KEYS`. Outside production (`development`, `test`) a missing key logs a warning and secrets are stored in plaintext. The `encrypt_secrets` migration encrypts plaintext already in the database only if a key is set when it first runs. When you add a key to an existing instance, run `node . secrets:reencrypt` once afterwards to encrypt what is already stored (the migration is not repeated).
+In production the server and `migrate:run` refuse to start without `CRYPTO_SECRET`. Outside production (`development`, `test`) a missing secret logs a warning and secrets are stored in plaintext. The `encrypt_secrets` migration encrypts plaintext already in the database only if a secret is set when it first runs. When you add a secret to an existing instance, run `node . secrets:seal` once afterwards to encrypt what is already stored (the migration is not repeated). `node . secrets:seal --check` exits 1 if anything is still plaintext or unreadable.
 
-Generate a key once (use your own; never reuse a key from an example or from `.env.development`):
+Generate a secret once (use your own; never reuse a secret from an example or from `.env.development`):
 
 ```bash
-echo "k1:$(openssl rand -base64 32)"
+openssl rand -hex 32
 ```
 
-Save the output straight into your secret manager or `.env` file. **Do not regenerate it** (for example by re-running a command that builds it inline): a new key silently replaces the old one and everything already encrypted becomes unreadable. Back it up separately from the database: the database alone cannot be decrypted without it. Every process that runs PixelCI (server, separate worker, migration jobs) needs the same keyring.
+Save the output straight into your secret manager or `.env` file. **Do not regenerate it** (for example by re-running a command that builds it inline): a new secret silently replaces the old one and everything already encrypted becomes unreadable. Back it up separately from the database: the database alone cannot be decrypted without it. Every process that runs PixelCI (server, separate worker, migration jobs) needs the same value.
 
-**Rotating the key**
+Key rotation is not supported yet: changing `CRYPTO_SECRET` makes stored secrets unreadable, so recover using the steps below.
 
-Roll out in two deploys so that no process seals with a key another running process cannot read (pods and the worker roll separately):
+**If the secret is lost**
 
-1. Append the new key as decrypt-only: `SECRETS_ENCRYPTION_KEYS="k1:<old>,k2:<new>"`. Deploy everywhere (server, worker).
-2. Move the new key to the front: `SECRETS_ENCRYPTION_KEYS="k2:<new>,k1:<old>"`. Deploy everywhere.
-3. Re-encrypt existing values under the new key: `node . secrets:reencrypt` (safe to re-run), then confirm with `node . secrets:reencrypt --check`, which must exit 0 (it exits 1 if any value still needs re-encrypting or cannot be read).
-4. Remove the old key: `SECRETS_ENCRYPTION_KEYS="k2:<new>"`. Deploy everywhere.
-
-**If the key is lost**
-
-Encrypted values cannot be recovered. Configure a new key under a **new key id** (for example `k2`, not `k1` again) and re-enter secrets:
+Encrypted values cannot be recovered. Set a new `CRYPTO_SECRET` and re-enter secrets:
 
 - Re-enter each integration's client secret (and GitHub App private key) under **VCS Integrations** (admin menu). An integration whose stored secrets cannot be decrypted accepts an update that supplies new values; the update is rejected until every unreadable secret is replaced. Until then, anything that needs the integration fails with a server error, and the log names the problem (never the secret).
 - Users sign in again: a session that cannot be decrypted is treated as no session.
 
-If you cannot reach the admin UI, write plaintext values directly into the integration's `config` JSON in the database, then run `node . secrets:reencrypt` to seal them.
+If you cannot reach the admin UI, write plaintext values directly into the integration's `config` JSON in the database, then run `node . secrets:seal` to seal them.
 
 ### Access Control
 
@@ -298,7 +291,7 @@ docker run -d \
   -e S3_ACCESS_KEY_ID=your-access-key \
   -e S3_ACCESS_SECRET=your-secret-key \
   -e S3_BUCKET=pixelci \
-  -e SECRETS_ENCRYPTION_KEYS="$SECRETS_ENCRYPTION_KEYS" \
+  -e CRYPTO_SECRET="$CRYPTO_SECRET" \
   ghcr.io/zyno-io/pixelci:latest \
   node . worker:start
 ```
@@ -318,4 +311,4 @@ Run migrations via `kubectl exec` against the server deployment after each upgra
 kubectl exec deploy/pixelci-server -- node . migrate:run
 ```
 
-All deployments share the same environment variables. Use Kubernetes Secrets for sensitive values (`AUTH_JWT_SECRET`, `PG_PASSWORD_SECRET`, S3 credentials, `SECRETS_ENCRYPTION_KEYS`).
+All deployments share the same environment variables. Use Kubernetes Secrets for sensitive values (`AUTH_JWT_SECRET`, `PG_PASSWORD_SECRET`, S3 credentials, `CRYPTO_SECRET`).

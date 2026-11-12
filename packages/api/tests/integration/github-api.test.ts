@@ -599,7 +599,7 @@ async function run() {
             'session not sealed at rest'
         );
         assert(user.vcsSession, 'session missing');
-        const opened = openVcsSession(user.id, user.vcsSession);
+        const opened = openVcsSession(user.vcsSession);
         assert(opened.accessToken === 'ghu_login' && opened.refreshToken === 'ghr_initial', 'session not stored');
         assert(user.vcsSession.expiresAt > Date.now() + 7 * 3600_000, 'expiresAt should reflect expires_in');
     }
@@ -623,7 +623,7 @@ async function run() {
         status(await login('forever'), 200, 'forever login');
         const user = await UserEntity.query().filter({ id: userId }).findOne();
         assert(
-            user.vcsSession?.expiresAt === Number.MAX_SAFE_INTEGER && openVcsSession(user.id, user.vcsSession).refreshToken === '',
+            user.vcsSession?.expiresAt === Number.MAX_SAFE_INTEGER && openVcsSession(user.vcsSession).refreshToken === '',
             `unexpected session ${JSON.stringify(user.vcsSession)}`
         );
     }
@@ -670,7 +670,7 @@ async function run() {
         const user = await UserEntity.query().filter({ id: userId }).findOne();
         assert(user.vcsSession?.accessToken.startsWith(SEALED_PREFIX), 'rotated session must be stored sealed');
         assert(user.vcsSession, 'session missing');
-        const openedRot = openVcsSession(user.id, user.vcsSession);
+        const openedRot = openVcsSession(user.vcsSession);
         assert(openedRot.accessToken === `ghu_rot${refreshCounter}` && openedRot.refreshToken === validRefreshToken, 'rotated session not saved');
     }
 

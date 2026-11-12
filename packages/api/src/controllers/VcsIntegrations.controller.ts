@@ -85,12 +85,11 @@ export class VcsIntegrationsController {
     async create(body: HttpBody<IVcsIntegrationCreateInput>): Promise<IVcsIntegrationListResponse> {
         const { platform, config } = normalizeCreateConfig(body);
 
-        const id = uuid();
         const integration = createEntity(VcsIntegrationEntity, {
-            id,
+            id: uuid(),
             name: body.name,
             platform,
-            config: sealIntegrationConfig(id, platform, config)
+            config: sealIntegrationConfig(config)
         });
         await integration.save();
 
@@ -121,7 +120,7 @@ export class VcsIntegrationsController {
             if (stillMissing.length) {
                 throw new HttpBadRequestError(`Stored ${stillMissing.join(' and ')} cannot be decrypted; supply a new value`);
             }
-            integration.config = sealIntegrationConfig(integration.id, integration.platform, merged);
+            integration.config = sealIntegrationConfig(merged);
         }
         await integration.save();
 

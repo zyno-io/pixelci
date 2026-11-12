@@ -140,12 +140,11 @@ export class SessionController {
             if (existingCount > 0) {
                 return undefined; // lost a race with a concurrent request that passed the token check
             }
-            const integrationId = uuid();
             const created = createEntity(VcsIntegrationEntity, {
-                id: integrationId,
+                id: uuid(),
                 name: input.name,
                 platform,
-                config: sealIntegrationConfig(integrationId, platform, config)
+                config: sealIntegrationConfig(config)
             });
             txn.add(created);
             await txn.flush();
@@ -200,7 +199,7 @@ export class SessionController {
                     if (claimAdmin) locked.isAdmin = true;
                     locked.name = name;
                     locked.lastLoginAt = new Date();
-                    locked.vcsSession = sealVcsSession(locked.id, sessionDetails);
+                    locked.vcsSession = sealVcsSession(sessionDetails);
                     await txn.flush();
                     writtenUnderLock = true;
                     return locked;
@@ -216,7 +215,7 @@ export class SessionController {
             // Rows not written under the lock (the common existing-user path, or the unique-error re-select): refresh the profile.
             user.name = name;
             user.lastLoginAt = new Date();
-            user.vcsSession = sealVcsSession(user.id, sessionDetails);
+            user.vcsSession = sealVcsSession(sessionDetails);
             await user.save();
         }
 

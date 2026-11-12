@@ -1,17 +1,17 @@
 import { createMigration, getAppConfig } from '@zyno-io/ts-server-foundation';
 
-import { reencryptAllSecrets } from '../services/secrets/reencrypt';
+import { sealPlaintextSecrets } from '../services/secrets/sealPlaintext';
 import { assertSecretsConfig, getSecretBox } from '../services/secrets/SecretBox';
 
 export default createMigration(async db => {
     const config = getAppConfig<import('../config').AppConfig>();
-    assertSecretsConfig(config); // fails in production without keys; warns once elsewhere
+    assertSecretsConfig(config); // fails in production without CRYPTO_SECRET; warns once elsewhere
     const box = getSecretBox();
     if (!box.enabled) return;
 
-    const report = await reencryptAllSecrets(db, box);
+    const report = await sealPlaintextSecrets(db, box);
     console.log(
-        `encrypt_secrets: integrations resealed=${report.integrations.resealed}, sessions resealed=${report.sessions.resealed}, unreadable=${
+        `encrypt_secrets: integrations sealed=${report.integrations.sealed}, sessions sealed=${report.sessions.sealed}, unreadable=${
             report.integrations.unreadable.length + report.sessions.unreadable.length
         }`
     );

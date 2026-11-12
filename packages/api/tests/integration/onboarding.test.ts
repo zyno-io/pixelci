@@ -709,7 +709,7 @@ function assertStatus(response: { statusCode: number; body?: Buffer | string }, 
 
 async function testLostKeyRecovery(facade: Facade, jwt: string) {
     console.log('\nTest: integration with unreadable secrets (lost key) can be recovered by PUT with new secrets');
-    const b64 = (n: number) => Buffer.alloc(32, n).toString('base64');
+    const hex = (n: number) => Buffer.alloc(32, n).toString('hex');
     const create = async (input: object) => {
         const r = await facade.request(adminReq(HttpRequest.POST('/api/admin/vcs-integrations'), jwt).json(input));
         assertStatus(r, 200);
@@ -723,8 +723,8 @@ async function testLostKeyRecovery(facade: Facade, jwt: string) {
     const ghId = await create(githubInput({ oidcAudience: 'https://lost.example.com' }));
     const put = (id: string, body: object) => facade.request(adminReq(HttpRequest.PUT(`/api/admin/vcs-integrations/${id}`), jwt).json(body));
 
-    // k9 lacks the original key id; "dev1" under a different key fails GCM authentication instead.
-    for (const spec of [`k9:${b64(9)}`, `dev1:${b64(7)}`]) {
+    // Two different secrets, neither of which can decrypt what was sealed under the original dev secret.
+    for (const spec of [hex(9), hex(7)]) {
         setSecretBoxForTesting(new SecretBox(spec));
         try {
             assertStatus(await put(glId, { config: { clientId: 'c2', clientSecret: '' } }), 400);
@@ -741,13 +741,13 @@ async function testLostKeyRecovery(facade: Facade, jwt: string) {
             setSecretBoxForTesting(undefined);
         }
         // Make them unreadable again for the next key spec (sealed under the original dev key).
-        for (const [id, platform, cfg] of [
+        for (const [id, _platform, cfg] of [
             [glId, 'gitlab', { url: 'https://gl-lost.example.com', clientId: 'c', clientSecret: 'old-gl' }],
             [ghId, 'github', { ...githubInput().config, privateKey: GITHUB_KEY.trim(), oidcAudience: 'https://lost.example.com' }]
         ] as const) {
             await VcsIntegrationEntity.query()
                 .filter({ id })
-                .patchMany({ config: sealIntegrationConfig(id, platform, cfg as never) });
+                .patchMany({ config: sealIntegrationConfig(cfg as never) });
         }
     }
     console.log('  PASS');

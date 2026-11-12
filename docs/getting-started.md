@@ -14,13 +14,13 @@ PixelCI is a self-hosted visual regression testing platform. It compares screens
 
 ### 1. Deploy PixelCI
 
-Generate an encryption key for VCS secrets once, store it somewhere safe, and never regenerate it (see [Secrets Encryption](/deployment#secrets-encryption)):
+Generate an encryption secret for VCS secrets once, store it somewhere safe, and never regenerate it (see [Secrets Encryption](/deployment#secrets-encryption)):
 
 ```bash
-echo "k1:$(openssl rand -base64 32)"
+openssl rand -hex 32
 ```
 
-Run the server with Docker, using that value for `SECRETS_ENCRYPTION_KEYS`:
+Run the server with Docker, using that value for `CRYPTO_SECRET`:
 
 ```bash
 docker run -d \
@@ -40,7 +40,7 @@ docker run -d \
   -e S3_ACCESS_KEY_ID=your-access-key \
   -e S3_ACCESS_SECRET=your-secret-key \
   -e S3_BUCKET=pixelci \
-  -e SECRETS_ENCRYPTION_KEYS="<the value printed above>" \
+  -e CRYPTO_SECRET="<the value printed above>" \
   ghcr.io/zyno-io/pixelci:latest
 ```
 

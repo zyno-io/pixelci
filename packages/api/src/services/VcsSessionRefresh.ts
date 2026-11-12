@@ -24,9 +24,9 @@ async function refreshOnce(
     const current = stored?.vcsSession ?? callerSession; // sealed
     if (isFresh(current)) return current;
 
-    const currentOpen = openVcsSession(userId, current);
+    const currentOpen = openVcsSession(current);
     try {
-        const sealed = sealVcsSession(userId, await refreshFn(currentOpen));
+        const sealed = sealVcsSession(await refreshFn(currentOpen));
         await UserEntity.query().filter({ id: userId }).patchMany({ vcsSession: sealed });
         return sealed;
     } catch (err) {
@@ -35,7 +35,7 @@ async function refreshOnce(
             // Compare opened tokens: two seals of the same plaintext differ.
             const reread = await UserEntity.query().filter({ id: userId }).findOneOrUndefined();
             const adopted = reread?.vcsSession;
-            if (adopted && isFresh(adopted) && openVcsSession(userId, adopted).refreshToken !== currentOpen.refreshToken) return adopted;
+            if (adopted && isFresh(adopted) && openVcsSession(adopted).refreshToken !== currentOpen.refreshToken) return adopted;
         }
         throw err;
     }
@@ -66,7 +66,7 @@ export async function ensureFreshVcsSession(
     try {
         user.vcsSession = await pending; // stays sealed in memory, so a later save() never writes plaintext
     } catch (err) {
-        // A session sealed with a key that is no longer configured is unusable: the user must sign in again.
+        // A session sealed with a secret that is no longer configured is unusable: the user must sign in again.
         if (err instanceof SecretUnreadableError) throw new HttpBadRequestError(SIGN_IN_AGAIN);
         throw err;
     }
