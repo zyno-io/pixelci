@@ -235,12 +235,31 @@ Key rotation is not supported yet: changing `CRYPTO_SECRET` makes stored secrets
 
 **If the secret is lost**
 
-Encrypted values cannot be recovered. Set a new `CRYPTO_SECRET` and re-enter secrets:
+Encrypted values cannot be recovered. Until the integration secrets are replaced, nobody can sign in: every sign-in needs the integration's client secret, so the admin UI is out of reach too. Recover from the database:
 
-- Re-enter each integration's client secret (and GitHub App private key) under **VCS Integrations** (admin menu). An integration whose stored secrets cannot be decrypted accepts an update that supplies new values; the update is rejected until every unreadable secret is replaced. Until then, anything that needs the integration fails with a server error, and the log names the problem (never the secret).
-- Users sign in again: a session that cannot be decrypted is treated as no session.
+1. Set a new `CRYPTO_SECRET` everywhere (server, worker, migration jobs).
+2. Write each integration's secrets back in plaintext. `config` is a JSON column; use the values from your GitLab application or GitHub App:
 
-If you cannot reach the admin UI, write plaintext values directly into the integration's `config` JSON in the database, then run `node . secrets:seal` to seal them.
+    ```sql
+    -- GitLab and GitHub: the OAuth client secret
+    UPDATE "vcsIntegrations"
+       SET config = jsonb_set(config::jsonb, '{clientSecret}', to_jsonb('<client secret>'::text))::json
+     WHERE id = '<integration id>';
+    -- GitHub App only: the private key (PEM, with its line breaks)
+    UPDATE "vcsIntegrations"
+       SET config = jsonb_set(config::jsonb, '{privateKey}', to_jsonb('<PEM>'::text))::json
+     WHERE id = '<integration id>';
+    ```
+
+3. Clear stored user sessions, which the old secret encrypted. Users sign in again; nothing else is lost:
+
+    ```sql
+    UPDATE users SET "vcsSession" = NULL WHERE "vcsSession"::text LIKE '%pcienc:v1:%';
+    ```
+
+4. Run `node . secrets:seal` to encrypt the plaintext you wrote, then `node . secrets:seal --check`, which must exit 0.
+
+Until step 2 is done, anything that needs an integration fails with a server error, and the log names the integration (never the secret). An admin who is still signed in can instead re-enter the secrets under **VCS Integrations** (admin menu): an integration whose stored secrets cannot be decrypted accepts an update that supplies every unreadable value.
 
 ### Access Control
 

@@ -55,6 +55,11 @@ describe('SecretBox', () => {
         assert.equal(new SecretBox().open('legacy-plain'), 'legacy-plain');
     });
 
+    it('raises SecretUnreadableError for a missing (non-string) stored value', () => {
+        assert.throws(() => new SecretBox(key()).open(undefined as unknown as string), SecretUnreadableError);
+        assert.throws(() => new SecretBox().open(null as unknown as string), SecretUnreadableError);
+    });
+
     it('seal is the identity when disabled', () => {
         const box = new SecretBox();
         assert.equal(box.enabled, false);

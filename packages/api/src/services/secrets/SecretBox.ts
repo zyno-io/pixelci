@@ -31,6 +31,7 @@ export class SecretBox {
 
     /** Values without the sealed prefix (legacy plaintext, test seeds) pass through unchanged. */
     open(value: string): string {
+        if (typeof value !== 'string') throw new SecretUnreadableError('Stored secret is missing');
         if (!value.startsWith(SEALED_PREFIX)) return value;
         if (!this.crypto) throw new SecretUnreadableError('Sealed secret cannot be read: CRYPTO_SECRET is not set');
         try {
