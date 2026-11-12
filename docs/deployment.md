@@ -146,6 +146,18 @@ docker compose exec pixelci node . migrate:run
 kubectl exec deploy/pixelci-server -- node . migrate:run
 ```
 
+Some upgrades migrate data the new version depends on (for example, encrypting stored VCS secrets). To avoid errors between starting the new version and migrating, run the migrations with the new image before starting it, with the same environment as the server:
+
+```bash
+# Docker
+docker run --rm --env-file pixelci.env ghcr.io/zyno-io/pixelci:<new version> node . migrate:run
+
+# Docker Compose (after updating the image tag)
+docker compose run --rm pixelci node . migrate:run && docker compose up -d
+```
+
+The Helm chart does this for you: it runs the migrations in a pre-upgrade job.
+
 ## Environment Variable Reference
 
 ### General

@@ -249,14 +249,12 @@ export class VcsService {
     }
 
     private createProvider(provider: VcsIntegrationEntity): IVcsServiceImpl {
-        let config: IGitLabConfig | IGitHubConfig;
-        try {
-            config = openIntegrationConfig(provider);
-        } catch (err) {
-            if (err instanceof SecretUnreadableError) {
-                this.logger.error(`VCS integration ${provider.id} has secrets that cannot be decrypted with the configured CRYPTO_SECRET`);
-            }
-            throw err;
+        const unreadable: string[] = [];
+        const config = openIntegrationConfig(provider, unreadable);
+        if (unreadable.length) {
+            const fields = unreadable.join(' and ');
+            this.logger.error(`VCS integration ${provider.id}: ${fields} cannot be decrypted with the configured CRYPTO_SECRET`);
+            throw new SecretUnreadableError(`VCS integration ${provider.id}: ${fields} cannot be decrypted`);
         }
         if (provider.platform === 'gitlab') {
             return new VcsGitLabService(config as IGitLabConfig, this.logger);

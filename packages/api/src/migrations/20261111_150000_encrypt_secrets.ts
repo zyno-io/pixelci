@@ -4,7 +4,21 @@ import { assertSecretsConfig, getSecretBox } from '../services/secrets/SecretBox
 
 type Json = Record<string, unknown>;
 
-/** Encrypts every string `field` of the json `column` in each row of `table`. One short transaction per row, under a row lock. */
+/** True when `value` already decrypts under the current key. AES-GCM authentication makes a false positive on plaintext negligible. */
+function isSealed(value: string): boolean {
+    try {
+        getSecretBox().open(value);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Encrypts every plaintext string `field` of the json `column` in each row of `table`. One short transaction per row, under a
+ * row lock. Values that already decrypt are skipped, so a rerun (interrupted hook, concurrent migrate, writes by new code before
+ * the migration) never double-encrypts.
+ */
 async function encryptColumn(db: BaseDatabase, table: string, column: string, fields: string[]): Promise<number> {
     const box = getSecretBox();
     const ids = (
@@ -21,7 +35,7 @@ async function encryptColumn(db: BaseDatabase, table: string, column: string, fi
             const next: Json = { ...row.value };
             let changed = false;
             for (const f of fields) {
-                if (typeof next[f] !== 'string') continue;
+                if (typeof next[f] !== 'string' || isSealed(next[f] as string)) continue;
                 next[f] = box.seal(next[f] as string);
                 changed = true;
             }
@@ -33,7 +47,7 @@ async function encryptColumn(db: BaseDatabase, table: string, column: string, fi
     return count;
 }
 
-/** Encrypts all existing plaintext secrets. Runs exactly once per database, so every stored string is plaintext here. */
+/** Encrypts all existing plaintext secrets. Safe to run more than once. */
 export async function encryptSecrets(db: BaseDatabase) {
     const integrations = await encryptColumn(db, 'vcsIntegrations', 'config', ['clientSecret', 'privateKey']);
     const sessions = await encryptColumn(db, 'users', 'vcsSession', ['accessToken', 'refreshToken']);

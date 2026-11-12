@@ -1,5 +1,5 @@
 import { TestingHelpers } from '@zyno-io/ts-server-foundation';
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 
 import { CoreAppOptions } from '../../src/app';
 import { setIntegrationSecret } from '../../src/commands/SetIntegrationSecret.command';
@@ -15,7 +15,9 @@ configureTestDatabase();
 
 const VCS_ID = 'e5000000-aaaa-bbbb-cccc-000000000001';
 const USER_ID = 'e5000000-aaaa-bbbb-cccc-000000000011';
-const PEM = '-----BEGIN RSA PRIVATE KEY-----\nCANARY-pem-body\n-----END RSA PRIVATE KEY-----';
+const newPem = () => generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+const PEM = newPem();
+const NEW_PEM = newPem();
 const CANARIES = ['CANARY-cs', 'CANARY-pem-body', 'CANARY-at', 'CANARY-rt'];
 
 const OTHER_KEY = randomBytes(32).toString('hex');
@@ -77,6 +79,13 @@ async function run() {
     assert(box.open(sessRow.s.accessToken) === 'CANARY-at' && box.open(sessRow.s.refreshToken) === 'CANARY-rt', 'session tokens decrypt');
     console.log('  PASS');
 
+    console.log('\nTest: rerunning the migration does not double-encrypt');
+    const before = await text();
+    const rerun = await encryptSecrets(db);
+    assert(rerun.integrations === 0 && rerun.sessions === 0, `rerun should change nothing, got ${JSON.stringify(rerun)}`);
+    assert(JSON.stringify(await text()) === JSON.stringify(before), 'rows unchanged by the rerun');
+    console.log('  PASS');
+
     console.log('\nTest: lost key makes values unreadable');
     const other = new SecretBox(OTHER_KEY);
     for (const v of [cfgRow.config.clientSecret, cfgRow.config.privateKey, sessRow.s.accessToken]) {
@@ -94,13 +103,13 @@ async function run() {
     setSecretBoxForTesting(other);
     try {
         await setIntegrationSecret(db, VCS_ID, 'clientSecret', 'CANARY-new-cs');
-        await setIntegrationSecret(db, VCS_ID, 'privateKey', PEM.replace('CANARY-pem-body', 'CANARY-new-pem'));
+        await setIntegrationSecret(db, VCS_ID, 'privateKey', `${NEW_PEM}\n\n`);
     } finally {
         setSecretBoxForTesting(undefined);
     }
     const after = (await db.rawFind<{ config: Record<string, string> }>(`SELECT config FROM "vcsIntegrations" WHERE id = '${VCS_ID}'`))[0].config;
     assert(other.open(after.clientSecret) === 'CANARY-new-cs', 'clientSecret replaced and sealed with the current key');
-    assert(other.open(after.privateKey).includes('CANARY-new-pem') && other.open(after.privateKey).includes('\n'), 'privateKey keeps line breaks');
+    assert(other.open(after.privateKey) === NEW_PEM.trim() && NEW_PEM.trim().includes('\n'), 'privateKey trimmed, internal line breaks kept');
     assert(after.clientId === 'cid' && after.appId === '1' && after.oidcAudience === 'a', 'other fields untouched');
     assert(JSON.stringify((await text()).sess) === JSON.stringify(t.sess), 'sessions untouched');
 
@@ -121,5 +130,12 @@ async function run() {
         err = (e as Error).message;
     }
     assert(err.includes('GitHub'), 'privateKey on a non-GitHub integration is rejected');
+    err = '';
+    try {
+        await setIntegrationSecret(db, VCS_ID, 'privateKey', '-----BEGIN PUBLIC KEY-----\nnope\n-----END PUBLIC KEY-----');
+    } catch (e) {
+        err = (e as Error).message;
+    }
+    assert(err.includes('not a valid PEM private key'), 'an invalid private key is rejected');
     console.log('  PASS');
 }
