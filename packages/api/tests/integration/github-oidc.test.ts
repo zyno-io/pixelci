@@ -8,6 +8,7 @@ import { AppEntity } from '../../src/entities/App.entity';
 import { BranchEntity } from '../../src/entities/Branch.entity';
 import { BuildEntity } from '../../src/entities/Build.entity';
 import { IGitHubConfig, VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { sealIntegrationConfig } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
@@ -121,7 +122,12 @@ async function run() {
         id: VCS_ID,
         name: 'GitHub Test VCS',
         platform: 'github',
-        config: { clientId: 'client-id', clientSecret: 'client-secret', oidcAudience: AUDIENCE, oidcIssuer: issuer } satisfies IGitHubConfig
+        config: sealIntegrationConfig({
+            clientId: 'client-id',
+            clientSecret: 'client-secret',
+            oidcAudience: AUDIENCE,
+            oidcIssuer: issuer
+        } satisfies IGitHubConfig)
     });
     await createPersistedEntity(AppEntity, {
         id: APP_ID,
@@ -209,7 +215,7 @@ async function run() {
         id: VCS_NO_AUD_ID,
         name: 'GitHub No Audience',
         platform: 'github',
-        config: { clientId: 'client-id', clientSecret: 'client-secret', oidcIssuer: issuer } as unknown as IGitHubConfig
+        config: sealIntegrationConfig({ clientId: 'client-id', clientSecret: 'client-secret', oidcIssuer: issuer } as unknown as IGitHubConfig)
     });
     await createPersistedEntity(AppEntity, {
         id: NO_AUD_APP_ID,
@@ -233,13 +239,13 @@ async function testConfigRoundtrip() {
         id: VCS_ROUNDTRIP_ID,
         name: 'GHES Roundtrip',
         platform: 'github',
-        config: {
+        config: sealIntegrationConfig({
             url: 'https://ghe.example.com',
             clientId: 'cid',
             clientSecret: 'csecret',
             oidcAudience: AUDIENCE,
             oidcIssuer: 'https://ghe.example.com/_services/token'
-        } satisfies IGitHubConfig
+        } satisfies IGitHubConfig)
     });
     const loaded = await VcsIntegrationEntity.query().filter({ id: VCS_ROUNDTRIP_ID }).findOne();
     const config = loaded.config as Partial<IGitHubConfig>;

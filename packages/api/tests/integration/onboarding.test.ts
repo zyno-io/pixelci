@@ -5,7 +5,7 @@ import { generateKeyPairSync } from 'crypto';
 import { CoreAppOptions } from '../../src/app';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
-import { SEALED_PREFIX, SecretBox, setSecretBoxForTesting } from '../../src/services/secrets/SecretBox';
+import { getSecretBox, SecretBox, setSecretBoxForTesting } from '../../src/services/secrets/SecretBox';
 import { openIntegrationConfig, sealIntegrationConfig } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 
@@ -18,7 +18,8 @@ configureTestDatabase();
 
 function assertSealed(cfg: Record<string, string>, fields: string[]) {
     for (const f of fields) {
-        if (!cfg[f]?.startsWith(SEALED_PREFIX)) throw new Error(`Expected ${f} to be stored sealed`);
+        if (!cfg[f]) throw new Error(`Expected ${f} to be stored sealed`);
+        getSecretBox().open(cfg[f]); // throws SecretUnreadableError if it is not ciphertext under the current key
     }
 }
 
@@ -260,11 +261,11 @@ async function testLegacyGitHubRowPartialUpdate(facade: Facade, jwt: string) {
         id,
         name: 'Legacy GitHub',
         platform: 'github',
-        config: {
+        config: sealIntegrationConfig({
             clientId: 'cid',
             clientSecret: 'csecret',
             oidcAudience: 'https://old.example'
-        }
+        })
     });
     const put = (config: Record<string, string>) =>
         facade.request(

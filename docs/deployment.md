@@ -215,13 +215,13 @@ Without this token, anyone who can reach a fresh instance could register their o
 
 ### Secrets Encryption
 
-| Variable        | Required                       | Default | Description                                                                                  |
-| --------------- | ------------------------------ | ------- | -------------------------------------------------------------------------------------------- |
-| `CRYPTO_SECRET` | Yes, when `APP_ENV=production` | unset   | Key for encrypting VCS secrets at rest (AES-256-GCM): a 32-byte string or 64 hex characters. |
+| Variable        | Required | Default | Description                                                                                  |
+| --------------- | -------- | ------- | -------------------------------------------------------------------------------------------- |
+| `CRYPTO_SECRET` | Yes      | unset   | Key for encrypting VCS secrets at rest (AES-256-GCM): a 32-byte string or 64 hex characters. |
 
 PixelCI encrypts these fields in the database: each VCS integration's `clientSecret` and GitHub App `privateKey`, and each user's stored VCS session tokens (access and refresh). Without the secret, a database dump or backup does not reveal them.
 
-In production the server and `migrate:run` refuse to start without `CRYPTO_SECRET`. Outside production (`development`, `test`) a missing secret logs a warning and secrets are stored in plaintext. The `encrypt_secrets` migration encrypts plaintext already in the database only if a secret is set when it first runs. When you add a secret to an existing instance, run `node . secrets:seal` once afterwards to encrypt what is already stored (the migration is not repeated). `node . secrets:seal --check` exits 1 if anything is still plaintext or unreadable.
+`CRYPTO_SECRET` is required in every environment: the server, worker and `migrate:run` refuse to start without it. The `encrypt_secrets` migration encrypts any secrets already in the database when it first runs.
 
 Generate a secret once (use your own; never reuse a secret from an example or from `.env.development`):
 
@@ -231,33 +231,27 @@ openssl rand -hex 32
 
 Save the output straight into your secret manager or `.env` file. **Do not regenerate it** (for example by re-running a command that builds it inline): a new secret silently replaces the old one and everything already encrypted becomes unreadable. Back it up separately from the database: the database alone cannot be decrypted without it. Every process that runs PixelCI (server, separate worker, migration jobs) needs the same value.
 
-Key rotation is not supported yet: changing `CRYPTO_SECRET` makes stored secrets unreadable, so recover using the steps below.
+Key rotation is not supported yet.
 
 **If the secret is lost**
 
-Encrypted values cannot be recovered. Until the integration secrets are replaced, nobody can sign in: every sign-in needs the integration's client secret, so the admin UI is out of reach too. Recover from the database:
+Encrypted values cannot be recovered. Until the integration secrets are replaced, nobody can sign in: every sign-in needs the integration's client secret, so the admin UI is out of reach too. Recover from the command line:
 
 1. Set a new `CRYPTO_SECRET` everywhere (server, worker, migration jobs).
-2. Write each integration's secrets back in plaintext. `config` is a JSON column; use the values from your GitLab application or GitHub App:
+2. Store each integration's secrets again, using the values from your GitLab application or GitHub App. Find the integration ids with `SELECT id, name, platform FROM "vcsIntegrations";`. The value is read from stdin and encrypted with the new secret; it is never printed:
 
-    ```sql
-    -- GitLab and GitHub: the OAuth client secret
-    UPDATE "vcsIntegrations"
-       SET config = jsonb_set(config::jsonb, '{clientSecret}', to_jsonb('<client secret>'::text))::json
-     WHERE id = '<integration id>';
-    -- GitHub App only: the private key (PEM, with its line breaks)
-    UPDATE "vcsIntegrations"
-       SET config = jsonb_set(config::jsonb, '{privateKey}', to_jsonb('<PEM>'::text))::json
-     WHERE id = '<integration id>';
+    ```bash
+    # GitLab and GitHub: the OAuth client secret
+    printf '%s' '<client secret>' | node . secrets:set-integration <integration id> clientSecret
+    # GitHub App only: the private key (PEM)
+    node . secrets:set-integration <integration id> privateKey < key.pem
     ```
 
-3. Clear stored user sessions, which the old secret encrypted. Users sign in again; nothing else is lost:
+3. Clear all stored user sessions, which the old secret encrypted. Users sign in again; nothing else is lost:
 
     ```sql
-    UPDATE users SET "vcsSession" = NULL WHERE "vcsSession"::text LIKE '%pcienc:v1:%';
+    UPDATE users SET "vcsSession" = NULL WHERE "vcsSession" IS NOT NULL;
     ```
-
-4. Run `node . secrets:seal` to encrypt the plaintext you wrote, then `node . secrets:seal --check`, which must exit 0.
 
 Until step 2 is done, anything that needs an integration fails with a server error, and the log names the integration (never the secret). An admin who is still signed in can instead re-enter the secrets under **VCS Integrations** (admin menu): an integration whose stored secrets cannot be decrypted accepts an update that supplies every unreadable value.
 

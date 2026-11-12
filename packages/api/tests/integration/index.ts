@@ -12,6 +12,7 @@ import { BuildScreenEntity } from '../../src/entities/BuildScreen.entity';
 import { ScreenEntity } from '../../src/entities/Screen.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 import { IScenario, TestScenarios } from './scenarios';
 
@@ -220,7 +221,12 @@ async function testApprovalRights(facade: TestingFacade) {
             isAdmin: false,
             vcsId: ZERO_ID,
             vcsUserId: u.vcsUserId,
-            vcsSession: { accessToken: u.token, expiresAt: Date.now() + 60 * 60 * 1000, refreshToken: 'r', redirectUri: 'http://localhost' }
+            vcsSession: sealVcsSession({
+                accessToken: u.token,
+                expiresAt: Date.now() + 60 * 60 * 1000,
+                refreshToken: 'r',
+                redirectUri: 'http://localhost'
+            })
         });
     }
     const adminJwt = await JWT.generate({ subject: ZERO_ID });
@@ -532,23 +538,23 @@ async function createBaseEntities(mockGitLabPort: number) {
         isAdmin: true,
         vcsId: ZERO_ID,
         vcsUserId: ZERO_ID,
-        vcsSession: {
+        vcsSession: sealVcsSession({
             accessToken: 'test-access-token',
             expiresAt: Date.now() + 60 * 60 * 1000,
             refreshToken: 'test-refresh-token',
             redirectUri: 'http://localhost'
-        }
+        })
     });
 
     await createPersistedEntity(VcsIntegrationEntity, {
         id: ZERO_ID,
         name: 'Integration Test VCS',
         platform: 'gitlab',
-        config: {
+        config: sealIntegrationConfig({
             url: `http://127.0.0.1:${mockGitLabPort}`,
             clientId: 'client-id',
             clientSecret: 'client-secret'
-        }
+        })
     });
 
     await createPersistedEntity(AppEntity, {

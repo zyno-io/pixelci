@@ -10,6 +10,7 @@ import { BuildScreenEntity } from '../../src/entities/BuildScreen.entity';
 import { ScreenEntity } from '../../src/entities/Screen.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { sealIntegrationConfig } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
@@ -146,11 +147,11 @@ async function createBaseEntities() {
         id: VCS_ID,
         name: 'Ext Test VCS',
         platform: 'gitlab',
-        config: {
+        config: sealIntegrationConfig({
             url: `http://127.0.0.1:${mockGitLabPort}`,
             clientId: 'client-id',
             clientSecret: 'client-secret'
-        }
+        })
     });
 
     // A GitHub integration coexisting with the GitLab one: GitLab PATs must still resolve with no header.
@@ -159,7 +160,12 @@ async function createBaseEntities() {
         name: 'Ext Test GitHub',
         platform: 'github',
         // url points at a closed local port so tests never contact real GitHub
-        config: { url: 'http://127.0.0.1:9', clientId: 'gh-client', clientSecret: 'gh-secret', oidcAudience: 'https://pixelci.example.com' }
+        config: sealIntegrationConfig({
+            url: 'http://127.0.0.1:9',
+            clientId: 'gh-client',
+            clientSecret: 'gh-secret',
+            oidcAudience: 'https://pixelci.example.com'
+        })
     });
 
     await createPersistedEntity(UserEntity, {
@@ -394,11 +400,11 @@ async function testMultiProviderRequiresVcsId(facade: Facade) {
         id: SECOND_VCS_ID,
         name: 'Second VCS',
         platform: 'gitlab',
-        config: {
+        config: sealIntegrationConfig({
             url: `http://127.0.0.1:${mockGitLabPort}`,
             clientId: 'client-id',
             clientSecret: 'client-secret'
-        }
+        })
     });
 
     const noHint = await facade.request(authed(HttpRequest.GET('/api/ext/apps'), MULTI_PAT));

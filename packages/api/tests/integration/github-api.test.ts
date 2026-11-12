@@ -12,8 +12,7 @@ import { IUserVcsSession, UserEntity } from '../../src/entities/User.entity';
 import { IGitHubConfig, VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { RerunCiJobJob, RERUN_RETRY_DELAY_MS } from '../../src/jobs/RerunCiJob.job';
 import { AppAccessService } from '../../src/services/AppAccess.service';
-import { SEALED_PREFIX } from '../../src/services/secrets/SecretBox';
-import { openVcsSession } from '../../src/services/secrets/VcsSecrets';
+import { openVcsSession, sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
 import { VcsGitHubService } from '../../src/services/VcsGitHub.service';
 import { configureTestDatabase } from './db-defaults';
 
@@ -442,7 +441,9 @@ const APP_NOPUSH = appUuid(6);
 const APP_NOAPP = appUuid(7);
 
 async function setSession(userId: string, session: IUserVcsSession) {
-    await UserEntity.query().filter({ id: userId }).patchMany({ vcsSession: session });
+    await UserEntity.query()
+        .filter({ id: userId })
+        .patchMany({ vcsSession: sealVcsSession(session) });
 }
 
 const stubLogger = { info() {}, warn() {}, error() {}, debug() {} } as unknown as ScopedLogger;
@@ -487,18 +488,23 @@ async function run() {
         privateKey: appKeys.privateKey,
         oidcAudience: `${AUDIENCE}/` // stored with a trailing slash on purpose: must be normalized
     };
-    await createPersistedEntity(VcsIntegrationEntity, { id: GH_VCS_ID, name: 'GH API Test', platform: 'github', config: ghConfig });
+    await createPersistedEntity(VcsIntegrationEntity, {
+        id: GH_VCS_ID,
+        name: 'GH API Test',
+        platform: 'github',
+        config: sealIntegrationConfig(ghConfig)
+    });
     await createPersistedEntity(VcsIntegrationEntity, {
         id: NOAPP_VCS_ID,
         name: 'GH No App',
         platform: 'github',
-        config: { url: base, clientId: 'gh-client', clientSecret: 'gh-secret', oidcAudience: AUDIENCE } satisfies IGitHubConfig
+        config: sealIntegrationConfig({ url: base, clientId: 'gh-client', clientSecret: 'gh-secret', oidcAudience: AUDIENCE } satisfies IGitHubConfig)
     });
     await createPersistedEntity(VcsIntegrationEntity, {
         id: GITLAB_VCS_ID,
         name: 'GL Other',
         platform: 'gitlab',
-        config: { url: 'http://127.0.0.1:1', clientId: 'x', clientSecret: 'y' }
+        config: sealIntegrationConfig({ url: 'http://127.0.0.1:1', clientId: 'x', clientSecret: 'y' })
     });
 
     // 1. providers response
@@ -595,7 +601,7 @@ async function run() {
         assert(user.isAdmin === true, 'first user should be admin');
         const rawSession = JSON.stringify(user.vcsSession);
         assert(
-            user.vcsSession?.accessToken.startsWith(SEALED_PREFIX) && !rawSession.includes('ghu_login') && !rawSession.includes('ghr_initial'),
+            user.vcsSession?.accessToken !== 'ghu_login' && !rawSession.includes('ghu_login') && !rawSession.includes('ghr_initial'),
             'session not sealed at rest'
         );
         assert(user.vcsSession, 'session missing');
@@ -668,7 +674,7 @@ async function run() {
         assert(refreshRequests - requestsBefore === 1, `expected exactly 1 refresh request (coalesced), got ${refreshRequests - requestsBefore}`);
         assert(res.json.length === 3, `expected 3 accessible apps, got ${res.body}`);
         const user = await UserEntity.query().filter({ id: userId }).findOne();
-        assert(user.vcsSession?.accessToken.startsWith(SEALED_PREFIX), 'rotated session must be stored sealed');
+        assert(user.vcsSession && !user.vcsSession.accessToken.startsWith('ghu_rot'), 'rotated session must be stored sealed');
         assert(user.vcsSession, 'session missing');
         const openedRot = openVcsSession(user.vcsSession);
         assert(openedRot.accessToken === `ghu_rot${refreshCounter}` && openedRot.refreshToken === validRefreshToken, 'rotated session not saved');

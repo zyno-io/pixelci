@@ -2,7 +2,7 @@ import { createApp, CreateAppOptions } from '@zyno-io/ts-server-foundation';
 import { compact } from 'lodash';
 
 import { AdminAuthMiddleware, BuildCiTokenMiddleware, UserAuthMiddleware, VcsTokenAuthMiddleware } from './accessories/AuthMiddleware.accessory';
-import { SealSecretsCommand } from './commands/SealSecrets.command';
+import { SetIntegrationSecretCommand } from './commands/SetIntegrationSecret.command';
 import { AppConfig } from './config';
 import { AppsController } from './controllers/Apps.controller';
 import { BranchesController } from './controllers/Branches.controller';
@@ -46,7 +46,7 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         UsersController,
         ExternalReadController
     ],
-    commands: [SealSecretsCommand],
+    commands: [SetIntegrationSecretCommand],
     providers: [
         AdminAuthMiddleware,
         BuildCiTokenMiddleware,
