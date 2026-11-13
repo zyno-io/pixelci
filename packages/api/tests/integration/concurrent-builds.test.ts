@@ -15,6 +15,7 @@ import { ScreenEntity } from '../../src/entities/Screen.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { S3Service } from '../../src/services/S3.service';
+import { screenManifestHash } from '../../src/services/ScreenManifest';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
@@ -113,9 +114,16 @@ function newJob(ref: string) {
 }
 
 const auth = (r: HttpRequest, token: string) => r.header('authorization', `Bearer ${token}`);
-const create = (f: Facade, token: string) => f.request(auth(HttpRequest.POST(`/api/apps/${APP_ID}/builds`), token));
+const manifestOf = (names: string[]) => ({ count: names.length, hash: screenManifestHash(names) });
+const create = (f: Facade, token: string, names?: string[], extra: Record<string, unknown> = {}) => {
+    const req = auth(HttpRequest.POST(`/api/apps/${APP_ID}/builds`), token);
+    return f.request(names || Object.keys(extra).length ? req.json({ ...(names && { screens: manifestOf(names) }), ...extra }) : req);
+};
 const status = (f: Facade, id: string, token: string) => f.request(auth(HttpRequest.GET(`/api/apps/${APP_ID}/builds/${id}/status`), token));
-const proc = (f: Facade, id: string, token: string) => f.request(auth(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${id}/process`), token));
+const proc = (f: Facade, id: string, token: string, screens?: { count: number; hash: string }) => {
+    const req = auth(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${id}/process`), token);
+    return f.request(screens ? req.json({ screens }) : req);
+};
 const upload = (f: Facade, id: string, token: string, name: string) =>
     f.request(
         auth(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${id}/screens`), token).multiPart([
@@ -207,7 +215,14 @@ async function run() {
 
     await testFreshDraft(facade);
     await testProcessingAndFinal(facade);
-    await testFinalRevokesOnlyCaller(facade);
+    await testFinalPollIsRepeatable(facade);
+    await testProcessIsIdempotent(facade);
+    await testProcessVerifiesManifest(facade);
+    await testDuplicateManifestMismatch(facade);
+    await testUploaderRecreateClearsScreens(facade);
+    await testRunIdKeepsScreens(facade);
+    await testShardRejectedBeforeWrite(facade);
+    await testScreenNameEncoding(facade);
     await testStaleTakeover(facade);
     await testReupload(facade);
     await testProcessCancelsOnlyStaleDrafts(facade);
@@ -271,31 +286,203 @@ async function testProcessingAndFinal(f: Facade) {
     console.log('  PASS');
 }
 
-async function testFinalRevokesOnlyCaller(f: Facade) {
-    console.log("\nTest (c): final poll removes only the caller's access");
+async function testFinalPollIsRepeatable(f: Facade) {
+    console.log('\nTest (c): final status polls are repeatable until the CI token expiry');
     const { a, b } = newJobPair();
     const id = (await expectCode(create(f, a), 200, 'A create')).json.id;
     await expectCode(create(f, b), 200, 'B create');
     await setStatus(id, 'no changes');
 
-    const sa = await expectCode(status(f, id, a), 200, 'A final poll');
-    assert(sa.json.status === 'no changes', 'A sees final');
-    await expectCode(status(f, id, a), 401, 'A after final');
+    for (let i = 0; i < 2; i++) {
+        const sa = await expectCode(status(f, id, a), 200, `A final poll ${i}`);
+        assert(sa.json.status === 'no changes', 'A sees final');
+        const sb = await expectCode(status(f, id, b), 200, `B final poll ${i}`);
+        assert(sb.json.status === 'no changes', 'B sees final');
+    }
     const build = await getBuild(id);
-    assert(build.ciTokenHash === null, 'creator hash nulled');
-    assert(build.ciReadTokenHashes.length === 1, 'B still has read access');
+    assert(build.ciTokenHash !== null && build.ciReadTokenHashes.length === 1, 'final polls do not revoke hashes');
 
-    await expectCode(status(f, id, b), 200, 'B final poll');
-    await expectCode(status(f, id, b), 401, 'B after final');
-    assert((await getBuild(id)).ciReadTokenHashes.length === 0, 'no read hashes left');
+    await BuildEntity.query()
+        .filter({ id })
+        .patchMany({ ciTokensExpireAt: new Date(Date.now() - 1000) });
+    await expectCode(status(f, id, a), 401, 'A after expiry');
+    await expectCode(status(f, id, b), 401, 'B after expiry');
 
-    // B poller finishing first must not affect the creator
-    const p = newJobPair();
-    const id2 = (await expectCode(create(f, p.a), 200, 'A2 create')).json.id;
-    await expectCode(create(f, p.b), 200, 'B2 create');
-    await setStatus(id2, 'needs review');
-    await expectCode(status(f, id2, p.b), 200, 'B2 poll');
-    await expectCode(status(f, id2, p.a), 200, 'A2 poll');
+    // A create (even by a reader) refreshes the expiry
+    await expectCode(create(f, b), 200, 'B create refreshes');
+    assert((await getBuild(id)).ciTokensExpireAt!.getTime() > Date.now() + 60 * 60 * 1000, 'expiry refreshed');
+    await expectCode(status(f, id, a), 200, 'A after refresh');
+    await expectCode(status(f, id, b), 200, 'B after refresh');
+
+    // A null expiry (a build created by an old pod during the rolling deploy) falls back to draftActiveAt + TTL
+    await BuildEntity.query().filter({ id }).patchMany({ ciTokensExpireAt: null, draftActiveAt: new Date(), createdAt: new Date() });
+    await expectCode(status(f, id, a), 200, 'A with null expiry and recent activity');
+    await BuildEntity.query()
+        .filter({ id })
+        .patchMany({ ciTokensExpireAt: null, draftActiveAt: new Date(Date.now() - 5 * 60 * 60 * 1000) });
+    await expectCode(status(f, id, a), 401, 'A with null expiry and old activity');
+    console.log('  PASS');
+}
+
+async function testProcessIsIdempotent(f: Facade) {
+    console.log('\nTest: process is retry-safe');
+    const { a, b } = newJobPair();
+    const id = (await expectCode(create(f, a), 200, 'A create')).json.id;
+    await expectCode(upload(f, id, a, 'screen-1'), 200, 'A upload');
+    await expectCode(proc(f, id, a), 200, 'process 1');
+    assert((await getBuild(id)).status === 'processing', 'processing after first call');
+    // The second call must not touch the status (the worker may already have moved the build on)
+    await setStatus(id, 'needs review');
+    const r = await expectCode(proc(f, id, a), 200, 'process 2');
+    assert(r.json.ok === true, 'ok body');
+    assert((await getBuild(id)).status === 'needs review', 'second process left the status alone');
+    await setStatus(id, 'no changes');
+    await expectCode(proc(f, id, a), 200, 'process on a final build');
+
+    // A non-uploader learns nothing about the build state
+    await expectCode(create(f, b), 200, 'B create');
+    await expectCode(proc(f, id, b), 401, 'reader process');
+
+    // Old uploader after a takeover
+    const t = newJobPair();
+    const id2 = (await expectCode(create(f, t.a), 200, 'A2 create')).json.id;
+    await BuildEntity.query()
+        .filter({ id: id2 })
+        .patchMany({ draftActiveAt: new Date(Date.now() - STALE_DRAFT_MS - 60_000) });
+    await expectCode(create(f, t.b), 200, 'B2 takeover');
+    await expectCode(proc(f, id2, t.a), 401, 'old uploader after takeover');
+
+    // Canceled
+    const c = newJobPair();
+    const id3 = (await expectCode(create(f, c.a), 200, 'A3 create')).json.id;
+    await expectCode(upload(f, id3, c.a, 'screen-1'), 200, 'A3 upload');
+    await setStatus(id3, 'canceled');
+    await expectCode(proc(f, id3, c.a), 400, 'process on canceled');
+    await setStatus(id3, 'failed');
+    await expectCode(proc(f, id3, c.a), 400, 'process on failed');
+    console.log('  PASS');
+}
+
+async function testProcessVerifiesManifest(f: Facade) {
+    console.log('\nTest: process verifies the screen manifest');
+    const t = newJob('branch-manifest');
+    const names = ['m-1', 'm-2'];
+    const id = (await expectCode(create(f, t, names), 200, 'create')).json.id;
+    const build = await getBuild(id);
+    assert(build.manifestCount === 2 && build.manifestHash === screenManifestHash(names), 'manifest stored at create');
+    await expectCode(upload(f, id, t, 'm-1'), 200, 'upload 1');
+    await expectCode(upload(f, id, t, 'm-2'), 200, 'upload 2');
+
+    await expectCode(proc(f, id, t, { count: 3, hash: screenManifestHash(names) }), 400, 'wrong count');
+    assert((await getBuild(id)).status === 'draft', 'still draft after wrong count');
+    await expectCode(proc(f, id, t, { count: 2, hash: screenManifestHash(['m-1', 'm-3']) }), 400, 'wrong hash');
+    await expectCode(proc(f, id, t, { count: 2, hash: 'nothex' }), 400, 'malformed hash');
+    await expectCode(proc(f, id, t, { count: -1, hash: screenManifestHash(names) }), 400, 'negative count');
+    assert((await getBuild(id)).status === 'draft', 'still draft after rejections');
+    await expectCode(proc(f, id, t, manifestOf(names)), 200, 'correct manifest');
+    assert((await getBuild(id)).status === 'processing', 'processing');
+    await expectCode(create(f, newJob('branch-bad-manifest'), []), 200, 'empty manifest is valid');
+    console.log('  PASS');
+}
+
+async function testDuplicateManifestMismatch(f: Facade) {
+    console.log('\nTest: duplicate jobs with a divergent manifest are rejected');
+    const { a, b } = newJobPair();
+    const c = `${a}-c`;
+    const d = `${a}-d`;
+    const job = jobs.get(a)!;
+    jobs.set(c, { ...job, id: job.id + 1000 });
+    jobs.set(d, { ...job, id: job.id + 2000 });
+    const h1 = ['dup-1', 'dup-2'];
+    const h2 = ['dup-1', 'dup-3'];
+    const id = (await expectCode(create(f, a, h1), 200, 'A create')).json.id;
+    const before = await getBuild(id);
+    const rb = await expectCode(create(f, b, h2), 409, 'B (different manifest)');
+    assert(/PIXELCI_SHARD/.test(String(rb.body)), `409 mentions PIXELCI_SHARD, got ${rb.body}`);
+    await expectCode(status(f, id, b), 401, 'B gets no read access');
+    const after = await getBuild(id);
+    assert(after.ciReadTokenHashes.length === before.ciReadTokenHashes.length, 'no read hash added');
+    assert(after.manifestHash === before.manifestHash, 'manifest untouched');
+    assert(after.ciTokensExpireAt!.getTime() === before.ciTokensExpireAt!.getTime(), 'a 409 does not refresh ciTokensExpireAt');
+
+    const rc = await expectCode(create(f, c, h1), 200, 'C (same manifest)');
+    assert(rc.json.status === 'processing', `C is a reader, got ${rc.json.status}`);
+    await expectCode(status(f, id, c), 200, 'C polls');
+    const rd = await expectCode(create(f, d), 200, 'D (old CLI, no manifest)');
+    assert(rd.json.status === 'processing', `D is a reader, got ${rd.json.status}`);
+    await expectCode(status(f, id, d), 200, 'D polls');
+    console.log('  PASS');
+}
+
+async function testRunIdKeepsScreens(f: Facade) {
+    console.log('\nTest: a repeated create with the same runId keeps the uploaded screens');
+    const t = newJob('branch-runid');
+    const id = (await expectCode(create(f, t, ['x-1'], { runId: 'run-aaa' }), 200, 'create')).json.id;
+    assert((await getBuild(id)).ciRunId === 'run-aaa', 'runId stored');
+    await expectCode(upload(f, id, t, 'x-1'), 200, 'upload');
+    // A late duplicate of the same create (the CLI timed out and retried) must not wipe the upload
+    await expectCode(create(f, t, ['x-1'], { runId: 'run-aaa' }), 200, 'duplicate create');
+    assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 1, 'screens kept for the same runId');
+    // A new run (or an old CLI without a runId) starts from a clean slate
+    await expectCode(create(f, t, ['x-1'], { runId: 'run-bbb' }), 200, 'new run create');
+    assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 0, 'screens cleared for a new runId');
+    assert((await getBuild(id)).ciRunId === 'run-bbb', 'runId replaced');
+    await expectCode(upload(f, id, t, 'x-1'), 200, 'upload again');
+    await expectCode(create(f, t, ['x-1']), 200, 'create without runId');
+    assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 0, 'screens cleared without a runId');
+    assert((await getBuild(id)).ciRunId === null, 'runId cleared');
+    await expectCode(create(f, newJob('branch-runid-bad'), undefined, { runId: 'bad id!' }), 400, 'malformed runId');
+    await expectCode(create(f, newJob('branch-runid-long'), undefined, { runId: 'a'.repeat(65) }), 400, 'overlong runId');
+    console.log('  PASS');
+}
+
+async function testShardRejectedBeforeWrite(f: Facade) {
+    console.log('\nTest: sharded creates are rejected before any write');
+    const t = newJob('branch-shard');
+    const sha = jobs.get(t)!.sha;
+    await expectCode(create(f, t, undefined, { shard: { index: 1, total: 2 } }), 400, 'shard total 2');
+    assert((await BuildEntity.query().filter({ appId: APP_ID, commitHash: sha }).find()).length === 0, 'no build created');
+    await expectCode(create(f, t, undefined, { shard: { index: 3, total: 2 } }), 400, 'shard index above total');
+    await expectCode(create(f, t, undefined, { shard: { index: 0, total: 1 } }), 400, 'shard index is 1-based');
+    await expectCode(create(f, t, undefined, { shard: { index: 1, total: 1 } }), 200, 'shard 1/1 is unsharded');
+    console.log('  PASS');
+}
+
+async function testScreenNameEncoding(f: Facade) {
+    console.log('\nTest: screen names survive multipart (with and without the name field)');
+    const names = ['café', 'say "hi"', 'naïve', '日本語 ✓'];
+    const uploadNamed = (id: string, token: string, name: string, sendNameField: boolean) =>
+        f.request(
+            auth(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${id}/screens`), token).multiPart([
+                { name: 'image', file: FIXTURE, fileName: `${name}.png` },
+                ...(sendNameField ? [{ name: 'name', value: name }] : [])
+            ])
+        );
+    for (const sendNameField of [true, false]) {
+        const t = newJob(`branch-names-${sendNameField}`);
+        // Without the name field (old CLI) a name with a double quote can't survive the filename, so only the field path covers it.
+        const set = sendNameField ? names : names.filter(n => !n.includes('"'));
+        const id = (await expectCode(create(f, t, set), 200, 'create')).json.id;
+        for (const n of set) {
+            const r = await expectCode(uploadNamed(id, t, n, sendNameField), 200, `upload ${n}`);
+            assert(r.json.name === n, `stored name for ${n} (field=${sendNameField}), got ${r.json.name}`);
+        }
+        await expectCode(proc(f, id, t, manifestOf(set)), 200, `process verifies the UTF-8 manifest (field=${sendNameField})`);
+    }
+    console.log('  PASS');
+}
+
+async function testUploaderRecreateClearsScreens(f: Facade) {
+    console.log('\nTest: uploader re-create starts from a clean slate');
+    const t = newJob('branch-recreate');
+    const id = (await expectCode(create(f, t, ['r-1']), 200, 'create')).json.id;
+    await expectCode(upload(f, id, t, 'r-1'), 200, 'upload');
+    assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 1, 'one screen');
+    const again = await expectCode(create(f, t, ['r-2', 'r-3']), 200, 're-create');
+    assert(again.json.status === 'draft', 'uploader keeps draft');
+    assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 0, 'screens cleared');
+    const build = await getBuild(id);
+    assert(build.manifestCount === 2 && build.manifestHash === screenManifestHash(['r-2', 'r-3']), 'manifest replaced');
     console.log('  PASS');
 }
 
@@ -393,7 +580,7 @@ async function testCanceledRevival(f: Facade) {
     const s = await expectCode(status(f, id, a), 200, 'poll canceled');
     assert(s.json.status === 'failed', `canceled reported as failed, got ${s.json.status}`);
 
-    // Poll revoked A's access when canceled was seen; B revives
+    // B revives the canceled build (a poll no longer revokes anything)
     const rb = await expectCode(create(f, b), 200, 'B create');
     assert(rb.json.id === id && rb.json.status === 'draft', `revived as draft, got ${rb.json.status}`);
     assert((await BuildScreenEntity.query().filter({ buildId: id }).find()).length === 0, 'old screens deleted');

@@ -14,13 +14,24 @@ const FORBIDDEN_NAME_CHARS = new RegExp('[\\p{Cc}\\u2028\\u2029\\u202A-\\u202E\\
 
 /** Derives the screen name from the uploaded file name. Strips only a trailing ".png"; no trimming or normalization. */
 export function parseScreenName(originalName: string | undefined): string {
-    const name = (originalName ?? '').replace(/\.png$/i, '');
+    return validateScreenName((originalName ?? '').replace(/\.png$/i, ''));
+}
+
+/** Validates an exact screen name (as sent by the CLI's `name` field, which has already had its ".png" stripped). */
+export function validateScreenName(name: string): string {
     if (!name) throw new HttpBadRequestError('Screen name must not be empty');
     if ([...name].length > MAX_SCREEN_NAME_LENGTH) {
         throw new HttpBadRequestError(`Screen name must be at most ${MAX_SCREEN_NAME_LENGTH} characters`);
     }
     if (FORBIDDEN_NAME_CHARS.test(name)) throw new HttpBadRequestError('Screen name contains forbidden characters');
     return name;
+}
+
+/** Re-decodes a filename that a multipart parser decoded as latin1 when its bytes were really UTF-8; otherwise returns it unchanged. */
+export function repairLatin1Filename(fileName: string | undefined): string | undefined {
+    if (!fileName) return fileName;
+    const decoded = Buffer.from(fileName, 'latin1').toString('utf8');
+    return !decoded.includes('\uFFFD') && decoded !== fileName ? decoded : fileName;
 }
 
 /** Validates the PNG signature and chunk structure of an in-memory file (without decoding it) and returns the dimensions. */

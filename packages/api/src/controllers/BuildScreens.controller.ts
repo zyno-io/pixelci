@@ -25,7 +25,8 @@ import { ScreenEntity } from '../entities/Screen.entity';
 import { UserEntity } from '../entities/User.entity';
 import { AppAccessService } from '../services/AppAccess.service';
 import { S3Service } from '../services/S3.service';
-import { parseScreenName, readPngHeader } from '../services/ScreenUpload';
+import { parseScreenName, validateScreenName, readPngHeader, repairLatin1Filename } from '../services/ScreenUpload';
+import { CI_TOKEN_TTL_MS } from './Builds.controller';
 
 export type IAppScreenResponse = Pick<ScreenEntity, 'id' | 'name'>;
 export type IBuildScreenResponse = {
@@ -127,11 +128,13 @@ export class BuildScreensController {
         request: HttpRequest,
         appId: UuidString,
         id: UuidString,
-        body: HttpBody<{ image: FileUpload<{ maxSize: '17MB' }> }>
+        body: HttpBody<{ image: FileUpload<{ maxSize: '17MB' }>; name?: string }>
     ): Promise<IBuildScreenCreateResponse> {
         const callerHash = hashCiToken((request.headers.authorization ?? '').slice(7));
 
-        const screenName = parseScreenName(body.image.name);
+        // The multipart filename is decoded as latin1 by the parser, so non-ASCII names arrive mangled and quotes/backslashes don't survive.
+        // Newer CLIs send the exact name as a form field; for older ones, repair a UTF-8 name that was decoded as latin1.
+        const screenName = body.name !== undefined ? validateScreenName(body.name) : parseScreenName(repairLatin1Filename(body.image.name));
         // Read once (bounded by the request body cap) and validate and upload the same buffer
         const imageBuf = await readFile(body.image.path);
         readPngHeader(imageBuf, this.appConfig.SCREEN_MAX_PIXELS);
@@ -169,7 +172,10 @@ export class BuildScreensController {
                 },
                 txn
             );
-            await txn.query(BuildEntity).filter({ id }).patchMany({ draftActiveAt: new Date() });
+            await txn
+                .query(BuildEntity)
+                .filter({ id })
+                .patchMany({ draftActiveAt: new Date(), ciTokensExpireAt: new Date(Date.now() + CI_TOKEN_TTL_MS) });
 
             return { id: buildScreen.id, screenId: buildScreen.screenId, status: buildScreen.status, name: screen.name };
         });

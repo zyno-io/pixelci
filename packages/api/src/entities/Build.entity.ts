@@ -23,4 +23,11 @@ export class BuildEntity extends BaseEntity {
     status!: 'draft' | 'processing' | 'no changes' | 'needs review' | 'changes approved' | 'changes rejected' | 'canceled' | 'failed';
     approvedById!: UuidString | null;
     approvedAt!: Date | null;
+    /** CI session tokens (uploader and readers) stop working after this; refreshed on create and on each upload. Null counts as expired. */
+    ciTokensExpireAt!: Date | null;
+    /** Screen manifest declared by the uploader at create (null from older CLIs): number of screens and sha256 of the sorted names. */
+    /** Identifies one CLI run; a repeated create with the same id doesn't clear that run's uploads. */
+    ciRunId!: (string & DatabaseField<{ type: 'varchar(64)' }>) | null;
+    manifestCount!: (number & DatabaseField<{ type: 'integer' }>) | null;
+    manifestHash!: (string & DatabaseField<{ type: 'varchar(64)' }>) | null;
 }

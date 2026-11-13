@@ -1,5 +1,8 @@
 import { assert } from '@zyno-io/ts-reflection';
-import { HttpBadRequestError, HttpUnauthorizedError } from '@zyno-io/ts-server-foundation';
+import { createHttpError, HttpBadRequestError, HttpUnauthorizedError } from '@zyno-io/ts-server-foundation';
+
+// GitLab unreachable, slow or failing: retryable by the CLI, unlike a 401 (which means the token is bad)
+const HttpServiceUnavailableError = createHttpError(503, 'GitLab is unavailable; try again');
 import { Logger, ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { JWT, r } from '@zyno-io/ts-server-foundation';
 import axios from 'axios';
@@ -62,15 +65,18 @@ export class VcsGitLabService implements IVcsServiceImpl {
         let jobResponse: Response;
         try {
             jobResponse = await fetch(`${this.config.url}/api/v4/job`, {
-                headers: { 'JOB-TOKEN': ciToken }
+                headers: { 'JOB-TOKEN': ciToken },
+                // Bounded so a hung GitLab can't leave a create stuck long enough to run late, after the CLI has retried
+                signal: AbortSignal.timeout(10_000)
             });
         } catch (err) {
             this.logger.warn(`CI token validation failed: GitLab /api/v4/job request failed (${err})`);
-            throw new HttpUnauthorizedError();
+            throw new HttpServiceUnavailableError();
         }
 
         if (!jobResponse.ok) {
             this.logger.warn(`CI token validation failed: GitLab /api/v4/job returned ${jobResponse.status} ${jobResponse.statusText}`);
+            if (jobResponse.status >= 500 || jobResponse.status === 429) throw new HttpServiceUnavailableError();
             throw new HttpUnauthorizedError();
         }
 
