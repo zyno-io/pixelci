@@ -5,6 +5,7 @@ import { BaseEntity, DatabaseField, HasDefault, UuidString } from '@zyno-io/ts-s
 @entity.index(['appId', 'createdAt'])
 @entity.index(['branchId', 'id'])
 @entity.index(['branchId', 'commitHash'], { unique: true })
+@entity.index(['status', 'processingStartedAt'])
 export class BuildEntity extends BaseEntity {
     id!: UuidString & PrimaryKey;
     appId!: UuidString;
@@ -25,11 +26,19 @@ export class BuildEntity extends BaseEntity {
     approvedAt!: Date | null;
     /** CI session tokens (uploader and readers) stop working after this; refreshed on create and on each upload. Null counts as expired. */
     ciTokensExpireAt!: Date | null;
-    /** Screen manifest declared by the uploader at create (null from older CLIs): number of screens and sha256 of the sorted names. */
     /** Identifies one CLI run; a repeated create with the same id doesn't clear that run's uploads. */
     ciRunId!: (string & DatabaseField<{ type: 'varchar(64)' }>) | null;
+    /** Screen manifest declared by the uploader at create (null from older CLIs): number of screens and sha256 of the sorted names. */
     manifestCount!: (number & DatabaseField<{ type: 'integer' }>) | null;
     manifestHash!: (string & DatabaseField<{ type: 'varchar(64)' }>) | null;
     /** Number of CI jobs the suite is split across (PIXELCI_SHARD total); 1 = unsharded. */
     shardTotal: (number & DatabaseField<{ type: 'integer' }>) & HasDefault = 1;
+    /** Fencing token of the job attempt that currently owns processing; null when unowned. */
+    processingAttemptId!: UuidString | null;
+    /** Last heartbeat of the owning attempt; a stale value means the attempt died. */
+    processingHeartbeatAt!: Date | null;
+    /** When the build entered `processing` (hard cap on total processing time). */
+    processingStartedAt!: Date | null;
+    /** How many times processing has been claimed. */
+    processingAttempts: number & DatabaseField<{ type: 'integer' }> & HasDefault = 0;
 }

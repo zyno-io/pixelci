@@ -7,6 +7,7 @@ import { Db } from '../database';
 import { AppEntity } from '../entities/App.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
+import { claimBuildLease, Lease, LeaseLostError } from '../services/BuildProcessingLease';
 import { PixelMatchService } from '../services/PixelMatch.service';
 import { computeRemovals } from '../services/RemovedScreens';
 import { S3Service } from '../services/S3.service';
@@ -34,16 +35,35 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         const logger = this.logger.scoped(data.buildId);
         logger.info('Processing build', { id: data.buildId });
 
+        const lease = await claimBuildLease(this.db, data.buildId, logger);
+        if (!lease) {
+            logger.info('Build is not claimable (not processing, already being processed, or out of attempts); skipping', { id: data.buildId });
+            return;
+        }
+        lease.startHeartbeat();
+
         try {
-            await this.processScreens(data.buildId);
+            const work = this.processScreens(data.buildId, lease);
+            work.catch(() => undefined); // if the race below is lost, the orphaned attempt's rejection is irrelevant
+            await Promise.race([work, lease.lostSignal]);
         } catch (err) {
+            if (err instanceof LeaseLostError) {
+                logger.warn('Processing lease lost; abandoning attempt', { id: data.buildId });
+                return;
+            }
             logger.error('Build processing failed', err as Error);
-            await BuildEntity.query().filter({ id: data.buildId }).patchOne({ status: 'failed' });
+            try {
+                await lease.fail();
+            } catch (failErr) {
+                logger.error('Failed to mark build as failed', failErr as Error);
+            }
             throw err;
+        } finally {
+            lease.stopHeartbeat();
         }
     }
 
-    private async processScreens(buildId: string): AnyResponse {
+    private async processScreens(buildId: string, lease: Lease): AnyResponse {
         const logger = this.logger.scoped(buildId);
         const diffThreshold = this.appConfig.DEFAULT_PIXEL_DIFF_PCT_THRESHOLD / 100;
         logger.info('Using diff threshold', { diffThreshold });
@@ -104,6 +124,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             }));
 
         screenLoop: for (const screen of screens) {
+            if (lease.lost) throw new LeaseLostError();
             // if the previous screen has approved changes, compare the current screen with the already approved changes.
             // if the current build's screen matches, then it's automatically approved too.
             if (screen.previousBuildScreen?.status === 'changes approved') {
@@ -286,8 +307,15 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
 
         logger.info('Updating build status', { status: currentBuild.status });
 
+        if (lease.lost) throw new LeaseLostError();
+
         await this.db.transaction(async txn => {
-            txn.add(currentBuild);
+            // Write the result through the locked row only, and only while this attempt still owns the build.
+            const locked = await lease.assertHeld(txn);
+            locked.status = currentBuild.status;
+            locked.processingAttemptId = null;
+            locked.processingHeartbeatAt = null;
+            txn.add(locked);
             txn.add(...currentBuildScreens);
             await txn.flush();
             // replace any tombstones from an earlier processing run of this build
