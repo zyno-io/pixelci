@@ -18,6 +18,7 @@ import { BuildEntity } from '../../src/entities/Build.entity';
 import { BuildScreenEntity } from '../../src/entities/BuildScreen.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
@@ -387,27 +388,27 @@ async function seedBase() {
         id: GL_ID,
         name: 'Canary GitLab',
         platform: 'gitlab',
-        config: { url: `http://127.0.0.1:${mockGitLabPort}`, clientId: 'canary-client', clientSecret: CANARY_GITLAB_SECRET }
+        config: sealIntegrationConfig({ url: `http://127.0.0.1:${mockGitLabPort}`, clientId: 'canary-client', clientSecret: CANARY_GITLAB_SECRET })
     });
     await createPersistedEntity(VcsIntegrationEntity, {
         id: GL_SPARE_ID,
         name: 'Canary spare GitLab',
         platform: 'gitlab',
-        config: { url: `http://127.0.0.1:${mockGitLabPort}`, clientId: 'spare-client', clientSecret: CANARY_GITLAB_SECRET }
+        config: sealIntegrationConfig({ url: `http://127.0.0.1:${mockGitLabPort}`, clientId: 'spare-client', clientSecret: CANARY_GITLAB_SECRET })
     });
     await createPersistedEntity(VcsIntegrationEntity, {
         id: GH_ID,
         name: 'Canary GitHub',
         platform: 'github',
         // closed port, so tests never contact real GitHub
-        config: {
+        config: sealIntegrationConfig({
             url: 'http://127.0.0.1:9',
             clientId: 'gh-client',
             clientSecret: CANARY_GITHUB_SECRET,
             appId: '12345',
             privateKey: GITHUB_PRIVATE_KEY,
             oidcAudience: 'https://pixelci.example.com'
-        }
+        })
     });
 
     await createPersistedEntity(UserEntity, {
@@ -418,12 +419,12 @@ async function seedBase() {
         isAdmin: true,
         vcsId: GL_ID,
         vcsUserId: '4242',
-        vcsSession: {
+        vcsSession: sealVcsSession({
             accessToken: CANARY_ACCESS_TOKEN,
             refreshToken: CANARY_REFRESH_TOKEN,
             expiresAt: Date.now() + 60 * 60 * 1000,
             redirectUri: 'http://localhost'
-        }
+        })
     });
     await createPersistedEntity(UserEntity, {
         id: OTHER_USER_ID,
@@ -433,12 +434,12 @@ async function seedBase() {
         isAdmin: true,
         vcsId: GL_ID,
         vcsUserId: '4343',
-        vcsSession: {
+        vcsSession: sealVcsSession({
             accessToken: CANARY_ACCESS_TOKEN,
             refreshToken: CANARY_REFRESH_TOKEN,
             expiresAt: Date.now() + 60 * 60 * 1000,
             redirectUri: 'http://localhost'
-        }
+        })
     });
 
     for (const [id, name, projectPath, vcsProjectId] of [
