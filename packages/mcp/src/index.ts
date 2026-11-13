@@ -83,7 +83,7 @@ const TOOLS: Tool[] = [
     {
         name: 'get_build',
         description:
-            'Get a build and every screen in it: comparison status, the per-screen review decision (approved/rejected/none), the review comment, and who reviewed it, plus build-level approval.',
+            'Get a build and every screen in it: comparison status (removed=true marks a screen deleted from this build; it has no image), the per-screen review decision (approved/rejected/none), the review comment, and who reviewed it, plus build-level approval.',
         inputSchema: {
             type: 'object',
             properties: {

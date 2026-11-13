@@ -450,9 +450,12 @@ const isReviewable = computed(() => build.value?.status === 'needs review');
 // Whether this user may review at all (PixelCI admin, or the app's minimum VCS role). The API enforces it too.
 const userCanReview = computed(() => app.value?.canReview === true);
 const canReviewBuild = computed(() => isReviewable.value && userCanReview.value);
-const showDecisionBar = computed(() => canReviewBuild.value && reviewableScreens.value.length > 0);
+// A removed screen needs approving too, so a build whose only pending change is a removal still gets the bar.
+const showDecisionBar = computed(() => canReviewBuild.value && (reviewableScreens.value.length > 0 || removedScreenCount.value > 0));
 // Shown only when the app loaded and says no: a failed app load must not claim the user lacks rights.
-const reviewLocked = computed(() => isReviewable.value && reviewableScreens.value.length > 0 && app.value?.canReview === false);
+const reviewLocked = computed(
+    () => isReviewable.value && (reviewableScreens.value.length > 0 || removedScreenCount.value > 0) && app.value?.canReview === false
+);
 const reviewLockedReason = computed(() => {
     switch (app.value?.approvalMinRole) {
         case 'maintain':
@@ -942,6 +945,7 @@ async function submitBuild() {
         // A rejected build promotes nothing, so only an approval changes the baseline.
         if (removed > 0 && build.value?.branchId === app.value?.defaultBranchId)
             message += ` ${plural(removed, 'screen', 'screens')} removed from this build will leave the baseline.`;
+        else if (removed > 0) message += ` Approving also accepts ${plural(removed, 'removed screen', 'removed screens')}.`;
         confirmLabel = 'Approve build';
     }
 

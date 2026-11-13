@@ -19,4 +19,5 @@ export class BuildScreenEntity extends BaseEntity {
     reviewedAt!: Date | null;
     /** The shard (1-based) that uploaded this screen; always 1 for unsharded builds. */
     shardIndex: (number & DatabaseField<{ type: 'integer' }>) & HasDefault = 1;
+    isRemoved: boolean & HasDefault = false; // tombstone: the screen is in the reference build but removed from this one; no image
 }

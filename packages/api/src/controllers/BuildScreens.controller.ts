@@ -66,9 +66,39 @@ export type IBuildScreenResponse = {
               | 'reviewedAt'
           >
         | undefined;
+    /** Tombstone: this build removed the screen (it is in the reference build, but has no image here). */
+    removedBuildScreen?: Pick<BuildScreenEntity, 'id' | 'status' | 'reviewStatus' | 'reviewComment' | 'reviewedById' | 'reviewedAt'>;
 };
 export type IBuildScreenReviewResponse = Pick<BuildScreenEntity, 'reviewStatus' | 'reviewComment' | 'reviewedById' | 'reviewedAt'>;
 export type IBuildScreenCreateResponse = Pick<BuildScreenEntity, 'id' | 'screenId' | 'status'> & Pick<ScreenEntity, 'name'>;
+
+function pickBuildScreen(bs: BuildScreenEntity | undefined): NonNullable<IBuildScreenResponse['currentBuildScreen']> | undefined {
+    if (!bs) return undefined;
+    return {
+        id: bs.id,
+        buildId: bs.buildId,
+        matchedBuildId: bs.matchedBuildId,
+        approvalBuildId: bs.approvalBuildId,
+        screenId: bs.screenId,
+        status: bs.status,
+        reviewStatus: bs.reviewStatus,
+        reviewComment: bs.reviewComment,
+        reviewedById: bs.reviewedById,
+        reviewedAt: bs.reviewedAt
+    };
+}
+
+function pickRemovedBuildScreen(bs: BuildScreenEntity | undefined): IBuildScreenResponse['removedBuildScreen'] {
+    if (!bs) return undefined;
+    return {
+        id: bs.id,
+        status: bs.status,
+        reviewStatus: bs.reviewStatus,
+        reviewComment: bs.reviewComment,
+        reviewedById: bs.reviewedById,
+        reviewedAt: bs.reviewedAt
+    };
+}
 
 @ApiController('/api/apps/:appId/builds/:id')
 export class BuildScreensController {
@@ -101,17 +131,25 @@ export class BuildScreensController {
         const currentBuildScreens = await BuildScreenEntity.query().filter({ appId, buildId: build.id }).orderBy('id', 'asc').find();
 
         const referenceBuildScreens = referenceBuild
-            ? await BuildScreenEntity.query().filter({ appId, buildId: referenceBuild.id }).orderBy('id', 'asc').find()
+            ? await BuildScreenEntity.query().filter({ appId, buildId: referenceBuild.id, isRemoved: false }).orderBy('id', 'asc').find()
             : [];
 
-        const currentBuildScreensById = keyBy(currentBuildScreens, 'screenId');
+        const currentBuildScreensById = keyBy(
+            currentBuildScreens.filter(buildScreen => !buildScreen.isRemoved),
+            'screenId'
+        );
+        const removedBuildScreensById = keyBy(
+            currentBuildScreens.filter(buildScreen => buildScreen.isRemoved),
+            'screenId'
+        );
         const referenceBuildScreensById = keyBy(referenceBuildScreens, 'screenId');
         const screenIds = uniq([...currentBuildScreens, ...referenceBuildScreens].map(buildScreen => buildScreen.screenId));
 
         const buildScreens = [...screenIds].map(screenId => ({
             screenId,
-            currentBuildScreen: currentBuildScreensById[screenId],
-            referenceBuildScreen: referenceBuildScreensById[screenId]
+            currentBuildScreen: pickBuildScreen(currentBuildScreensById[screenId]),
+            referenceBuildScreen: pickBuildScreen(referenceBuildScreensById[screenId]),
+            removedBuildScreen: pickRemovedBuildScreen(removedBuildScreensById[screenId])
         }));
 
         const screens = await ScreenEntity.query()
@@ -266,7 +304,8 @@ export class BuildScreensController {
             if (!build) return new HttpNotFoundError();
             if (build.status !== 'needs review') return new HttpBadRequestError('Build is not in needs review status');
 
-            const buildScreen = await txn.query(BuildScreenEntity).filter({ appId, buildId: id, screenId }).findOneOrUndefined();
+            // Removals are accepted only by approving the build, never reviewed one by one
+            const buildScreen = await txn.query(BuildScreenEntity).filter({ appId, buildId: id, screenId, isRemoved: false }).findOneOrUndefined();
             if (!buildScreen) return new HttpNotFoundError();
             if (buildScreen.status !== 'new' && buildScreen.status !== 'needs review') {
                 return new HttpBadRequestError('Screen is not awaiting review');

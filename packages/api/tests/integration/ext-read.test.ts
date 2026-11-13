@@ -25,6 +25,7 @@ const BRANCH_ID = 'e2222222-aaaa-bbbb-cccc-000000000020';
 const BRANCH_NO_ACCESS_ID = 'e2222222-aaaa-bbbb-cccc-000000000021';
 const SCREEN_ID = 'e2222222-aaaa-bbbb-cccc-000000000030';
 const BUILD_ID = 'e2222222-aaaa-bbbb-cccc-000000000040';
+const REMOVED_SCREEN_ID = 'e2222222-aaaa-bbbb-cccc-000000000031';
 const BUILD_SCREEN_ID = 'e2222222-aaaa-bbbb-cccc-000000000050';
 
 // GitLab numeric user ids (as strings, matching how vcsUserId is stored from the OIDC `sub`)
@@ -132,6 +133,7 @@ async function run() {
     await testImageRequiresToken(facade);
     await testImageForbiddenWithoutAccess(facade);
     await testImageRedirectsWithAccess(facade);
+    await testRemovedScreenTombstone(facade);
     await testGitHubTokenNeverReachesGitLab(facade);
     await testMultiProviderRequiresVcsId(facade);
     await testMalformedIds(facade);
@@ -192,6 +194,7 @@ async function createBaseEntities() {
     await createPersistedEntity(BranchEntity, { id: BRANCH_NO_ACCESS_ID, appId: APP_NO_ACCESS_ID, name: 'main' });
 
     await createPersistedEntity(ScreenEntity, { id: SCREEN_ID, appId: APP_ID, name: 'home' });
+    await createPersistedEntity(ScreenEntity, { id: REMOVED_SCREEN_ID, appId: APP_ID, name: 'legacy' });
 
     await createPersistedEntity(BuildEntity, {
         ciReadTokenHashes: [],
@@ -222,6 +225,23 @@ async function createBaseEntities() {
         reviewComment: 'Looks good to me',
         reviewedById: USER_ID,
         reviewedAt: new Date()
+    });
+
+    // tombstone: a screen removed in this build (no image)
+    await createPersistedEntity(BuildScreenEntity, {
+        id: 'e2222222-aaaa-bbbb-cccc-000000000051',
+        appId: APP_ID,
+        buildId: BUILD_ID,
+        screenId: REMOVED_SCREEN_ID,
+        matchedBuildId: null,
+        approvalBuildId: null,
+        status: 'changes approved',
+        storageStatus: null,
+        reviewStatus: null,
+        reviewComment: null,
+        reviewedById: null,
+        reviewedAt: null,
+        isRemoved: true
     });
 }
 
@@ -321,6 +341,22 @@ async function testImageRedirectsWithAccess(facade: Facade) {
         authed(HttpRequest.GET(`/api/ext/apps/${APP_ID}/builds/${BUILD_ID}/screens/${SCREEN_ID}/image?kind=new`), VALID_PAT)
     );
     expectStatus(response.statusCode, 302);
+    console.log('  PASS');
+}
+
+async function testRemovedScreenTombstone(facade: Facade) {
+    console.log('\nTest: a removed screen is flagged removed: true and has no image (404)');
+    const detail = await facade.request(authed(HttpRequest.GET(`/api/ext/apps/${APP_ID}/builds/${BUILD_ID}`), VALID_PAT));
+    expectStatus(detail.statusCode, 200);
+    const screens = (detail.json as { screens: { screenId: string; removed: boolean }[] }).screens;
+    if (screens.find(s => s.screenId === REMOVED_SCREEN_ID)?.removed !== true) throw new Error('Expected the tombstone to have removed: true');
+    if (screens.find(s => s.screenId === SCREEN_ID)?.removed !== false) throw new Error('Expected a normal screen to have removed: false');
+    for (const kind of ['new', 'diff']) {
+        const image = await facade.request(
+            authed(HttpRequest.GET(`/api/ext/apps/${APP_ID}/builds/${BUILD_ID}/screens/${REMOVED_SCREEN_ID}/image?kind=${kind}`), VALID_PAT)
+        );
+        expectStatus(image.statusCode, 404);
+    }
     console.log('  PASS');
 }
 

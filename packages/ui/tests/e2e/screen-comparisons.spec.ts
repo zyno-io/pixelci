@@ -267,6 +267,58 @@ test.describe('Screen Comparisons', () => {
         await expect(progress).toContainText('1 removed');
     });
 
+    test('a build whose only pending change is a removed screen shows the decision bar and approves', async ({ page }) => {
+        // Nothing else needs review: every present screen is unchanged, and one screen was removed.
+        // Pin the build to a non-default branch so the confirm shows the non-default wording.
+        await page.route(/\/apps\/[^/]+$/, async route => {
+            if (!['fetch', 'xhr'].includes(route.request().resourceType())) return route.fallback();
+            const response = await route.fetch();
+            const app = await response.json();
+            app.defaultBranchId = '11111111-1111-1111-1111-111111111111';
+            await route.fulfill({ response, json: app });
+        });
+        await page.route(/\/builds\/[^/]+$/, async route => {
+            if (!['fetch', 'xhr'].includes(route.request().resourceType())) return route.fallback();
+            const response = await route.fetch();
+            const build = await response.json();
+            build.branchId = '22222222-2222-2222-2222-222222222222';
+            await route.fulfill({ response, json: build });
+        });
+        await page.route(/\/builds\/[^/]+\/screens$/, async route => {
+            const response = await route.fetch();
+            const screens = await response.json();
+            for (const screen of screens) {
+                if (screen.currentBuildScreen) screen.currentBuildScreen.status = 'no changes';
+            }
+            const { currentBuildScreen: _current, referenceBuildScreen: _reference, ...template } = screens[0];
+            screens.push({
+                ...template,
+                screenId: '00000000-0000-0000-0000-0000000000ff',
+                name: 'Removed page',
+                removedBuildScreen: { id: '00000000-0000-0000-0000-0000000000fe', status: 'needs review', reviewStatus: null }
+            });
+            await route.fulfill({ response, json: screens });
+        });
+        await page.reload();
+        await page.waitForSelector('.screen');
+
+        await expect(page.locator('[data-testid="decision-bar"]')).toBeVisible();
+        await expect(page.locator('[data-testid="decision-bar"] .progress')).toContainText('1 removed');
+
+        let approved = false;
+        await page.unroute(/\/builds\/[^/]+\/approve$/);
+        await page.route(/\/builds\/[^/]+\/approve$/, async route => {
+            approved = true;
+            await route.abort();
+        });
+        await page.locator('.decision-bar [data-testid="submit-build"]').click();
+        const dialog = page.getByRole('dialog');
+        await expect(dialog).toBeVisible();
+        await expect(dialog).toContainText('Approving also accepts 1 removed screen.');
+        await page.locator('[data-testid="submit-confirm"]').click();
+        await expect.poll(() => approved).toBe(true);
+    });
+
     test('focusing the Diff checkbox does not swallow the shortcuts', async ({ page }) => {
         const screens = page.locator('.screen');
         await page.locator('input[data-testid="diff-check"]').check();
