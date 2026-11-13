@@ -28,6 +28,7 @@ docker run -d \
   -e APP_ENV=production \
   -e ENABLE_JOB_RUNNER=true \
   -e AUTH_JWT_SECRET=your-secret-key \
+  -e PUBLIC_URL=https://pixelci.example.com \
   -e REDIS_HOST=redis \
   -e REDIS_PREFIX=pixelci \
   -e PG_HOST=postgres \
@@ -43,6 +44,8 @@ docker run -d \
   -e CRYPTO_SECRET="$CRYPTO_SECRET" \
   ghcr.io/zyno-io/pixelci:latest
 ```
+
+`PUBLIC_URL` is the address users reach PixelCI at (for a local trial, `http://localhost:7924`). The OAuth callback you register with GitLab or GitHub must be exactly `${PUBLIC_URL}/login`.
 
 Setting `ENABLE_JOB_RUNNER=true` makes the server also process build comparison jobs. For production deployments with higher throughput, you can run a [separate worker process](#separate-worker-process) instead.
 
@@ -79,6 +82,7 @@ services:
             SETUP_TOKEN: ${SETUP_TOKEN}
             CRYPTO_SECRET: ${CRYPTO_SECRET}
             AUTH_JWT_SECRET: your-secret-key
+            PUBLIC_URL: https://pixelci.example.com
             REDIS_HOST: redis
             REDIS_PREFIX: pixelci
             PG_HOST: postgres
@@ -168,9 +172,10 @@ The Helm chart does this for you: it runs the migrations in a pre-upgrade job.
 
 ### Authentication
 
-| Variable          | Required | Default | Description                      |
-| ----------------- | -------- | ------- | -------------------------------- |
-| `AUTH_JWT_SECRET` | Yes      | —       | Secret key for JWT token signing |
+| Variable          | Required | Default | Description                                                                                                                                                                                |
+| ----------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AUTH_JWT_SECRET` | Yes      | —       | Secret key for JWT token signing (also used to sign the OAuth login state)                                                                                                                 |
+| `PUBLIC_URL`      | Yes      | —       | Public origin of PixelCI, e.g. `https://pixelci.example.com` (no path). Login fails without it. The OAuth callback registered with GitLab or GitHub must be exactly `${PUBLIC_URL}/login`. |
 
 ### PostgreSQL
 

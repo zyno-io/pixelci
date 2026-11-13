@@ -149,7 +149,10 @@ export function buildVcsUpdateBody(name: string, platform: 'gitlab' | 'github', 
 </script>
 
 <script lang="ts" setup>
-import { computed } from 'vue';
+import { dataFromAsync } from '@zyno-io/openapi-client-codegen';
+import { onMounted, ref } from 'vue';
+
+import { SessionApi } from '@/openapi-client-generated';
 
 defineProps<{
     platform: 'gitlab' | 'github';
@@ -159,7 +162,17 @@ defineProps<{
 
 const config = defineModel<IVcsConfigFormState>({ required: true });
 
-const redirectUrl = computed(() => `${window.location.origin}/login`);
+// Show the callback URL the server actually uses (`${PUBLIC_URL}/login`); fall back to this origin if it can't say.
+const redirectUrl = ref(`${window.location.origin}/login`);
+
+onMounted(async () => {
+    try {
+        const status = await dataFromAsync(SessionApi.getSessionGetOnboardingStatus());
+        if (status.oauthRedirectUri) redirectUrl.value = status.oauthRedirectUri;
+    } catch {
+        // keep the fallback
+    }
+});
 
 async function copyRedirectUrl() {
     await navigator.clipboard.writeText(redirectUrl.value);

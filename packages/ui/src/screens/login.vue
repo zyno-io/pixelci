@@ -40,6 +40,8 @@ import LoaderModal from '@/shared/components/loader-modal.vue';
 import ThemeMenu from '@/shared/components/theme-menu.vue';
 import { useStore } from '@/store';
 
+const OAUTH_STATE_STORAGE_KEY = 'pixelci:oauthState';
+
 const store = useStore();
 const route = useRoute();
 const router = useRouter();
@@ -55,17 +57,6 @@ const suppressAutoLogin = ref(false);
 
 function providerIcon(provider: ISessionProvider) {
     return provider.platform === 'github' ? 'fa-brands fa-github' : 'fa-brands fa-gitlab';
-}
-
-function parseState(): { path?: string; providerId?: string } | undefined {
-    try {
-        const raw = route.query.state;
-        if (typeof raw !== 'string' || !raw) return undefined;
-        const state = JSON.parse(atob(raw));
-        return state && typeof state.providerId === 'string' ? state : undefined;
-    } catch {
-        return undefined;
-    }
 }
 
 async function login(provider: ISessionProvider) {
@@ -84,20 +75,19 @@ async function login(provider: ISessionProvider) {
             clearSetupToken();
         }
 
-        const { url } = await dataFromAsync(
+        const { url, state } = await dataFromAsync(
             SessionApi.getSessionGetProviderLoginUrl({
                 path: { id: provider.id },
-                query: {
-                    redirectUri: `${window.location.origin}/login`,
-                    state: btoa(
-                        JSON.stringify({
-                            path: location.pathname,
-                            providerId: provider.id
-                        })
-                    )
-                }
+                query: { returnTo: location.pathname + location.search }
             })
         );
+
+        // Ties the callback to this browser: processCode refuses a state that wasn't issued here (login CSRF).
+        try {
+            sessionStorage.setItem(OAUTH_STATE_STORAGE_KEY, state);
+        } catch {
+            // sessionStorage unavailable; processCode will refuse the callback
+        }
 
         location.href = url;
     } catch (err) {
@@ -106,23 +96,35 @@ async function login(provider: ISessionProvider) {
     }
 }
 
+function readStoredState(): string | undefined {
+    try {
+        return sessionStorage.getItem(OAUTH_STATE_STORAGE_KEY) ?? undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function clearStoredState() {
+    try {
+        sessionStorage.removeItem(OAUTH_STATE_STORAGE_KEY);
+    } catch {
+        // sessionStorage unavailable
+    }
+}
+
 async function processCode(code: string) {
     try {
-        let state = parseState();
+        const callbackState = typeof route.query.state === 'string' ? route.query.state : undefined;
+        const storedState = readStoredState();
 
         router.replace({ path: '/login', query: {} });
 
-        if (!state) {
-            // GitHub install-time authorization can return a code without our state; fall back to the sole provider
-            const available = await dataFromAsync(SessionApi.getSessionGetProviders());
-            if (available.length !== 1) {
-                providers.value = available;
-                errorMessage.value = 'Please sign in again.';
-                suppressAutoLogin.value = true;
-                isLoading.value = false;
-                return;
-            }
-            state = { providerId: available[0].id, path: '/' };
+        if (!callbackState || !storedState || callbackState !== storedState) {
+            // No state (e.g. GitHub install-time authorization) or one this browser never issued: never exchange the code.
+            clearStoredState();
+            suppressAutoLogin.value = true;
+            errorMessage.value = callbackState ? 'Sign-in could not be verified. Please try again.' : 'GitHub App installed — sign in to continue.';
+            return loadSession();
         }
 
         let setupToken: string | undefined;
@@ -131,22 +133,23 @@ async function processCode(code: string) {
         } catch {
             // sessionStorage unavailable
         }
-        const { jwt } = await dataFromAsync(
+        const { jwt, returnTo } = await dataFromAsync(
             SessionApi.postSessionLogin({
                 body: {
                     code,
                     setupToken,
-                    providerId: state.providerId!,
-                    redirectUri: `${window.location.origin}/login`
+                    state: callbackState
                 }
             })
         );
+        clearStoredState();
         clearSetupToken();
-        targetPath.value = state.path;
+        targetPath.value = returnTo;
         localStorage.setItem(LOCAL_STORAGE_AUTH_KEY, jwt);
         loadSession();
     } catch (err) {
         handleErrorAndAlert(err);
+        clearStoredState();
         // Don't auto-redirect back to the provider (it would loop straight back into the same failure);
         // show the provider buttons so the user can retry deliberately.
         suppressAutoLogin.value = true;

@@ -16,7 +16,7 @@ In your GitLab instance:
 Fill in:
 
 - **Name**: `PixelCI`
-- **Redirect URI**: `https://<your-pixelci-domain>/login`
+- **Redirect URI**: `https://<your-pixelci-domain>/login` (must be exactly `${PUBLIC_URL}/login`, where `PUBLIC_URL` is the server's configured public origin)
 - **Confidential**: Yes
 - **Scopes**: `openid`, `api`
 

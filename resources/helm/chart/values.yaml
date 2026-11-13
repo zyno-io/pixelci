@@ -28,6 +28,8 @@ ingress:
 env:
   APP_ENV: production
   USE_REAL_IP_HEADER: 'true'
+  # Public origin of the web app; the OAuth redirect URI is always ${PUBLIC_URL}/login
+  PUBLIC_URL: https://pixelci.s24.dev
 
   REDIS_SENTINEL_HOST: redis.redis.svc.cluster.local
   REDIS_SENTINEL_NAME: redis

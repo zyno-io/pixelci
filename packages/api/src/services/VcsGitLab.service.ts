@@ -105,7 +105,14 @@ export class VcsGitLabService implements IVcsServiceImpl {
     }
 
     async getProviderLoginUrl(redirectUri: string, state?: string): Promise<string> {
-        return `${this.config.url}/oauth/authorize?client_id=${this.config.clientId}&redirect_uri=${redirectUri}&state=${state ?? ''}&response_type=code&scope=openid+api`;
+        const params = new URLSearchParams({
+            client_id: this.config.clientId,
+            redirect_uri: redirectUri,
+            state: state ?? '',
+            response_type: 'code',
+            scope: 'openid api'
+        });
+        return `${this.config.url}/oauth/authorize?${params.toString()}`;
     }
 
     async exchangeProviderCode(redirectUri: string, code: string): Promise<IVcsLoginSessionResponse> {

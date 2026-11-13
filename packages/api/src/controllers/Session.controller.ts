@@ -3,6 +3,8 @@ import {
     HttpBadRequestError,
     HttpBody,
     HttpAccessDeniedError,
+    HttpInternalServerError,
+    HttpNotFoundError,
     HttpQueries,
     isUniqueConstraintError,
     UuidString
@@ -17,6 +19,7 @@ import { Db } from '../database';
 import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { sealIntegrationConfig, sealVcsSession } from '../services/secrets/VcsSecrets';
+import { createOAuthState, deriveStateKey, sanitizeReturnTo, verifyOAuthState } from '../services/OAuthState';
 import { VcsService } from '../services/Vcs.service';
 import { normalizeCreateConfig } from '../services/VcsConfig';
 import { IVcsIntegrationCreateInput } from './VcsIntegrations.controller';
@@ -26,21 +29,29 @@ type ISessionResponse = Pick<UserEntity, 'id' | 'name' | 'isAdmin' | 'vcsId'>;
 type ISessionProvider = Pick<VcsIntegrationEntity, 'id' | 'name' | 'platform'>;
 
 interface ISessionLoginRequest {
-    providerId: UuidString;
-    redirectUri: string;
     code: string;
+    // Server-issued, signed state from the login-url endpoint; carries the provider and return path.
+    state: string;
     // Only consulted when the very first admin is being created.
     setupToken?: string;
 }
 
 interface ISessionLoginResponse {
     jwt: string;
+    returnTo: string;
+}
+
+interface ISessionLoginUrlResponse {
+    url: string;
+    state: string;
 }
 
 interface IOnboardingStatusResponse {
     isOnboarded: boolean;
     // True when SETUP_TOKEN is configured (>= 16 chars); first-run setup is impossible otherwise.
     setupEnabled: boolean;
+    // The OAuth callback URL providers must have registered (`${PUBLIC_URL}/login`); absent when PUBLIC_URL is not configured.
+    oauthRedirectUri?: string;
     // True once at least one admin user exists. While false (and setupEnabled), login accepts the setup token to claim admin.
     hasAdmin: boolean;
 }
@@ -66,7 +77,7 @@ export class SessionController {
     constructor(
         private vcsService: VcsService,
         private db: Db,
-        appConfig: AppConfig,
+        private appConfig: AppConfig,
         logger: ScopedLogger
     ) {
         const configured = appConfig.SETUP_TOKEN;
@@ -109,17 +120,40 @@ export class SessionController {
         }));
     }
 
+    private getRedirectUri(): string {
+        const publicUrl = this.appConfig.PUBLIC_URL?.trim();
+        if (!publicUrl) throw new HttpInternalServerError('PUBLIC_URL is not configured');
+        let parsed: URL;
+        try {
+            parsed = new URL(publicUrl);
+        } catch {
+            throw new HttpInternalServerError('PUBLIC_URL is not a valid URL');
+        }
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new HttpInternalServerError('PUBLIC_URL must be an http(s) URL');
+        return `${publicUrl.replace(/\/+$/, '')}/login`;
+    }
+
     @http.GET('providers/:id/login-url')
-    async getProviderLoginUrl(id: UuidString, query: HttpQueries<{ redirectUri: string; state?: string }>): Promise<{ url: string }> {
-        const url = await this.vcsService.getProviderLoginUrl(id, query.redirectUri, query.state);
-        return { url };
+    async getProviderLoginUrl(id: UuidString, query: HttpQueries<{ returnTo?: string }>): Promise<ISessionLoginUrlResponse> {
+        const redirectUri = this.getRedirectUri();
+        const provider = await VcsIntegrationEntity.query().filterField('id', id).findOneOrUndefined();
+        if (!provider) throw new HttpNotFoundError('Unknown provider');
+        const state = createOAuthState({ providerId: id, returnTo: sanitizeReturnTo(query.returnTo) }, deriveStateKey(this.appConfig));
+        const url = await this.vcsService.getProviderLoginUrl(id, redirectUri, state);
+        return { url, state };
     }
 
     @http.GET('onboarding-status')
     async getOnboardingStatus(): Promise<IOnboardingStatusResponse> {
         const count = await VcsIntegrationEntity.query().count();
         const adminCount = await UserEntity.query().filter({ isAdmin: true }).count();
-        return { isOnboarded: count > 0, setupEnabled: !!this.setupToken, hasAdmin: adminCount > 0 };
+        let oauthRedirectUri: string | undefined;
+        try {
+            oauthRedirectUri = this.getRedirectUri();
+        } catch {
+            // PUBLIC_URL missing or invalid: the UI falls back to its own origin
+        }
+        return { isOnboarded: count > 0, setupEnabled: !!this.setupToken, hasAdmin: adminCount > 0, oauthRedirectUri };
     }
 
     @http.POST('onboarding/vcs-integration')
@@ -163,11 +197,15 @@ export class SessionController {
 
     @http.POST('login')
     async login(body: HttpBody<ISessionLoginRequest>): Promise<ISessionLoginResponse> {
-        const session = await this.vcsService.exchangeProviderCode(body.providerId, body.redirectUri, body.code);
+        const redirectUri = this.getRedirectUri();
+        const verified = verifyOAuthState(body.state, deriveStateKey(this.appConfig));
+        if (!verified) throw new HttpBadRequestError('Sign-in expired or could not be verified; please try again');
+        const providerId = verified.providerId;
+        const session = await this.vcsService.exchangeProviderCode(providerId, redirectUri, body.code);
 
         const { name, id, ...sessionDetails } = session;
 
-        const findUser = () => UserEntity.query().filter({ vcsId: body.providerId, vcsUserId: id }).findOneOrUndefined();
+        const findUser = () => UserEntity.query().filter({ vcsId: providerId, vcsUserId: id }).findOneOrUndefined();
         let user = await findUser();
         let writtenUnderLock = false;
 
@@ -185,11 +223,11 @@ export class SessionController {
                     await txn.acquireSessionLock([ONBOARDING_LOCK]);
                     const adminCount = await txn.query(UserEntity).filter({ isAdmin: true }).count();
                     const claimAdmin = adminCount === 0 && this.isSetupTokenValid(body.setupToken);
-                    let locked = await txn.query(UserEntity).filter({ vcsId: body.providerId, vcsUserId: id }).findOneOrUndefined();
+                    let locked = await txn.query(UserEntity).filter({ vcsId: providerId, vcsUserId: id }).findOneOrUndefined();
                     if (!locked) {
                         locked = createEntity(UserEntity, {
                             id: uuid(),
-                            vcsId: body.providerId,
+                            vcsId: providerId,
                             vcsUserId: id,
                             createdAt: new Date(),
                             isAdmin: false
@@ -220,6 +258,6 @@ export class SessionController {
         }
 
         const jwt = await JWT.generate({ subject: user.id });
-        return { jwt };
+        return { jwt, returnTo: verified.returnTo };
     }
 }

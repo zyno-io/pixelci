@@ -25,4 +25,8 @@ export class AppConfig extends BaseAppConfig {
     // multipart parsing. The per-file FileUpload maxSize on the upload endpoint ('17MB') sits above it as a backstop.
     // 16 MiB image + 64 KiB for multipart framing.
     HTTP_MAX_REQUEST_BODY_BYTES = 16 * 1024 * 1024 + 64 * 1024;
+
+    // Public origin of the web app (e.g. https://pixelci.example.com). The OAuth redirect URI is always
+    // `${PUBLIC_URL}/login`, so it must exactly match what is registered with the provider.
+    PUBLIC_URL?: string;
 }

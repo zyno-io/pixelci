@@ -29,6 +29,7 @@ docker run -d \
   -e APP_ENV=production \
   -e ENABLE_JOB_RUNNER=true \
   -e AUTH_JWT_SECRET=your-secret-key \
+  -e PUBLIC_URL=https://pixelci.example.com \
   -e REDIS_HOST=redis \
   -e REDIS_PREFIX=pixelci \
   -e PG_HOST=postgres \
@@ -43,6 +44,8 @@ docker run -d \
   -e CRYPTO_SECRET="<the value printed above>" \
   ghcr.io/zyno-io/pixelci:latest
 ```
+
+`PUBLIC_URL` is the address users reach PixelCI at (for a local trial, `http://localhost:7924`). The OAuth callback you register with GitLab or GitHub must be exactly `${PUBLIC_URL}/login`.
 
 Then run migrations:
 
