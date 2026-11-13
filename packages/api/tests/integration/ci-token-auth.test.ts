@@ -6,6 +6,7 @@ import { CoreAppOptions } from '../../src/app';
 import { AppEntity } from '../../src/entities/App.entity';
 import { BranchEntity } from '../../src/entities/Branch.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { sealIntegrationConfig } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
@@ -109,11 +110,11 @@ async function createBaseEntities() {
         id: ZERO_ID,
         name: 'Auth Test VCS',
         platform: 'gitlab',
-        config: {
+        config: sealIntegrationConfig({
             url: `http://127.0.0.1:${mockGitLabPort}`,
             clientId: 'client-id',
             clientSecret: 'client-secret'
-        }
+        })
     });
 
     await createPersistedEntity(AppEntity, {

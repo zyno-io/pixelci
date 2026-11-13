@@ -1,4 +1,5 @@
 import { CreateBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import pg from 'pg';
@@ -9,6 +10,24 @@ pg.defaults.parseInputDatesAsUTC = true;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, '..', 'integration', 'fixtures');
+
+// Stored VCS secrets are ciphertext (TSF Crypto: AES-256-GCM, base64 of iv(12) | ciphertext | tag(16)), keyed by CRYPTO_SECRET.
+function cryptoSecretKey() {
+    let secret = process.env.CRYPTO_SECRET;
+    if (!secret) {
+        const envFile = fs.readFileSync(path.join(__dirname, '..', '..', '.env.development'), 'utf8');
+        secret = envFile.match(/^CRYPTO_SECRET=(.+)$/m)?.[1]?.trim();
+    }
+    if (!secret) throw new Error('CRYPTO_SECRET is not set and not found in .env.development');
+    return /^[0-9a-f]{64}$/i.test(secret) ? Buffer.from(secret, 'hex') : Buffer.from(secret);
+}
+
+function sealSecret(plain) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', cryptoSecretKey(), iv);
+    const encrypted = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+    return Buffer.concat([iv, encrypted, cipher.getAuthTag()]).toString('base64');
+}
 
 // IDs
 const ZERO_ID = '00000000-0000-0000-0000-000000000000';
@@ -117,7 +136,7 @@ async function seedDatabase() {
         id: ZERO_ID,
         name: 'Test VCS',
         platform: 'gitlab',
-        config: JSON.stringify({ url: 'https://git.example', clientId: 'client-id', clientSecret: 'client-secret' })
+        config: JSON.stringify({ url: 'https://git.example', clientId: 'client-id', clientSecret: sealSecret('client-secret') })
     });
 
     await insertIgnore(conn, 'users', {

@@ -17,6 +17,11 @@ This guide covers self-hosting PixelCI — the API/UI server, background workers
 SETUP_TOKEN=$(openssl rand -hex 32)
 echo "$SETUP_TOKEN"
 
+# Generate the secret that encrypts VCS secrets at rest ONCE, and save it (see "Secrets Encryption" below).
+# Never regenerate it: a new secret cannot decrypt what the old one encrypted.
+[ -f pixelci-secrets.env ] || echo "CRYPTO_SECRET=$(openssl rand -hex 32)" > pixelci-secrets.env
+. ./pixelci-secrets.env
+
 docker run -d \
   --name pixelci \
   -p 7924:7924 \
@@ -35,6 +40,7 @@ docker run -d \
   -e S3_ACCESS_SECRET=your-secret-key \
   -e S3_BUCKET=pixelci \
   -e SETUP_TOKEN="$SETUP_TOKEN" \
+  -e CRYPTO_SECRET="$CRYPTO_SECRET" \
   ghcr.io/zyno-io/pixelci:latest
 ```
 
@@ -54,7 +60,12 @@ Visit `http://localhost:7924`. On first launch, the onboarding wizard asks for y
 
 A complete setup with PostgreSQL, Redis, and PixelCI:
 
-Set `SETUP_TOKEN` in your shell or an `.env` file next to the compose file (for example `SETUP_TOKEN=$(openssl rand -hex 32)`).
+Set `SETUP_TOKEN` and `CRYPTO_SECRET` in an `.env` file next to the compose file. Generate each value once, write it into the file, and keep a copy elsewhere; never regenerate `CRYPTO_SECRET` (see [Secrets Encryption](#secrets-encryption)):
+
+```bash
+grep -q "^SETUP_TOKEN=" .env 2>/dev/null || echo "SETUP_TOKEN=$(openssl rand -hex 32)" >> .env
+grep -q "^CRYPTO_SECRET=" .env 2>/dev/null || echo "CRYPTO_SECRET=$(openssl rand -hex 32)" >> .env
+```
 
 ```yaml
 services:
@@ -66,6 +77,7 @@ services:
             APP_ENV: production
             ENABLE_JOB_RUNNER: 'true'
             SETUP_TOKEN: ${SETUP_TOKEN}
+            CRYPTO_SECRET: ${CRYPTO_SECRET}
             AUTH_JWT_SECRET: your-secret-key
             REDIS_HOST: redis
             REDIS_PREFIX: pixelci
@@ -134,6 +146,18 @@ docker compose exec pixelci node . migrate:run
 kubectl exec deploy/pixelci-server -- node . migrate:run
 ```
 
+Some upgrades migrate data the new version depends on (for example, encrypting stored VCS secrets). To avoid errors between starting the new version and migrating, run the migrations with the new image before starting it, with the same environment as the server:
+
+```bash
+# Docker
+docker run --rm --env-file pixelci.env ghcr.io/zyno-io/pixelci:<new version> node . migrate:run
+
+# Docker Compose (after updating the image tag)
+docker compose run --rm pixelci node . migrate:run && docker compose up -d
+```
+
+The Helm chart does this for you: it runs the migrations in a pre-upgrade job.
+
 ## Environment Variable Reference
 
 ### General
@@ -201,6 +225,48 @@ PixelCI creates its tables at startup (migrations) and at runtime (the job queue
 
 Without this token, anyone who can reach a fresh instance could register their own VCS integration and become admin, so setup is refused until it is configured.
 
+### Secrets Encryption
+
+| Variable        | Required | Default | Description                                                                                  |
+| --------------- | -------- | ------- | -------------------------------------------------------------------------------------------- |
+| `CRYPTO_SECRET` | Yes      | unset   | Key for encrypting VCS secrets at rest (AES-256-GCM): a 32-byte string or 64 hex characters. |
+
+PixelCI encrypts these fields in the database: each VCS integration's `clientSecret` and GitHub App `privateKey`, and each user's stored VCS session tokens (access and refresh). Without the secret, a database dump or backup does not reveal them.
+
+`CRYPTO_SECRET` is required in every environment: the server, worker and `migrate:run` refuse to start without it. The `encrypt_secrets` migration encrypts any secrets already in the database when it first runs.
+
+Generate a secret once (use your own; never reuse a secret from an example or from `.env.development`):
+
+```bash
+openssl rand -hex 32
+```
+
+Save the output straight into your secret manager or `.env` file. **Do not regenerate it** (for example by re-running a command that builds it inline): a new secret silently replaces the old one and everything already encrypted becomes unreadable. Back it up separately from the database: the database alone cannot be decrypted without it. Every process that runs PixelCI (server, separate worker, migration jobs) needs the same value.
+
+Key rotation is not supported yet.
+
+**If the secret is lost**
+
+Encrypted values cannot be recovered. Until the integration secrets are replaced, nobody can sign in: every sign-in needs the integration's client secret, so the admin UI is out of reach too. Recover from the command line:
+
+1. Set a new `CRYPTO_SECRET` everywhere (server, worker, migration jobs).
+2. Store each integration's secrets again, using the values from your GitLab application or GitHub App. Find the integration ids with `SELECT id, name, platform FROM "vcsIntegrations";`. The value is read from stdin and encrypted with the new secret; it is never printed:
+
+    ```bash
+    # GitLab and GitHub: the OAuth client secret
+    printf '%s' '<client secret>' | node . secrets:set-integration <integration id> clientSecret
+    # GitHub App only: the private key (PEM)
+    node . secrets:set-integration <integration id> privateKey < key.pem
+    ```
+
+3. Clear all stored user sessions, which the old secret encrypted. Users sign in again; nothing else is lost:
+
+    ```sql
+    UPDATE users SET "vcsSession" = NULL WHERE "vcsSession" IS NOT NULL;
+    ```
+
+Until step 2 is done, anything that needs an integration fails with a server error, and the log names the integration (never the secret). An admin who is still signed in can instead re-enter the secrets under **VCS Integrations** (admin menu): an integration whose stored secrets cannot be decrypted accepts an update that supplies every unreadable value.
+
 ### Access Control
 
 By default, PixelCI filters app reads (both the web UI and the [`/api/ext` API](/llm-access#rest-api)) by whether the requesting user or token can access the app's project in the VCS provider — so users only see the apps their GitLab or GitHub account can access. The API server needs outbound HTTPS to your VCS provider (GitLab, or `github.com` / `api.github.com` for GitHub).
@@ -250,6 +316,7 @@ docker run -d \
   -e S3_ACCESS_KEY_ID=your-access-key \
   -e S3_ACCESS_SECRET=your-secret-key \
   -e S3_BUCKET=pixelci \
+  -e CRYPTO_SECRET="$CRYPTO_SECRET" \
   ghcr.io/zyno-io/pixelci:latest \
   node . worker:start
 ```
@@ -269,4 +336,4 @@ Run migrations via `kubectl exec` against the server deployment after each upgra
 kubectl exec deploy/pixelci-server -- node . migrate:run
 ```
 
-All deployments share the same environment variables. Use Kubernetes Secrets for sensitive values (`AUTH_JWT_SECRET`, `PG_PASSWORD_SECRET`, S3 credentials).
+All deployments share the same environment variables. Use Kubernetes Secrets for sensitive values (`AUTH_JWT_SECRET`, `PG_PASSWORD_SECRET`, S3 credentials, `CRYPTO_SECRET`).

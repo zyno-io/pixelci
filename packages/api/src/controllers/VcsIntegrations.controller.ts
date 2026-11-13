@@ -6,6 +6,7 @@ import { AdminAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
 import { AppEntity } from '../entities/App.entity';
 import { IGitLabConfig, VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
+import { openIntegrationConfig, sealIntegrationConfig } from '../services/secrets/VcsSecrets';
 import { mergeConfigUpdate, normalizeCreateConfig, redactConfig } from '../services/VcsConfig';
 
 type IVcsIntegrationListResponse = Pick<VcsIntegrationEntity, 'id' | 'name' | 'platform'>;
@@ -88,7 +89,7 @@ export class VcsIntegrationsController {
             id: uuid(),
             name: body.name,
             platform,
-            config
+            config: sealIntegrationConfig(config)
         });
         await integration.save();
 
@@ -111,7 +112,15 @@ export class VcsIntegrationsController {
             if (bodyPlatform !== integration.platform) {
                 throw new HttpBadRequestError(`Cannot apply ${bodyPlatform} config to a ${integration.platform} integration`);
             }
-            integration.config = mergeConfigUpdate(integration.platform, integration.config, body.config);
+            // Merge on plaintext (GitHub validation parses the PEM), then seal before it reaches the entity.
+            // Unreadable stored secrets (lost key) open as '' so a PUT that supplies replacements can recover the integration.
+            const unreadable: string[] = [];
+            const merged = mergeConfigUpdate(integration.platform, openIntegrationConfig(integration, unreadable), body.config);
+            const stillMissing = unreadable.filter(f => !(merged as unknown as Record<string, unknown>)[f]);
+            if (stillMissing.length) {
+                throw new HttpBadRequestError(`Stored ${stillMissing.join(' and ')} cannot be decrypted; supply a new value`);
+            }
+            integration.config = sealIntegrationConfig(merged);
         }
         await integration.save();
 

@@ -16,6 +16,7 @@ import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { S3Service } from '../../src/services/S3.service';
 import { screenManifestHash } from '../../src/services/ScreenManifest';
+import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
@@ -190,18 +191,18 @@ async function run() {
         isAdmin: true,
         vcsId: ZERO_ID,
         vcsUserId: ZERO_ID,
-        vcsSession: {
+        vcsSession: sealVcsSession({
             accessToken: 'test-access-token',
             expiresAt: Date.now() + 60 * 60 * 1000,
             refreshToken: 'test-refresh-token',
             redirectUri: 'http://localhost'
-        }
+        })
     });
     await createPersistedEntity(VcsIntegrationEntity, {
         id: ZERO_ID,
         name: 'Concurrent Test VCS',
         platform: 'gitlab',
-        config: { url: `http://127.0.0.1:${mockPort}`, clientId: 'client-id', clientSecret: 'client-secret' }
+        config: sealIntegrationConfig({ url: `http://127.0.0.1:${mockPort}`, clientId: 'client-id', clientSecret: 'client-secret' })
     });
     await createPersistedEntity(AppEntity, {
         id: APP_ID,

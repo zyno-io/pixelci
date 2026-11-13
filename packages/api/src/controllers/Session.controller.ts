@@ -16,6 +16,7 @@ import { AppConfig } from '../config';
 import { Db } from '../database';
 import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
+import { sealIntegrationConfig, sealVcsSession } from '../services/secrets/VcsSecrets';
 import { VcsService } from '../services/Vcs.service';
 import { normalizeCreateConfig } from '../services/VcsConfig';
 import { IVcsIntegrationCreateInput } from './VcsIntegrations.controller';
@@ -143,7 +144,7 @@ export class SessionController {
                 id: uuid(),
                 name: input.name,
                 platform,
-                config
+                config: sealIntegrationConfig(config)
             });
             txn.add(created);
             await txn.flush();
@@ -198,7 +199,7 @@ export class SessionController {
                     if (claimAdmin) locked.isAdmin = true;
                     locked.name = name;
                     locked.lastLoginAt = new Date();
-                    locked.vcsSession = sessionDetails;
+                    locked.vcsSession = sealVcsSession(sessionDetails);
                     await txn.flush();
                     writtenUnderLock = true;
                     return locked;
@@ -214,7 +215,7 @@ export class SessionController {
             // Rows not written under the lock (the common existing-user path, or the unique-error re-select): refresh the profile.
             user.name = name;
             user.lastLoginAt = new Date();
-            user.vcsSession = sessionDetails;
+            user.vcsSession = sealVcsSession(sessionDetails);
             await user.save();
         }
 

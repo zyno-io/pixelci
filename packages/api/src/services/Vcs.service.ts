@@ -3,6 +3,8 @@ import { HttpBadRequestError, HttpUnauthorizedError, ScopedLogger } from '@zyno-
 import { AppEntity } from '../entities/App.entity';
 import { IUserVcsSession, UserEntity } from '../entities/User.entity';
 import { IGitHubConfig, IGitLabConfig, VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
+import { SecretUnreadableError } from './secrets/SecretBox';
+import { openIntegrationConfig } from './secrets/VcsSecrets';
 import { VcsGitHubService } from './VcsGitHub.service';
 import { VcsGitLabService } from './VcsGitLab.service';
 
@@ -247,11 +249,18 @@ export class VcsService {
     }
 
     private createProvider(provider: VcsIntegrationEntity): IVcsServiceImpl {
+        const unreadable: string[] = [];
+        const config = openIntegrationConfig(provider, unreadable);
+        if (unreadable.length) {
+            const fields = unreadable.join(' and ');
+            this.logger.error(`VCS integration ${provider.id}: ${fields} cannot be decrypted with the configured CRYPTO_SECRET`);
+            throw new SecretUnreadableError(`VCS integration ${provider.id}: ${fields} cannot be decrypted`);
+        }
         if (provider.platform === 'gitlab') {
-            return new VcsGitLabService(provider.config as IGitLabConfig, this.logger);
+            return new VcsGitLabService(config as IGitLabConfig, this.logger);
         }
         if (provider.platform === 'github') {
-            return new VcsGitHubService(provider.config as IGitHubConfig, this.logger);
+            return new VcsGitHubService(config as IGitHubConfig, this.logger);
         }
 
         throw new Error(`VCS provider with ID ${provider.id} is not supported`);

@@ -27,6 +27,7 @@ import { IGitHubConfig } from '../entities/VcsIntegration.entity';
 import { BoundedTtlCache } from '../helpers/BoundedTtlCache';
 import { withInstallationToken, appJwtGet } from './github/GitHubAppAuth';
 import { createGitHubClient, describeGitHubError, encodeRepoPath, githubUrls, GITHUB_REQUEST_TIMEOUT_MS } from './github/GitHubHttp';
+import { vcsAccessToken } from './secrets/VcsSecrets';
 import { ensureFreshVcsSession } from './VcsSessionRefresh';
 
 const DEFAULT_OIDC_ISSUER = 'https://token.actions.githubusercontent.com';
@@ -438,7 +439,7 @@ export class VcsGitHubService implements IVcsServiceImpl {
             this.logger.warn('GitHub token refresh failed', { userId: user.id, error: String(err) });
             throw new HttpBadRequestError('GitHub session expired; please sign in again');
         }
-        return createGitHubClient(this.urls, user.vcsSession!.accessToken);
+        return createGitHubClient(this.urls, vcsAccessToken(user));
     }
 
     // ----------------------------------------------------------------- search
@@ -565,7 +566,7 @@ export class VcsGitHubService implements IVcsServiceImpl {
             this.logger.warn('GitHub token renewal failed during project access check', { userId: user.id, error: String(err) });
             return false;
         }
-        return this.checkProjectAccess(user.vcsSession.accessToken, projectIdentifier);
+        return this.checkProjectAccess(vcsAccessToken(user), projectIdentifier);
     }
 
     async tokenCanAccessProject(token: string, projectIdentifier: string): Promise<boolean> {
@@ -590,7 +591,7 @@ export class VcsGitHubService implements IVcsServiceImpl {
         await this.renewToken(user);
 
         const path = /^\d+$/.test(projectIdentifier) ? `/repositories/${projectIdentifier}` : `/repos/${encodeRepoPath(projectIdentifier)}`;
-        const response = await createGitHubClient(this.urls, user.vcsSession.accessToken).get<{ permissions?: unknown; message?: unknown }>(path, {
+        const response = await createGitHubClient(this.urls, vcsAccessToken(user)).get<{ permissions?: unknown; message?: unknown }>(path, {
             validateStatus: () => true
         });
         if (response.status === 200) return githubRoleFromPermissions(response.data?.permissions);
