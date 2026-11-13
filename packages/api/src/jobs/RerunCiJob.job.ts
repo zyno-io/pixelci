@@ -2,6 +2,7 @@ import { AnyResponse, BaseJob, ScopedLogger, WorkerJob, WorkerService } from '@z
 
 import { AppEntity } from '../entities/App.entity';
 import { BuildEntity } from '../entities/Build.entity';
+import { BuildShardEntity } from '../entities/BuildShard.entity';
 import { UserEntity } from '../entities/User.entity';
 import { VcsService } from '../services/Vcs.service';
 
@@ -39,13 +40,13 @@ export class RerunCiJobJob extends BaseJob<IRerunCiJobJobData> {
         const logger = this.logger.scoped(data.buildId);
         try {
             const build = await BuildEntity.query().filter({ id: data.buildId }).findOneOrUndefined();
-            if (!build || build.status !== 'changes approved' || build.ciJobId !== data.ciJobId) {
+            const app = build ? await AppEntity.query().filter({ id: build.appId }).findOneOrUndefined() : undefined;
+            if (!build || build.status !== 'changes approved' || !(await this.isCurrentTarget(build, app, data.ciJobId))) {
                 logger.info('Skipping deferred CI re-run: build changed', { id: data.buildId });
                 return;
             }
 
             const user = await UserEntity.query().filter({ id: data.userId }).findOneOrUndefined();
-            const app = await AppEntity.query().filter({ id: build.appId }).findOneOrUndefined();
             if (!user || !app || app.deletedAt) {
                 logger.info('Skipping deferred CI re-run: user or app is gone', { id: data.buildId });
                 return;
@@ -69,5 +70,17 @@ export class RerunCiJobJob extends BaseJob<IRerunCiJobJobData> {
         } catch (err) {
             logger.warn('Deferred CI re-run errored', { id: data.buildId, error: String(err) });
         }
+    }
+
+    /** The build's job id; for a sharded build, any re-run target its shard jobs collapse to (one per run on GitHub). */
+    private async isCurrentTarget(build: BuildEntity, app: AppEntity | undefined, ciJobId: string): Promise<boolean> {
+        if (build.shardTotal <= 1) return build.ciJobId === ciJobId;
+        if (!app) return false;
+        const shards = await BuildShardEntity.query().filter({ buildId: build.id }).find();
+        const targets = await this.vcsSvc.getRerunTargets(
+            app,
+            shards.map(shard => shard.ciJobId)
+        );
+        return targets.includes(ciJobId);
     }
 }

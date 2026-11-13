@@ -176,6 +176,10 @@ export class VcsGitLabService implements IVcsServiceImpl {
         }
     }
 
+    rerunTargets(ciJobIds: string[]): string[] {
+        return [...new Set(ciJobIds)];
+    }
+
     private rerunFailure(err: unknown): { ok: false; error: string } {
         this.logger.error('Failed to rerun CI job', err);
         if (axios.isAxiosError(err)) {

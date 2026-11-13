@@ -4,6 +4,7 @@ import { createAuthMiddleware, HttpAccessDeniedError, HttpMiddleware } from '@zy
 import { createHash } from 'crypto';
 
 import { BuildEntity } from '../entities/Build.entity';
+import { BuildShardEntity } from '../entities/BuildShard.entity';
 import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { BoundedTtlCache } from '../helpers/BoundedTtlCache';
@@ -64,8 +65,12 @@ export class BuildCiTokenMiddleware extends HttpMiddleware {
 
         const build = await BuildEntity.query().filter({ id: buildId }).findOneOrUndefined();
         // Uploads/process require the creator's token; status polling also accepts read-only tokens of concurrent jobs
-        const allowed =
+        let allowed =
             !!build && (build.ciTokenHash === tokenHash || (request.method === 'GET' && (build.ciReadTokenHashes ?? []).includes(tokenHash)));
+        // A sharded build has no single uploader: each shard's job holds its own token (for uploads, process and status polling)
+        if (build && !allowed && build.shardTotal > 1) {
+            allowed = !!(await BuildShardEntity.query().filter({ buildId: build.id, ciTokenHash: tokenHash }).findOneOrUndefined());
+        }
         // Sessions expire (refreshed on create/upload). A null expiry is a build created by an old pod during the rolling deploy (the column
         // is added before the old pods stop and has no default), so fall back to the build's last activity plus the TTL.
         const expiresAt = build && (build.ciTokensExpireAt ?? new Date((build.draftActiveAt ?? build.createdAt).getTime() + CI_TOKEN_TTL_MS));

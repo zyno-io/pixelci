@@ -1,5 +1,5 @@
 import { entity, PrimaryKey } from '@zyno-io/ts-server-foundation';
-import { BaseEntity, DatabaseField, UuidString } from '@zyno-io/ts-server-foundation';
+import { BaseEntity, DatabaseField, HasDefault, UuidString } from '@zyno-io/ts-server-foundation';
 
 @entity.name('builds_screens')
 @entity.index(['buildId', 'screenId'], { unique: true })
@@ -17,4 +17,6 @@ export class BuildScreenEntity extends BaseEntity {
     reviewComment!: (string & DatabaseField<{ type: 'text' }>) | null;
     reviewedById!: UuidString | null;
     reviewedAt!: Date | null;
+    /** The shard (1-based) that uploaded this screen; always 1 for unsharded builds. */
+    shardIndex: (number & DatabaseField<{ type: 'integer' }>) & HasDefault = 1;
 }

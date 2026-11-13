@@ -614,6 +614,12 @@ export class VcsGitHubService implements IVcsServiceImpl {
 
     // ------------------------------------------------------------------ rerun
 
+    /** Re-running individual jobs of a run fails with "already running" after the first, so shard jobs collapse to their run. */
+    rerunTargets(ciJobIds: string[]): string[] {
+        const runIds = ciJobIds.map(id => parseCiJobId(id)?.runId).filter((id): id is string => !!id);
+        return [...new Set(runIds)];
+    }
+
     async rerunCiJob(
         user: UserEntity,
         app: Pick<AppEntity, 'projectPath' | 'vcsProjectId'>,

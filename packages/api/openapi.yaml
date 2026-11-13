@@ -1286,6 +1286,16 @@ components:
           type: string
         branchName:
           type: string
+        shard:
+          type: object
+          properties:
+            index:
+              type: number
+            total:
+              type: number
+          required:
+            - index
+            - total
       required:
         - id
         - branchId
@@ -1309,6 +1319,16 @@ components:
             - canceled
             - failed
           type: string
+        shards:
+          type: object
+          properties:
+            uploaded:
+              type: number
+            total:
+              type: number
+          required:
+            - uploaded
+            - total
       required:
         - status
     IBuildApprovalResponse:

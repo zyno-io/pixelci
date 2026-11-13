@@ -30,4 +30,6 @@ export class BuildEntity extends BaseEntity {
     ciRunId!: (string & DatabaseField<{ type: 'varchar(64)' }>) | null;
     manifestCount!: (number & DatabaseField<{ type: 'integer' }>) | null;
     manifestHash!: (string & DatabaseField<{ type: 'varchar(64)' }>) | null;
+    /** Number of CI jobs the suite is split across (PIXELCI_SHARD total); 1 = unsharded. */
+    shardTotal: (number & DatabaseField<{ type: 'integer' }>) & HasDefault = 1;
 }

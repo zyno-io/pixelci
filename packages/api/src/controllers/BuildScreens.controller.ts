@@ -2,6 +2,7 @@ import {
     http,
     HttpBadRequestError,
     HttpBody,
+    HttpConflictError,
     HttpNotFoundError,
     HttpRequest,
     HttpUnauthorizedError,
@@ -21,12 +22,15 @@ import { Db } from '../database';
 import { AppEntity } from '../entities/App.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
+import { BuildShardEntity } from '../entities/BuildShard.entity';
 import { ScreenEntity } from '../entities/Screen.entity';
 import { UserEntity } from '../entities/User.entity';
 import { AppAccessService } from '../services/AppAccess.service';
 import { S3Service } from '../services/S3.service';
 import { parseScreenName, validateScreenName, readPngHeader, repairLatin1Filename } from '../services/ScreenUpload';
 import { CI_TOKEN_TTL_MS } from './Builds.controller';
+
+const SHARD_NAME_CLASH = 'screen names must be unique across shards';
 
 export type IAppScreenResponse = Pick<ScreenEntity, 'id' | 'name'>;
 export type IBuildScreenResponse = {
@@ -145,6 +149,19 @@ export class BuildScreensController {
 
         const screen = await this.findOrCreateScreen(appId, screenName);
 
+        // Sharded builds: refuse a name another shard already uploaded BEFORE the PUT, which would overwrite that shard's image
+        // (the key is per build+screen). This narrows the race but doesn't close it: two shards uploading the same new name at the
+        // same moment can still overwrite each other's object (one then gets the 409 below). Content-addressed keys (phase 1) close it.
+        if (build.shardTotal > 1) {
+            const shard = await BuildShardEntity.query().filter({ buildId: id, ciTokenHash: callerHash }).findOneOrUndefined();
+            if (!shard) throw new HttpUnauthorizedError();
+            if (shard.state !== 'uploading') throw new HttpBadRequestError('shard already finalised');
+            const clash = await BuildScreenEntity.query()
+                .filter({ buildId: id, screenId: screen.id, shardIndex: { $ne: shard.shardIndex } })
+                .findOneOrUndefined();
+            if (clash) throw new HttpConflictError(SHARD_NAME_CLASH);
+        }
+
         // The S3 PUT happens outside any transaction so a slow upload never holds a DB connection or row locks.
         // TODO(phase 1): the key is per build+screen, so a late PUT from a superseded uploader (after a takeover) can overwrite the
         // new uploader's image. Content-addressed storage removes that race.
@@ -156,7 +173,18 @@ export class BuildScreensController {
             const locked = await txn.query(BuildEntity).filter({ id, appId }).forUpdate().findOneOrUndefined();
             if (!locked) return new HttpNotFoundError();
             if (locked.status !== 'draft') return new HttpBadRequestError('build is not in draft state');
-            if (locked.ciTokenHash !== callerHash) return new HttpUnauthorizedError();
+            // Sharded builds authenticate with the shard's own token; lock order is build, then shard, then screens.
+            let shard: BuildShardEntity | undefined;
+            if (locked.shardTotal > 1) {
+                shard = await txn.query(BuildShardEntity).filter({ buildId: id, ciTokenHash: callerHash }).forUpdate().findOneOrUndefined();
+                if (!shard) return new HttpUnauthorizedError();
+                if (shard.state !== 'uploading') return new HttpBadRequestError('shard already finalised');
+                const clash = await txn
+                    .query(BuildScreenEntity)
+                    .filter({ buildId: id, screenId: screen.id, shardIndex: { $ne: shard.shardIndex } })
+                    .findOneOrUndefined();
+                if (clash) return new HttpConflictError(SHARD_NAME_CLASH);
+            } else if (locked.ciTokenHash !== callerHash) return new HttpUnauthorizedError();
 
             // Re-upload (e.g. a re-run after a partial failure): replace the earlier upload
             await txn.query(BuildScreenEntity).filter({ buildId: id, screenId: screen.id }).deleteMany();
@@ -168,10 +196,15 @@ export class BuildScreensController {
                     buildId: id,
                     screenId: screen.id,
                     status: 'new',
-                    storageStatus: 'stored'
+                    storageStatus: 'stored',
+                    ...(shard && { shardIndex: shard.shardIndex })
                 },
                 txn
             );
+            if (shard) {
+                shard.activeAt = new Date();
+                txn.add(shard);
+            }
             await txn
                 .query(BuildEntity)
                 .filter({ id })

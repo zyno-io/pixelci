@@ -133,3 +133,14 @@ describe('signAppJwt', () => {
         await assert.rejects(() => signAppJwt({}), /not configured/);
     });
 });
+
+describe('rerunTargets', () => {
+    const svc = new VcsGitHubService({ url: 'https://github.com' } as never, { info() {}, warn() {}, error() {} } as never);
+    it('collapses shard job ids to their distinct runs', () => {
+        assert.deepEqual(svc.rerunTargets(['100:1', '100:2', '100:3']), ['100']);
+        assert.deepEqual(svc.rerunTargets(['100:1', '200:2', '100']), ['100', '200']);
+    });
+    it('drops ids that are not GitHub ids', () => {
+        assert.deepEqual(svc.rerunTargets(['abc', '100:1', '']), ['100']);
+    });
+});
