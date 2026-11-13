@@ -1,6 +1,7 @@
 import { createPrivateKey } from 'crypto';
 import { SignJWT } from 'jose';
 
+import { BoundedTtlCache } from '../../helpers/BoundedTtlCache';
 import { createGitHubClient, encodeRepoPath, githubUrls } from './GitHubHttp';
 
 export interface IGitHubAppConfig {
@@ -12,8 +13,8 @@ export interface IGitHubAppConfig {
 const INSTALLATION_ID_TTL_MS = 60 * 60_000;
 const TOKEN_EARLY_EXPIRY_MS = 5 * 60_000;
 
-const installationIdCache = new Map<string, { id: number; expiresAt: number }>();
-const installationTokenCache = new Map<string, Promise<{ token: string; expiresAt: number }>>();
+const installationIdCache = new BoundedTtlCache<number>(1_000, INSTALLATION_ID_TTL_MS);
+const installationTokenCache = new BoundedTtlCache<Promise<{ token: string; expiresAt: number }>>(1_000, 60 * 60_000);
 
 export function clearGitHubAppCaches(): void {
     installationIdCache.clear();
@@ -46,10 +47,10 @@ export async function appJwtGet<T = unknown>(config: IGitHubAppConfig, path: str
 async function getInstallationId(config: IGitHubAppConfig, repository: string, repoId: number, signal?: AbortSignal): Promise<number> {
     const key = `${githubUrls(config).api}|${config.appId}|${repoId}`;
     const cached = installationIdCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.id;
+    if (cached !== undefined) return cached;
 
     const data = await appJwtGet<{ id: number }>(config, `/repos/${encodeRepoPath(repository)}/installation`, signal);
-    installationIdCache.set(key, { id: data.id, expiresAt: Date.now() + INSTALLATION_ID_TTL_MS });
+    installationIdCache.set(key, data.id);
     return data.id;
 }
 

@@ -21,12 +21,10 @@ import { BuildScreenEntity } from '../entities/BuildScreen.entity';
 import { UserEntity } from '../entities/User.entity';
 import { ProcessBuildJob } from '../jobs/ProcessBuild.job';
 import { RERUN_DEFERRED_NOTICE, RERUN_RETRY_DELAY_MS, RerunCiJobJob } from '../jobs/RerunCiJob.job';
+import { IBuildResponse, toBuildResponse } from '../responses/build.response';
 import { AppAccessService } from '../services/AppAccess.service';
 import { VcsService } from '../services/Vcs.service';
 
-type IBuildResponse = Pick<BuildEntity, 'id' | 'branchId' | 'commitHash' | 'commitSubject' | 'commitAuthor' | 'createdAt' | 'status'> & {
-    branchName: string;
-};
 type IBuildBasicResponse = Pick<BuildEntity, 'status'>;
 
 /** A draft older than this is considered abandoned: it may be taken over by a new job or canceled by another build's processing. */
@@ -55,12 +53,6 @@ export interface IBuildApprovalResponse {
     vcsError?: string;
     /** Informational (non-error) message, e.g. the re-run was deferred until the workflow finishes. */
     vcsNotice?: string;
-}
-
-/** Responses are serialized as-is, so strip the CI session credential hashes before returning builds to users. */
-function omitCiTokenHash(build: BuildEntity) {
-    const { ciTokenHash: _ciTokenHash, ciReadTokenHashes: _ciReadTokenHashes, ...rest } = build;
-    return rest;
 }
 
 /** Adds a read-only (status polling) token hash, de-duplicated and capped to the most recent entries. */
@@ -114,10 +106,7 @@ export class BuildsController {
             .find();
         const branchMap = keyBy(branches, 'id');
 
-        return builds.map(build => ({
-            ...omitCiTokenHash(build),
-            branchName: branchMap[build.branchId]?.name ?? ''
-        }));
+        return builds.map(build => toBuildResponse(build, branchMap[build.branchId]?.name ?? ''));
     }
 
     @http.GET(':id')
@@ -130,10 +119,7 @@ export class BuildsController {
 
         const branch = await BranchEntity.query().filter({ id: build.branchId }).select('name').findOneOrUndefined();
 
-        return {
-            ...omitCiTokenHash(build),
-            branchName: branch?.name ?? ''
-        };
+        return toBuildResponse(build, branch?.name ?? '');
     }
 
     @http.GET(':id/status')
@@ -247,11 +233,7 @@ export class BuildsController {
                     }
                 }
                 txn.add(existingBuild);
-                return {
-                    ...omitCiTokenHash(existingBuild),
-                    status: reportedStatus,
-                    branchName: branch.name
-                };
+                return toBuildResponse(existingBuild, branch.name, reportedStatus);
             }
 
             const newBuild = await createPersistedEntity(
@@ -273,10 +255,7 @@ export class BuildsController {
                 txn
             );
 
-            return {
-                ...omitCiTokenHash(newBuild),
-                branchName: branch!.name
-            };
+            return toBuildResponse(newBuild, branch!.name);
         });
     }
 

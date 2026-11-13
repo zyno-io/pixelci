@@ -24,6 +24,7 @@ import type {
 import { AppEntity } from '../entities/App.entity';
 import { IUserVcsSession, UserEntity } from '../entities/User.entity';
 import { IGitHubConfig } from '../entities/VcsIntegration.entity';
+import { BoundedTtlCache } from '../helpers/BoundedTtlCache';
 import { withInstallationToken, appJwtGet } from './github/GitHubAppAuth';
 import { createGitHubClient, describeGitHubError, encodeRepoPath, githubUrls, GITHUB_REQUEST_TIMEOUT_MS } from './github/GitHubHttp';
 import { ensureFreshVcsSession } from './VcsSessionRefresh';
@@ -43,7 +44,7 @@ const SEARCH_MAX_RESULTS = 20;
 const SEARCH_MAX_REPO_PAGES = 10;
 const NO_EXPIRY = Number.MAX_SAFE_INTEGER;
 
-const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+const jwksCache = new BoundedTtlCache<ReturnType<typeof createRemoteJWKSet>>(32, 24 * 60 * 60_000);
 
 function getJwks(jwksUrl: string) {
     let jwks = jwksCache.get(jwksUrl);
@@ -141,7 +142,7 @@ interface IGitHubRepo {
 }
 
 type ISearchEntry = IVcsProject & { pushedAt: number };
-const searchCache = new Map<string, { expiresAt: number; items: ISearchEntry[] }>();
+const searchCache = new BoundedTtlCache<ISearchEntry[]>(500, SEARCH_CACHE_TTL_MS);
 const searchInFlight = new Map<string, Promise<ISearchEntry[]>>();
 
 function toProject(repo: IGitHubRepo): IVcsProject {
@@ -454,8 +455,8 @@ export class VcsGitHubService implements IVcsServiceImpl {
 
         let entries: ISearchEntry[];
         const cached = searchCache.get(cacheKey);
-        if (cached && cached.expiresAt > Date.now()) {
-            entries = cached.items;
+        if (cached) {
+            entries = cached;
         } else {
             // Coalesce concurrent listings (debounced keystrokes during a slow first listing) per user+integration.
             let pending = searchInFlight.get(cacheKey);
@@ -466,7 +467,7 @@ export class VcsGitHubService implements IVcsServiceImpl {
                     if (searchInFlight.get(cacheKey) === pending) searchInFlight.delete(cacheKey);
                 };
                 pending.then(items => {
-                    searchCache.set(cacheKey, { expiresAt: Date.now() + SEARCH_CACHE_TTL_MS, items });
+                    searchCache.set(cacheKey, items);
                     clear();
                 }, clear);
             }

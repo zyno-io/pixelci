@@ -205,6 +205,7 @@ async function run() {
     await testApprovalRights(facade);
     await testMalformedIds(facade);
     await testBuildsPagination(facade);
+    await testImageRoutesRequireStoredRow(facade);
 }
 
 async function testApprovalRights(facade: TestingFacade) {
@@ -429,6 +430,96 @@ async function testBuildsPagination(facade: TestingFacade) {
     if (JSON.stringify(paged) !== JSON.stringify(all)) {
         throw new Error(`Pages are not disjoint and ordered: ${JSON.stringify(paged)} vs ${JSON.stringify(all)}`);
     }
+    console.log('  PASS');
+}
+
+async function testImageRoutesRequireStoredRow(facade: TestingFacade) {
+    console.log('\nTest: image/diff routes 404 for unknown screens, draft builds and foreign builds; stored rows redirect');
+    const jwt = await JWT.generate({ subject: ZERO_ID });
+    const get = (path: string) => facade.request(HttpRequest.GET(path).header('authorization', `Bearer ${jwt}`));
+    const expect = async (path: string, code: number) => {
+        const response = await get(path);
+        if (response.statusCode !== code) throw new Error(`Expected ${code} for ${path} but got ${response.statusCode}: ${response.body}`);
+    };
+
+    const branch = await createPersistedEntity(BranchEntity, { id: uuid7(), appId: APP_ID, name: 'image-routes' });
+    const newBuild = (status: BuildEntity['status'], n: number) =>
+        createPersistedEntity(BuildEntity, {
+            id: uuid7(),
+            appId: APP_ID,
+            branchId: branch.id,
+            createdAt: new Date(),
+            commitHash: `1ae${n}`.padStart(40, '0'),
+            commitSubject: 'image routes',
+            commitAuthor: 'int-test',
+            ciJobId: String(9500 + n),
+            ciTokenHash: null,
+            ciReadTokenHashes: [],
+            status,
+            approvedById: null,
+            approvedAt: null
+        });
+    const screen = await createPersistedEntity(ScreenEntity, { id: uuid7(), appId: APP_ID, name: 'image-routes-screen' });
+    const addRow = (buildId: string) =>
+        createPersistedEntity(BuildScreenEntity, {
+            id: uuid7(),
+            appId: APP_ID,
+            buildId,
+            screenId: screen.id,
+            matchedBuildId: null,
+            approvalBuildId: null,
+            status: 'new',
+            storageStatus: 'stored',
+            reviewStatus: null,
+            reviewComment: null,
+            reviewedById: null,
+            reviewedAt: null
+        });
+
+    const stored = await newBuild('needs review', 1);
+    await addRow(stored.id);
+    const draft = await newBuild('draft', 2);
+    await addRow(draft.id);
+    const canceled = await newBuild('canceled', 3);
+    await addRow(canceled.id);
+    const noRow = await newBuild('needs review', 4);
+
+    for (const kind of ['image', 'diff']) {
+        const base = (buildId: string, screenId: string) => `/api/apps/${APP_ID}/builds/${buildId}/screens/${screenId}/${kind}`;
+        await expect(base(stored.id, screen.id), 302);
+        await expect(base(stored.id, uuid7()), 404); // unknown screen
+        await expect(base(draft.id, screen.id), 404); // draft build
+        await expect(base(canceled.id, screen.id), 404); // canceled build
+        await expect(base(noRow.id, screen.id), 404); // build without a row for this screen
+        await expect(base(uuid7(), screen.id), 404); // unknown build
+    }
+
+    // A build of another app is not reachable through this app's path
+    const otherApp = await createPersistedEntity(AppEntity, {
+        id: uuid7(),
+        name: 'Other App',
+        defaultBranchId: null,
+        projectPath: 'other',
+        vcsProjectId: 1,
+        vcsId: ZERO_ID
+    });
+    const otherBranch = await createPersistedEntity(BranchEntity, { id: uuid7(), appId: otherApp.id, name: 'main' });
+    const foreign = await createPersistedEntity(BuildEntity, {
+        id: uuid7(),
+        appId: otherApp.id,
+        branchId: otherBranch.id,
+        createdAt: new Date(),
+        commitHash: '1ae5'.padStart(40, '0'),
+        commitSubject: 'foreign',
+        commitAuthor: 'int-test',
+        ciJobId: '9505',
+        ciTokenHash: null,
+        ciReadTokenHashes: [],
+        status: 'needs review',
+        approvedById: null,
+        approvedAt: null
+    });
+    await expect(`/api/apps/${APP_ID}/builds/${foreign.id}/screens/${screen.id}/image`, 404);
     console.log('  PASS');
 }
 

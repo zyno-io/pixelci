@@ -6,6 +6,7 @@ import { createHash } from 'crypto';
 import { BuildEntity } from '../entities/Build.entity';
 import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
+import { BoundedTtlCache } from '../helpers/BoundedTtlCache';
 import { VcsService } from '../services/Vcs.service';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -76,8 +77,8 @@ export class BuildCiTokenMiddleware extends HttpMiddleware {
  * prefix. If multiple such integrations exist and no id is given we refuse, rather than fan the token out
  * across providers. Successful lookups are briefly cached.
  */
-const vcsTokenUserCache = new Map<string, { userId: string; vcsId: string; expiresAt: number }>();
 const VCS_TOKEN_CACHE_TTL_MS = 60_000;
+const vcsTokenUserCache = new BoundedTtlCache<{ userId: string; vcsId: string }>(1_000, VCS_TOKEN_CACHE_TTL_MS);
 
 /** GitHub token prefixes (classic/fine-grained PATs, OAuth, user-to-server, server-to-server, refresh); everything else is GitLab. */
 export function inferTokenPlatform(token: string): VcsIntegrationEntity['platform'] {
@@ -111,7 +112,7 @@ export async function resolveUserFromVcsToken(
     const cacheKey = `${tokenHash}:${requestedVcsId ?? ''}`;
 
     const cached = vcsTokenUserCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached) {
         const cachedUser = await UserEntity.query().filter({ id: cached.userId }).findOneOrUndefined();
         if (cachedUser) return { user: cachedUser, vcsId: cached.vcsId };
         vcsTokenUserCache.delete(cacheKey);
@@ -154,7 +155,7 @@ export async function resolveUserFromVcsToken(
         throw new HttpUnauthorizedError();
     }
 
-    vcsTokenUserCache.set(cacheKey, { userId: user.id, vcsId: integration.id, expiresAt: Date.now() + VCS_TOKEN_CACHE_TTL_MS });
+    vcsTokenUserCache.set(cacheKey, { userId: user.id, vcsId: integration.id });
     return { user, vcsId: integration.id };
 }
 

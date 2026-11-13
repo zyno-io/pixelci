@@ -27,6 +27,10 @@ export type IAppShowResponse = EntityFields<AppEntity> & {
     canReview: boolean;
 };
 
+function toAppIndexResponse(app: AppEntity, buildCount: number): IAppIndexResponse {
+    return { id: app.id, name: app.name, defaultBranchId: app.defaultBranchId, buildCount };
+}
+
 interface IAppCreateInput {
     name: string;
     vcsId: UuidString;
@@ -55,11 +59,7 @@ export class AppsController {
             accessibleApps.map(async app => {
                 const count = await BuildEntity.query().filter({ appId: app.id }).count();
 
-                return {
-                    ...app,
-                    id: app.id,
-                    buildCount: count
-                };
+                return toAppIndexResponse(app, count);
             })
         );
 
@@ -112,7 +112,7 @@ export class AppsController {
         });
         await newApp.save();
 
-        return newApp;
+        return toAppIndexResponse(newApp, 0);
     }
 
     @http.PUT('/:id')
@@ -129,7 +129,7 @@ export class AppsController {
         Object.assign(app, body);
         await app.save();
 
-        return app;
+        return toAppIndexResponse(app, await BuildEntity.query().filter({ appId: app.id }).count());
     }
 
     @http.DELETE('/:id')

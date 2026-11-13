@@ -194,7 +194,8 @@ export class BuildScreensController {
     @http.middleware(UserAuthMiddleware)
     async getScreenImage(appId: UuidString, id: UuidString, screenId: UuidString, user: UserEntity): AnyResponse {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
-        const url = await this.s3Svc.getSignedUrl(this.s3Svc.getPathForScreen(appId, id, screenId));
+        const row = await this.findStoredImage(appId, id, screenId);
+        const url = await this.s3Svc.getSignedUrl(this.s3Svc.getPathForScreen(row.appId, row.buildId, row.screenId));
         return Redirect.toUrl(url);
     }
 
@@ -202,7 +203,8 @@ export class BuildScreensController {
     @http.middleware(UserAuthMiddleware)
     async getScreenDiff(appId: UuidString, id: UuidString, screenId: UuidString, user: UserEntity): AnyResponse {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
-        const url = await this.s3Svc.getSignedUrl(this.s3Svc.getPathForDiff(appId, id, screenId));
+        const row = await this.findStoredImage(appId, id, screenId);
+        const url = await this.s3Svc.getSignedUrl(this.s3Svc.getPathForDiff(row.appId, row.buildId, row.screenId));
         return Redirect.toUrl(url);
     }
 
@@ -246,5 +248,16 @@ export class BuildScreensController {
         });
         if (result instanceof Error) throw result;
         return result;
+    }
+
+    /** 404s unless the build belongs to the app (and isn't a draft/canceled) and has a row for the screen. */
+    private async findStoredImage(appId: string, buildId: string, screenId: string): Promise<BuildScreenEntity> {
+        const build = await BuildEntity.query()
+            .filter({ id: buildId, appId, status: { $nin: ['draft', 'canceled'] } })
+            .findOneOrUndefined();
+        if (!build) throw new HttpNotFoundError();
+        const row = await BuildScreenEntity.query().filter({ appId, buildId, screenId }).findOneOrUndefined();
+        if (!row) throw new HttpNotFoundError();
+        return row;
     }
 }
