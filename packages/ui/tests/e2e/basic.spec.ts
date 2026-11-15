@@ -63,23 +63,35 @@ colorSchemes.forEach(colorScheme => {
             await page.goBack();
             await page.waitForSelector('.build');
 
+            // Hold image and diff requests until their loading state has been captured. A fixed delay
+            // raced the screenshots: diffs can be requested before diff mode is switched on, so on a
+            // slow run the diff had already arrived when "Diff Mode - Loading" was taken.
+            const gate = () => {
+                let open!: () => void;
+                const opened = new Promise<void>(resolve => (open = resolve));
+                return { opened, open };
+            };
+            const imageGate = gate();
+            const diffGate = gate();
             await page.route(/\/image$/, async route => {
-                await new Promise(resolve => setTimeout(resolve, 1500));
+                await imageGate.opened;
                 await route.continue();
             });
             await page.route(/\/diff$/, async route => {
-                await new Promise(resolve => setTimeout(resolve, 2500));
+                await diffGate.opened;
                 await route.continue();
             });
 
             await page.locator('.build').first().locator('span').first().click();
             await page.waitForSelector('.screen');
             await takeScreenshot(page, 'Screen List - Loading');
+            imageGate.open();
             await page.waitForSelector('.image-wrapper.left img');
             await takeScreenshot(page, 'Screen List');
 
             await page.locator('input[data-testid="diff-check"]').check();
             await takeScreenshot(page, 'Screen List - Diff Mode - Loading');
+            diffGate.open();
             await page.waitForSelector('.image-wrapper.right .diff img');
             await takeScreenshot(page, 'Screen List - Diff Mode');
 
