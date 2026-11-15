@@ -18,7 +18,14 @@ export default defineConfig({
         }
     },
     server: {
-        port: 7925
+        port: 7925,
+        // The OAuth issuer is PUBLIC_URL (the dev UI origin); its discovery, protocol and MCP endpoints live on the API, so MCP clients
+        // can be pointed at the dev UI (http://localhost:7925/api/mcp) end to end.
+        proxy: {
+            '/.well-known': 'http://localhost:7924',
+            '/api/mcp': 'http://localhost:7924',
+            '/api/oauth': 'http://localhost:7924'
+        }
     },
     build: {
         sourcemap: true,

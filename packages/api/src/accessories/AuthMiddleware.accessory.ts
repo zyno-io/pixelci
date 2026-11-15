@@ -3,12 +3,16 @@ import { Logger } from '@zyno-io/ts-server-foundation';
 import { createAuthMiddleware, HttpAccessDeniedError, HttpMiddleware } from '@zyno-io/ts-server-foundation';
 import { createHash } from 'crypto';
 
+import { AppConfig } from '../config';
 import { BuildEntity } from '../entities/Build.entity';
 import { BuildShardEntity } from '../entities/BuildShard.entity';
 import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { BoundedTtlCache } from '../helpers/BoundedTtlCache';
 import { IAppAccessPrincipal } from '../services/AppAccess.service';
+import { OAUTH_PREFIX_ACCESS, OAUTH_PREFIX_ANY } from '../services/oauth/OAuthConstants';
+import { bearerErrorResponse, parseBearer } from '../services/oauth/OAuthErrors';
+import { OAuthServerService } from '../services/oauth/OAuthServer.service';
 import { VcsService } from '../services/Vcs.service';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -179,10 +183,25 @@ export async function resolveUserFromVcsToken(
     return { user, vcsId: integration.id };
 }
 
+const JWT_SHAPED_RE = /^eyJ[\w-]*\.[\w-]+\.[\w-]*$/;
+
 /**
- * Middleware for read-only programmatic access (e.g. the MCP server) authenticated with a VCS
- * personal access token. Verifies the Bearer token against the VCS provider, confirms it
- * maps to a known PixelCI user, and records the resolved auth context on the request.
+ * Parses a VCS personal access token out of an Authorization header. A token that is evidently NOT a VCS PAT is rejected here,
+ * before anything is sent to a provider: PixelCI-issued credentials (`pixelci_*`: OAuth tokens, codes, client secrets) and
+ * JWT-shaped tokens (a UI session) must never be forwarded to a VCS as if they were PATs.
+ */
+export function parseVcsPatBearer(header: string | undefined): { token: string } | { rejected: 'missing' | 'pixelci' | 'jwt' } {
+    const token = parseBearer(header);
+    if (!token) return { rejected: 'missing' };
+    if (token.startsWith(OAUTH_PREFIX_ANY)) return { rejected: 'pixelci' };
+    if (JWT_SHAPED_RE.test(token)) return { rejected: 'jwt' };
+    return { token };
+}
+
+/**
+ * Middleware for read-only programmatic access (/api/ext) authenticated with a VCS personal access token. Verifies the Bearer
+ * token against the VCS provider, confirms it maps to a known PixelCI user, and records the resolved auth context on the request.
+ * PAT-only: OAuth access tokens are audience-bound to /api/mcp and are not accepted here.
  */
 export class VcsTokenAuthMiddleware extends HttpMiddleware {
     constructor(
@@ -193,20 +212,102 @@ export class VcsTokenAuthMiddleware extends HttpMiddleware {
     }
 
     async handle(request: HttpRequest) {
-        const authHeader = request.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            this.logger.warn('VCS token auth failed: missing or malformed Authorization header');
+        const parsed = parseVcsPatBearer(request.headers.authorization);
+        if ('rejected' in parsed) {
+            this.logger.warn(
+                `VCS token auth failed: ${parsed.rejected === 'missing' ? 'missing or malformed bearer token' : `${parsed.rejected} token is not a VCS token`}`
+            );
             throw new HttpUnauthorizedError();
         }
-
-        const token = authHeader.slice(7).trim();
-        if (!token || /\s/.test(token)) {
-            this.logger.warn('VCS token auth failed: empty or malformed bearer token');
-            throw new HttpUnauthorizedError();
-        }
+        const token = parsed.token;
         const requestedVcsId = (request.headers['x-pixelci-vcs-id'] as string | undefined)?.trim() || undefined;
 
         const { user, vcsId } = await resolveUserFromVcsToken(token, requestedVcsId, this.logger, this.vcsService);
         vcsAuthContextByRequest.set(request, { token, vcsId, userId: user.id });
+    }
+}
+
+export interface IMcpAuthContext {
+    principal: IAppAccessPrincipal;
+    via: 'oauth' | 'pat';
+    grantId?: string;
+}
+
+const mcpAuthContextByRequest = new WeakMap<HttpRequest, IMcpAuthContext>();
+
+/** The access principal for a request that passed McpAuthMiddleware. */
+export function mcpPrincipal(request: HttpRequest): IAppAccessPrincipal {
+    const ctx = mcpAuthContextByRequest.get(request);
+    if (!ctx) throw new HttpUnauthorizedError();
+    return ctx.principal;
+}
+
+export function getMcpAuthContext(request: HttpRequest): IMcpAuthContext | undefined {
+    return mcpAuthContextByRequest.get(request);
+}
+
+/**
+ * Authentication for the MCP endpoint: an OAuth access token issued by PixelCI (acting as the user), or a VCS personal access
+ * token (acting as the token). Failures are returned (not thrown) so the 401/403 carries a `WWW-Authenticate` challenge pointing
+ * at the protected-resource metadata, which is how MCP clients discover where to sign in. Never logs token material.
+ */
+export class McpAuthMiddleware extends HttpMiddleware {
+    constructor(
+        private logger: Logger,
+        private vcsService: VcsService,
+        private oauth: OAuthServerService,
+        private appConfig: AppConfig
+    ) {
+        super();
+    }
+
+    async handle(request: HttpRequest) {
+        const urls = this.oauth.urls();
+        const invalidToken = (reason: string, description = 'The access token is invalid, expired or revoked.') => {
+            this.logger.warn(`MCP auth failed: ${reason}`);
+            return bearerErrorResponse(urls, 401, { error: 'invalid_token', description });
+        };
+
+        const token = parseBearer(request.headers.authorization);
+        if (!token) {
+            this.logger.warn('MCP auth failed: missing or non-bearer credentials');
+            return bearerErrorResponse(urls, 401, { description: 'Authentication is required.' });
+        }
+
+        // PixelCI-issued credentials: only access tokens are meaningful here, and none of them is ever forwarded to a VCS.
+        if (token.startsWith(OAUTH_PREFIX_ANY)) {
+            if (!urls || !token.startsWith(OAUTH_PREFIX_ACCESS)) return invalidToken('pixelci token that is not a usable access token');
+            const resolved = await this.oauth.resolveAccessToken(token);
+            if (!resolved.ok) {
+                if (resolved.reason === 'insufficient_scope') {
+                    this.logger.warn('MCP auth failed: insufficient scope');
+                    return bearerErrorResponse(urls, 403, { error: 'insufficient_scope', description: 'The access token lacks the required scope.' });
+                }
+                return invalidToken('oauth access token not accepted');
+            }
+            const user = await UserEntity.query().filter({ id: resolved.userId }).findOneOrUndefined();
+            if (!user) return invalidToken(`user of grant ${resolved.grantId} no longer exists`);
+            if (this.appConfig.ENFORCE_VCS_PROJECT_ACCESS) {
+                // The grant lives only as long as the user's VCS sign-in: a dead one makes the client re-authorize in the browser.
+                const session = await this.vcsService.checkUserSession(user);
+                if (session === 'reauth') {
+                    return invalidToken(`vcs session of grant ${resolved.grantId} expired`, 'Your sign-in has expired; reconnect PixelCI.');
+                }
+            }
+            // X-PixelCI-Vcs-Id is ignored: the grant's user determines the provider.
+            mcpAuthContextByRequest.set(request, { principal: { kind: 'user', user }, via: 'oauth', grantId: resolved.grantId });
+            return;
+        }
+
+        if (JWT_SHAPED_RE.test(token)) return invalidToken('jwt-shaped token is not a VCS token');
+
+        const requestedVcsId = (request.headers['x-pixelci-vcs-id'] as string | undefined)?.trim() || undefined;
+        try {
+            const { vcsId } = await resolveUserFromVcsToken(token, requestedVcsId, this.logger, this.vcsService);
+            mcpAuthContextByRequest.set(request, { principal: { kind: 'token', token, vcsId }, via: 'pat' });
+        } catch (err) {
+            if (err instanceof HttpUnauthorizedError) return invalidToken('vcs token rejected', err.message || undefined);
+            throw err;
+        }
     }
 }

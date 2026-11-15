@@ -6,7 +6,7 @@
  * Routes are enumerated from the router: a route without a case below fails the test ("add a canary case").
  */
 import { HttpRequest, RequestBuilder } from '@zyno-io/ts-server-foundation';
-import { createPersistedEntity, JWT, TestingHelpers } from '@zyno-io/ts-server-foundation';
+import { createPersistedEntity, createRedis, JWT, TestingHelpers } from '@zyno-io/ts-server-foundation';
 import { createHash, generateKeyPairSync, randomBytes } from 'crypto';
 import { readFileSync } from 'fs';
 import { createServer, IncomingMessage, Server, ServerResponse } from 'http';
@@ -16,6 +16,10 @@ import { AppEntity } from '../../src/entities/App.entity';
 import { BranchEntity } from '../../src/entities/Branch.entity';
 import { BuildEntity } from '../../src/entities/Build.entity';
 import { BuildScreenEntity } from '../../src/entities/BuildScreen.entity';
+import { OAuthAuthorizationEntity } from '../../src/entities/OAuthAuthorization.entity';
+import { OAuthClientEntity } from '../../src/entities/OAuthClient.entity';
+import { OAuthGrantEntity } from '../../src/entities/OAuthGrant.entity';
+import { OAuthTokenEntity } from '../../src/entities/OAuthToken.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
@@ -23,6 +27,8 @@ import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
 process.env.REDIS_PREFIX = 'pixelci_test';
+// OAuth is only available on an https issuer
+process.env.PUBLIC_URL = 'https://pixelci.test';
 
 configureTestDatabase();
 
@@ -35,6 +41,13 @@ const CI_TOKEN = 'CANARY-ci';
 const CI_READ_TOKEN = 'CANARY-ci-reader';
 const CI_TOKEN_B2 = 'CANARY-ci-b2';
 const PAT = 'glpat-canary-pat';
+// OAuth credentials: seeded so that any route echoing a stored secret or hash is caught. (Credentials a route legitimately issues
+// in its own response, such as a fresh client secret or token pair, are new values and not in this list.)
+const OAUTH_CLIENT_SECRET = `pixelci_cs_CANARY-${RAND}`;
+const OAUTH_ACCESS = `pixelci_at_CANARY-${RAND}`;
+const OAUTH_REFRESH = `pixelci_rt_CANARY-${RAND}`;
+const OAUTH_REFRESH_REVOKE = `pixelci_rt_CANARY-revoke-${RAND}`;
+const OAUTH_CODE = `pixelci_ac_CANARY-${RAND}`;
 
 const sha256 = (v: string) => createHash('sha256').update(v).digest('hex');
 
@@ -53,6 +66,16 @@ const FORBIDDEN_VALUES = [
     sha256(CI_TOKEN),
     sha256(CI_READ_TOKEN),
     sha256(CI_TOKEN_B2),
+    OAUTH_CLIENT_SECRET,
+    OAUTH_ACCESS,
+    OAUTH_REFRESH,
+    OAUTH_REFRESH_REVOKE,
+    OAUTH_CODE,
+    sha256(OAUTH_CLIENT_SECRET),
+    sha256(OAUTH_ACCESS),
+    sha256(OAUTH_REFRESH),
+    sha256(OAUTH_REFRESH_REVOKE),
+    sha256(OAUTH_CODE),
     PEM_BODY.slice(0, 64),
     PEM_BODY.slice(64, 128)
 ];
@@ -64,7 +87,10 @@ const FORBIDDEN_KEYS = new Set([
     'clientSecret',
     'privateKey',
     'accessToken',
-    'refreshToken'
+    'refreshToken',
+    'secretHash',
+    'tokenHash',
+    'codeHash'
 ]);
 
 const GL_ID = '00000000-0000-0000-0000-000000000000';
@@ -76,6 +102,22 @@ const APP_ID = 'c4a4a4a4-0000-4000-8000-000000000010';
 const SPARE_APP_ID = 'c4a4a4a4-0000-4000-8000-000000000011';
 const MAIN_BRANCH_ID = 'c4a4a4a4-0000-4000-8000-000000000020';
 const PROJECT_PATH = 'group/canary';
+const OAUTH_CLIENT_ID = 'c4a4a4a4-0000-4000-8000-0000000000b0';
+const OAUTH_GRANT_ID = 'c4a4a4a4-0000-4000-8000-0000000000b1';
+const OAUTH_GRANT_REVOKE_ID = 'c4a4a4a4-0000-4000-8000-0000000000b2';
+const OAUTH_GRANT_SPARE_ID = 'c4a4a4a4-0000-4000-8000-0000000000b3';
+const OAUTH_REQ_VIEW_ID = 'c4a4a4a4-0000-4000-8000-0000000000c1';
+const OAUTH_REQ_APPROVE_ID = 'c4a4a4a4-0000-4000-8000-0000000000c2';
+const OAUTH_REQ_DENY_ID = 'c4a4a4a4-0000-4000-8000-0000000000c3';
+const OAUTH_VERIFIER = 'canary-verifier-'.padEnd(50, 'x');
+const OAUTH_REDIRECT = 'https://claude.ai/api/mcp/auth_callback';
+const basicAuth = (id: string, secret: string) =>
+    `Basic ${Buffer.from(`${encodeURIComponent(id)}:${encodeURIComponent(secret)}`).toString('base64')}`;
+const formPost = (path: string, params: Record<string, string>, authorization?: string) =>
+    HttpRequest.POST(path, new URLSearchParams(params).toString(), {
+        'content-type': 'application/x-www-form-urlencoded',
+        ...(authorization ? { authorization } : {})
+    });
 
 const JOBS: Record<string, { id: number; ref: string; sha: string; title: string }> = {
     [CI_TOKEN]: { id: 1, ref: 'main', sha: 'a'.repeat(40), title: 'canary main' },
@@ -347,6 +389,71 @@ function buildCases(): Record<string, ICase> {
         'GET /api/mcp': { status: 405, build: c => c.pat(HttpRequest.GET('/api/mcp')) },
         'DELETE /api/mcp': { status: 405, build: c => c.pat(HttpRequest.DELETE('/api/mcp')) },
 
+        // OAuth discovery, protocol and consent (the OAuth server only exists on an https PUBLIC_URL; the test sets one)
+        'GET /.well-known/oauth-protected-resource/api/mcp': {
+            status: 200,
+            build: () => HttpRequest.GET('/.well-known/oauth-protected-resource/api/mcp')
+        },
+        'GET /.well-known/oauth-protected-resource': { status: 200, build: () => HttpRequest.GET('/.well-known/oauth-protected-resource') },
+        'GET /.well-known/oauth-authorization-server': { status: 200, build: () => HttpRequest.GET('/.well-known/oauth-authorization-server') },
+        'GET /.well-known/openid-configuration': { status: 404, build: () => HttpRequest.GET('/.well-known/openid-configuration') },
+        'GET /.well-known/:a': { status: 404, build: () => HttpRequest.GET('/.well-known/canary') },
+        'GET /.well-known/:a/:b': { status: 404, build: () => HttpRequest.GET('/.well-known/canary/b') },
+        'GET /.well-known/:a/:b/:c': { status: 404, build: () => HttpRequest.GET('/.well-known/canary/b/c') },
+        'POST /api/oauth/register': {
+            status: 201,
+            build: () =>
+                HttpRequest.POST('/api/oauth/register').json({
+                    client_name: 'Canary registered',
+                    redirect_uris: [OAUTH_REDIRECT],
+                    token_endpoint_auth_method: 'client_secret_basic'
+                })
+        },
+        'GET /api/oauth/authorize': {
+            status: 302,
+            build: () =>
+                HttpRequest.GET(
+                    `/api/oauth/authorize?${new URLSearchParams({
+                        response_type: 'code',
+                        client_id: OAUTH_CLIENT_ID,
+                        redirect_uri: OAUTH_REDIRECT,
+                        code_challenge: createHash('sha256').update(OAUTH_VERIFIER).digest('base64url'),
+                        code_challenge_method: 'S256',
+                        state: 'canary'
+                    }).toString()}`
+                )
+        },
+        'POST /api/oauth/token': {
+            status: 200,
+            build: () =>
+                formPost(
+                    '/api/oauth/token',
+                    { grant_type: 'refresh_token', refresh_token: OAUTH_REFRESH },
+                    basicAuth(OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET)
+                )
+        },
+        'POST /api/oauth/revoke': {
+            status: 200,
+            build: () => formPost('/api/oauth/revoke', { token: OAUTH_REFRESH_REVOKE }, basicAuth(OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET))
+        },
+        'GET /api/connected-apps/requests': {
+            status: 200,
+            build: c => c.user(HttpRequest.GET(`/api/connected-apps/requests?request=${OAUTH_REQ_VIEW_ID}`))
+        },
+        'POST /api/connected-apps/requests/approve': {
+            status: 200,
+            build: c => c.user(HttpRequest.POST('/api/connected-apps/requests/approve').json({ request: OAUTH_REQ_APPROVE_ID }))
+        },
+        'POST /api/connected-apps/requests/deny': {
+            status: 200,
+            build: c => c.user(HttpRequest.POST('/api/connected-apps/requests/deny').json({ request: OAUTH_REQ_DENY_ID }))
+        },
+        'GET /api/connected-apps': { status: 200, build: c => c.user(HttpRequest.GET('/api/connected-apps')) },
+        'DELETE /api/connected-apps/:id': {
+            status: [200, 204],
+            build: c => c.user(HttpRequest.DELETE(`/api/connected-apps/${OAUTH_GRANT_SPARE_ID}`))
+        },
+
         // last: a final-status poll revokes the polling session's CI token
         'GET /api/apps/:appId/builds/:id/status': {
             status: 200,
@@ -399,6 +506,8 @@ async function run() {
     await facade.start();
 
     await seedBase();
+    await seedOAuth();
+    await resetRateLimits();
     const ctx = await seedBuilds(facade);
 
     // every route must have a case
@@ -421,6 +530,7 @@ async function run() {
     }
 
     await testNoMassAssignment(facade, ctx);
+    await resetRateLimits();
     mockGitLabServer.close();
 }
 
@@ -497,6 +607,79 @@ async function seedBase() {
         });
     }
     await createPersistedEntity(BranchEntity, { id: MAIN_BRANCH_ID, appId: APP_ID, name: 'main' });
+}
+
+async function seedOAuth() {
+    const now = new Date();
+    const later = new Date(Date.now() + 3_600_000);
+    await createPersistedEntity(OAuthClientEntity, {
+        id: OAUTH_CLIENT_ID,
+        name: 'Canary client',
+        redirectUris: [OAUTH_REDIRECT],
+        tokenEndpointAuthMethod: 'client_secret_basic',
+        secretHash: sha256(OAUTH_CLIENT_SECRET),
+        createdAt: now,
+        lastUsedAt: null
+    });
+    const grant = (id: string) =>
+        createPersistedEntity(OAuthGrantEntity, {
+            id,
+            clientId: OAUTH_CLIENT_ID,
+            userId: ADMIN_ID,
+            scope: 'mcp:read',
+            resource: 'https://pixelci.test/api/mcp',
+            redirectUri: OAUTH_REDIRECT,
+            createdAt: now,
+            expiresAt: new Date(Date.now() + 86_400_000),
+            lastUsedAt: null,
+            revokedAt: null,
+            revokedReason: null
+        });
+    for (const id of [OAUTH_GRANT_ID, OAUTH_GRANT_REVOKE_ID, OAUTH_GRANT_SPARE_ID]) await grant(id);
+    const token = (grantId: string, kind: 'access' | 'refresh', value: string) =>
+        createPersistedEntity(OAuthTokenEntity, {
+            id: crypto.randomUUID(),
+            grantId,
+            kind,
+            tokenHash: sha256(value),
+            createdAt: now,
+            expiresAt: later,
+            rotatedAt: null
+        });
+    await token(OAUTH_GRANT_ID, 'access', OAUTH_ACCESS);
+    await token(OAUTH_GRANT_ID, 'refresh', OAUTH_REFRESH);
+    await token(OAUTH_GRANT_REVOKE_ID, 'refresh', OAUTH_REFRESH_REVOKE);
+
+    const request = (id: string, status: 'pending' | 'approved', codeHash: string | null) =>
+        createPersistedEntity(OAuthAuthorizationEntity, {
+            id,
+            clientId: OAUTH_CLIENT_ID,
+            userId: status === 'approved' ? ADMIN_ID : null,
+            redirectUri: OAUTH_REDIRECT,
+            state: 'canary-state',
+            codeChallenge: createHash('sha256').update(OAUTH_VERIFIER).digest('base64url'),
+            scope: 'mcp:read',
+            resource: 'https://pixelci.test/api/mcp',
+            status,
+            codeHash,
+            grantId: null,
+            createdAt: now,
+            expiresAt: later,
+            approvedAt: status === 'approved' ? now : null,
+            redeemedAt: null
+        });
+    await request(OAUTH_REQ_VIEW_ID, 'pending', null);
+    await request(OAUTH_REQ_APPROVE_ID, 'pending', null);
+    await request(OAUTH_REQ_DENY_ID, 'pending', null);
+    // an approved request holding a (hashed) code, so a route that echoed stored rows would leak it
+    await request('c4a4a4a4-0000-4000-8000-0000000000c4', 'approved', sha256(OAUTH_CODE));
+}
+
+/** The OAuth limiter's counters live in Redis across runs; start each run from zero. */
+async function resetRateLimits() {
+    const { client, prefix } = createRedis();
+    const keys = await client.keys(`${prefix}:ratelimit:*`);
+    if (keys.length) await client.del(...keys);
 }
 
 async function seedBuilds(facade: Facade): Promise<ICtx> {

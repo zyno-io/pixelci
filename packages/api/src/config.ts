@@ -32,4 +32,11 @@ export class AppConfig extends BaseAppConfig {
     // Public origin of the web app (e.g. https://pixelci.example.com). The OAuth redirect URI is always
     // `${PUBLIC_URL}/login`, so it must exactly match what is registered with the provider.
     PUBLIC_URL?: string;
+
+    // OAuth 2.1 authorization server for MCP clients (claude.ai, Claude Desktop, Claude Code). The issuer is the PUBLIC_URL origin, which
+    // must be https (http only on a loopback host); otherwise OAuth stays off whatever this is set to.
+    MCP_OAUTH_ENABLED: boolean = true;
+    // Dynamic client registration (RFC 7591) limits, per client IP and across all callers, per hour.
+    OAUTH_DCR_MAX_PER_IP_PER_HOUR = 20;
+    OAUTH_DCR_MAX_PER_HOUR = 200;
 }

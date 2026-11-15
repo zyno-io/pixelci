@@ -13,6 +13,21 @@ function isFresh(session: IUserVcsSession): boolean {
     return session.expiresAt - VCS_SESSION_REFRESH_SKEW_MS > Date.now();
 }
 
+/** Whether the stored session still has a usable access token (no refresh needed). A missing session is not fresh. */
+export function isVcsSessionFresh(session: IUserVcsSession | null | undefined): boolean {
+    return !!session && isFresh(session);
+}
+
+/**
+ * The user's VCS session is gone for good: none stored, unreadable, or the provider refused the refresh token. Only signing in again
+ * fixes it. Still an HttpBadRequestError, so existing callers keep their behaviour.
+ */
+export class VcsSessionExpiredError extends HttpBadRequestError {
+    constructor(message: string = SIGN_IN_AGAIN) {
+        super(message);
+    }
+}
+
 async function refreshOnce(
     userId: string,
     callerSession: IUserVcsSession,
@@ -36,6 +51,7 @@ async function refreshOnce(
             const reread = await UserEntity.query().filter({ id: userId }).findOneOrUndefined();
             const adopted = reread?.vcsSession;
             if (adopted && isFresh(adopted) && openVcsSession(adopted).refreshToken !== currentOpen.refreshToken) return adopted;
+            throw new VcsSessionExpiredError();
         }
         throw err;
     }
@@ -52,7 +68,7 @@ export async function ensureFreshVcsSession(
     isInvalidGrant: (err: unknown) => boolean = () => false
 ): Promise<void> {
     const session = user.vcsSession;
-    if (!session) throw new HttpBadRequestError('No VCS session available; please sign in again');
+    if (!session) throw new VcsSessionExpiredError();
     if (isFresh(session)) return;
 
     let pending = inflight.get(user.id);
@@ -67,7 +83,7 @@ export async function ensureFreshVcsSession(
         user.vcsSession = await pending; // stays sealed in memory, so a later save() never writes plaintext
     } catch (err) {
         // A session sealed with a secret that is no longer configured is unusable: the user must sign in again.
-        if (err instanceof SecretUnreadableError) throw new HttpBadRequestError(SIGN_IN_AGAIN);
+        if (err instanceof SecretUnreadableError) throw new VcsSessionExpiredError();
         throw err;
     }
 }

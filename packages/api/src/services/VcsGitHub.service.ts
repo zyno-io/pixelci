@@ -408,6 +408,10 @@ export class VcsGitHubService implements IVcsServiceImpl {
         };
     }
 
+    async ensureUserSession(user: UserEntity): Promise<void> {
+        await this.renewToken(user);
+    }
+
     private async renewToken(user: UserEntity): Promise<void> {
         await ensureFreshVcsSession(
             user,
@@ -422,7 +426,7 @@ export class VcsGitHubService implements IVcsServiceImpl {
                 });
                 return { ...this.sessionFromToken(data, session.redirectUri), redirectUri: session.redirectUri };
             },
-            err => err instanceof GitHubOAuthError && err.code === 'bad_refresh_token'
+            err => err instanceof GitHubOAuthError && (err.code === 'bad_refresh_token' || err.code === 'no_refresh_token')
         );
     }
 

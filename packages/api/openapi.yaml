@@ -1055,6 +1055,88 @@ paths:
               - new
               - diff
             type: string
+  /api/connected-apps/requests:
+    get:
+      operationId: getConnectedAppsGetRequest
+      tags:
+        - connectedApps
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IConnectedAppRequest"
+      parameters:
+        - name: request
+          in: query
+          required: true
+          schema:
+            type: string
+  /api/connected-apps/requests/approve:
+    post:
+      operationId: postConnectedAppsApprove
+      tags:
+        - connectedApps
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IConnectedAppDecision"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IConnectedAppRequestRef"
+  /api/connected-apps/requests/deny:
+    post:
+      operationId: postConnectedAppsDeny
+      tags:
+        - connectedApps
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IConnectedAppDecision"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IConnectedAppRequestRef"
+  /api/connected-apps:
+    get:
+      operationId: getConnectedAppsIndex
+      tags:
+        - connectedApps
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/IConnectedApp"
+  /api/connected-apps/{id}:
+    delete:
+      operationId: deleteConnectedAppsRevoke
+      tags:
+        - connectedApps
+      responses:
+        "204":
+          description: No Content
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
 components:
   schemas:
     ISessionResponse:
@@ -2122,3 +2204,81 @@ components:
         - reviewComment
         - reviewedByName
         - reviewedAt
+    IConnectedAppRequest:
+      type: object
+      properties:
+        id:
+          type: string
+        clientName:
+          type: string
+        redirectUri:
+          type: string
+        redirectDisplay:
+          type: string
+        redirectKind:
+          enum:
+            - web
+            - loopback
+          type: string
+        scopes:
+          type: array
+          items:
+            $ref: "#/components/schemas/IConnectedAppScope"
+        expiresAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - clientName
+        - redirectUri
+        - redirectDisplay
+        - redirectKind
+        - scopes
+        - expiresAt
+    IConnectedAppScope:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+      required:
+        - name
+        - description
+    IConnectedAppRequestRef:
+      type: object
+      properties:
+        request:
+          type: string
+      required:
+        - request
+    IConnectedAppDecision:
+      type: object
+      properties:
+        redirectUrl:
+          type: string
+      required:
+        - redirectUrl
+    IConnectedApp:
+      type: object
+      properties:
+        id:
+          type: string
+        clientName:
+          type: string
+        redirectDisplay:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - id
+        - clientName
+        - redirectDisplay
+        - createdAt
+        - lastUsedAt
