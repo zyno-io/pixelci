@@ -13,34 +13,36 @@ Programmatic access authenticates with a **personal access token** from your VCS
 
 ## MCP Server
 
-The MCP server lives in `packages/mcp` and communicates over stdio. Build it:
+PixelCI serves its MCP server from the API itself at `/api/mcp`, over [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http) (stateless, JSON responses). There is nothing extra to install or run. Authenticate with a personal access token (see above) sent as a Bearer token.
+
+With Claude Code:
 
 ```bash
-yarn workspace @zyno-io/pixelci-mcp build
+claude mcp add --transport http pixelci https://pixelci.example.com/api/mcp \
+    --header "Authorization: Bearer <token>"
 ```
 
-Then point your MCP client at it (e.g. Claude Desktop's `claude_desktop_config.json`, or `claude mcp add`):
+Or the equivalent JSON (e.g. `.mcp.json`):
 
 ```json
 {
     "mcpServers": {
         "pixelci": {
-            "command": "node",
-            "args": ["/absolute/path/to/pixelci/packages/mcp/dist/index.js"],
-            "env": {
-                "PIXELCI_API_URL": "https://pixelci.example.com",
-                "PIXELCI_VCS_TOKEN": "glpat-xxxxxxxxxxxxxxxxxxxx"
+            "type": "http",
+            "url": "https://pixelci.example.com/api/mcp",
+            "headers": {
+                "Authorization": "Bearer glpat-xxxxxxxxxxxxxxxxxxxx"
             }
         }
     }
 }
 ```
 
-| Variable            | Required | Description                                                                                                                                                                |
-| ------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PIXELCI_API_URL`   | Yes      | Base URL of your PixelCI instance                                                                                                                                          |
-| `PIXELCI_VCS_TOKEN` | Yes      | A GitLab or GitHub personal access token. `PIXELCI_GITHUB_TOKEN` and `PIXELCI_GITLAB_TOKEN` are accepted aliases                                                           |
-| `PIXELCI_VCS_ID`    | No       | The VCS integration id to authenticate against (sent as the `X-PixelCI-Vcs-Id` header). Required only if your instance has more than one integration of the same platform. |
+- `<token>` is a GitLab or GitHub personal access token, as described under [Authentication](#authentication).
+- If your instance has more than one VCS integration of the same platform, add an `X-PixelCI-Vcs-Id: <integration id>` header to choose which one the token belongs to.
+- Only `POST` is supported. `GET` and `DELETE` on `/api/mcp` return `405` with `Allow: POST` (there is no server-initiated SSE stream); requests without a valid token get `401` first.
+- Clients that require OAuth, such as the claude.ai and Claude Desktop connectors, are not supported yet.
+- The former stdio package (`@zyno-io/pixelci-mcp`) has been removed; reconfigure existing clients as above.
 
 ### Tools
 

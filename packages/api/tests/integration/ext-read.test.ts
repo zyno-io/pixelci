@@ -138,6 +138,7 @@ async function run() {
     await testGitHubTokenNeverReachesGitLab(facade);
     await testMultiProviderRequiresVcsId(facade);
     await testMalformedIds(facade);
+    await testMcp(facade);
 
     mockGitLabServer.close();
 }
@@ -425,6 +426,87 @@ async function testMalformedIds(facade: Facade) {
 
     const badBranch = await facade.request(authed(HttpRequest.GET(`/api/ext/apps/${APP_ID}/builds?branchId=not-a-uuid`), VALID_PAT));
     expectStatus(badBranch.statusCode, 400);
+    console.log('  PASS');
+}
+
+function mcpPost(facade: Facade, body: object, pat: string | null = VALID_PAT) {
+    let req = HttpRequest.POST('/api/mcp')
+        .header('accept', 'application/json, text/event-stream')
+        .header('content-type', 'application/json')
+        .header('mcp-protocol-version', '2025-06-18');
+    if (pat) req = authed(req, pat);
+    return facade.request(req.json(body));
+}
+
+type McpToolResult = { isError?: boolean; content: { type: string; text?: string }[] };
+
+async function mcpCall(facade: Facade, name: string, args: Record<string, unknown>): Promise<McpToolResult> {
+    const response = await mcpPost(facade, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name, arguments: args } });
+    expectStatus(response.statusCode, 200);
+    return (response.json as { result: McpToolResult }).result;
+}
+
+async function testMcp(facade: Facade) {
+    console.log('\nTest: /api/mcp with no token → 401');
+    const noToken = await mcpPost(facade, { jsonrpc: '2.0', id: 1, method: 'tools/list' }, null);
+    expectStatus(noToken.statusCode, 401);
+    console.log('  PASS');
+
+    console.log('\nTest: /api/mcp initialize → serverInfo');
+    const init = await mcpPost(facade, {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0.0.0' } }
+    });
+    expectStatus(init.statusCode, 200);
+    const serverName = (init.json as { result?: { serverInfo?: { name?: string } } }).result?.serverInfo?.name;
+    if (serverName !== 'pixelci') throw new Error(`Expected serverInfo.name 'pixelci', got ${JSON.stringify(init.json)}`);
+    console.log('  PASS');
+
+    console.log('\nTest: /api/mcp tools/list returns the 4 tools');
+    const list = await mcpPost(facade, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
+    expectStatus(list.statusCode, 200);
+    const names = (list.json as { result: { tools: { name: string }[] } }).result.tools.map(t => t.name).sort();
+    if (names.join(',') !== 'get_build,get_screen_image,list_apps,list_builds') throw new Error(`Unexpected tools: ${names.join(',')}`);
+    console.log('  PASS');
+
+    console.log('\nTest: /api/mcp list_apps returns only the accessible app');
+    const apps = await mcpCall(facade, 'list_apps', {});
+    if (apps.isError) throw new Error(`list_apps errored: ${JSON.stringify(apps)}`);
+    const parsed = JSON.parse(apps.content[0].text ?? '[]') as { id: string }[];
+    if (parsed.length !== 1 || parsed[0].id !== APP_ID) throw new Error(`Expected only ${APP_ID}, got ${JSON.stringify(parsed)}`);
+    console.log('  PASS');
+
+    console.log('\nTest: /api/mcp get_build on accessible app works; no-access app and bad ids → isError');
+    const ok = await mcpCall(facade, 'get_build', { appId: APP_ID, buildId: BUILD_ID });
+    if (ok.isError) throw new Error(`get_build errored: ${JSON.stringify(ok)}`);
+    const denied = await mcpCall(facade, 'get_build', { appId: APP_NO_ACCESS_ID, buildId: BUILD_ID });
+    if (!denied.isError) throw new Error(`Expected isError for no-access app, got ${JSON.stringify(denied)}`);
+    const deniedImage = await mcpCall(facade, 'get_screen_image', { appId: APP_NO_ACCESS_ID, buildId: BUILD_ID, screenId: SCREEN_ID });
+    if (!deniedImage.isError) throw new Error(`Expected isError for no-access image, got ${JSON.stringify(deniedImage)}`);
+    const badArgs = await mcpCall(facade, 'get_build', { appId: 'nope' });
+    if (!badArgs.isError) throw new Error(`Expected isError for bad args, got ${JSON.stringify(badArgs)}`);
+    console.log('  PASS');
+
+    console.log('\nTest: /api/mcp JSON-RPC batch → 400 -32600');
+    const batch = await mcpPost(facade, [
+        { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+        { jsonrpc: '2.0', id: 2, method: 'tools/list' }
+    ]);
+    expectStatus(batch.statusCode, 400);
+    const batchCode = (batch.json as { error?: { code?: number } }).error?.code;
+    if (batchCode !== -32600) throw new Error(`Expected error code -32600, got ${JSON.stringify(batch.json)}`);
+    console.log('  PASS');
+
+    console.log('\nTest: GET/DELETE /api/mcp → 405 with Allow: POST');
+    for (const method of ['GET', 'DELETE'] as const) {
+        const req = authed(method === 'GET' ? HttpRequest.GET('/api/mcp') : HttpRequest.DELETE('/api/mcp'), VALID_PAT);
+        const response = await facade.request(req);
+        expectStatus(response.statusCode, 405);
+        const allow = response.getHeader?.('allow') ?? (response as unknown as { headers?: Record<string, unknown> }).headers?.allow;
+        if (String(allow).toUpperCase() !== 'POST') throw new Error(`Expected Allow: POST, got ${String(allow)}`);
+    }
     console.log('  PASS');
 }
 

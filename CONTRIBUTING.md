@@ -11,7 +11,7 @@ The GitHub repository is a mirror of our primary repository. Pull requests are n
 
 ## Contributor License Agreement
 
-Before we can accept a contribution, you need to sign the [PixelCI Contributor License Agreement](CLA.md). You keep the copyright in your contribution; the CLA gives Signal24 LLC dba Zyno Consulting the right to ship it in PixelCI (including the MIT-licensed CLI and MCP server), in its hosted services, and under commercial licenses.
+Before we can accept a contribution, you need to sign the [PixelCI Contributor License Agreement](CLA.md). You keep the copyright in your contribution; the CLA gives Signal24 LLC dba Zyno Consulting the right to ship it in PixelCI (including the MIT-licensed CLI), in its hosted services, and under commercial licenses.
 
 - **Individuals:** when you open your first pull request, the CLA bot will ask you to post this comment on it:
 
@@ -29,7 +29,7 @@ PixelCI is source-available, under the [PixelCI Source Available License, Versio
 
 - Self-hosting PixelCI for your organization's internal use is free.
 - Offering PixelCI as a hosted or managed service, embedding it in a product, distributing it, or white-labelling it requires a commercial license.
-- The CLI in `packages/cli` and the MCP server in `packages/mcp` are licensed separately under the MIT License.
+- The CLI in `packages/cli` is licensed separately under the MIT License. The MCP endpoint is part of the API and covered by the main license.
 - You may fork the repository and modify PixelCI to prepare and submit a contribution (Section 8 of the License).
 
 The License itself is the authoritative text. Contributions you submit are covered by Section 8 of the License and by the CLA.

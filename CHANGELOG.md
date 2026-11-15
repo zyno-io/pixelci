@@ -17,6 +17,9 @@
 - License updated to the PixelCI Source Available License, Version 1.2
     - Anything you mark “Not a Contribution” (for example, code from your own app pasted into an issue) is excluded from
       the contribution terms, matching the CLA
+- **Breaking:** the MCP server is now served by the API at `/api/mcp` over Streamable HTTP, and the stdio `@zyno-io/pixelci-mcp` package is removed
+    - Reconfigure MCP clients to use the HTTP endpoint, e.g. `claude mcp add --transport http pixelci https://pixelci.example.com/api/mcp --header "Authorization: Bearer <token>"`. See the LLM Access guide
+    - Authentication is unchanged (GitLab or GitHub personal access token). OAuth-based connectors (claude.ai, Claude Desktop) are not supported yet
 
 ## v0.5.0
 
