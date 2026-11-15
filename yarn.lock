@@ -3827,8 +3827,8 @@ __metadata:
     "@types/node": "npm:^26.6.4"
     "@types/pg": "npm:^8.23.1"
     "@types/pngjs": "npm:^6.0.5"
-    "@zyno-io/ts-reflection": "npm:^26.1111.1722"
-    "@zyno-io/ts-server-foundation": "npm:26.1111.1722"
+    "@zyno-io/ts-reflection": "npm:^26.1115.2203"
+    "@zyno-io/ts-server-foundation": "npm:26.1115.2203"
     axios: "npm:^1.20.0"
     date-fns: "npm:^4.4.0"
     date-fns-tz: "npm:^3.2.0"
@@ -3944,7 +3944,19 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@zyno-io/ts-reflection@npm:26.1111.1722, @zyno-io/ts-reflection@npm:^26.1111.1722":
+"@zyno-io/ts-reflection@npm:26.1115.2203, @zyno-io/ts-reflection@npm:^26.1115.2203":
+  version: 26.1115.2203
+  resolution: "@zyno-io/ts-reflection@npm:26.1115.2203"
+  peerDependencies:
+    ttsc: "*"
+  peerDependenciesMeta:
+    ttsc:
+      optional: true
+  checksum: 10c0/54fd0c56e1e34b059a73cf45603d6611e57c7a1cb7fd131e33642e5c074e678af992639f679f415faedf4133a68083e2eafe62ff90d793dba20731c60a723e06
+  languageName: node
+  linkType: hard
+
+"@zyno-io/ts-reflection@npm:^26.1111.1722":
   version: 26.1111.1722
   resolution: "@zyno-io/ts-reflection@npm:26.1111.1722"
   peerDependencies:
@@ -3956,9 +3968,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@zyno-io/ts-server-foundation@npm:26.1111.1722":
-  version: 26.1111.1722
-  resolution: "@zyno-io/ts-server-foundation@npm:26.1111.1722"
+"@zyno-io/ts-server-foundation@npm:26.1115.2203":
+  version: 26.1115.2203
+  resolution: "@zyno-io/ts-server-foundation@npm:26.1115.2203"
   dependencies:
     "@bufbuild/protobuf": "npm:^2.16.0"
     "@opentelemetry/api": "npm:^1.10.0"
@@ -3982,7 +3994,7 @@ __metadata:
     "@ttsc/graph": "npm:^0.34.2"
     "@types/ws": "npm:^8.18.2"
     "@zyno-io/config": "npm:^1.14.0"
-    "@zyno-io/ts-reflection": "npm:26.1111.1722"
+    "@zyno-io/ts-reflection": "npm:26.1115.2203"
     bcrypt: "npm:^6.0.0"
     bullmq: "npm:^6.3.4"
     busboy: "npm:^1.6.0"
@@ -4039,7 +4051,7 @@ __metadata:
     tsf-repl: dist/src/cli/tsf-repl.js
     tsf-test: dist/src/cli/tsf-test.js
     tsf-update: dist/src/cli/tsf-update.js
-  checksum: 10c0/82fda8e5e0d2cc962c79e0106a356ea789f19ebfa1af2415f609b81bee40cae4416a572dfd9632d2d897bd4c02f46457830d1e77d1436099f004cc632e6798ab
+  checksum: 10c0/bf2faf900d5ed78c6779dbc3a18ff6d7f6c6575b701a47940288acae83b51abf623d75f23b5a55da197f5bc793bdd4e7dd4f2664341475fe808a6d070d0d2a03
   languageName: node
   linkType: hard
 
