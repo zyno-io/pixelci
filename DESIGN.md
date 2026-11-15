@@ -585,7 +585,37 @@ A row of joined toggle buttons for choosing one of a few views. Used once, in th
 
 - **Style:** a full-width banner: 8px radius, 10px 14px padding, 13px Secondary Ink text, leading 13px icon, optional actions on the right. Default is the neutral triplet.
 - **Tones:** danger, warning, info swap the fill and border and colour the icon; body text stays Secondary Ink and bold text is Ink.
-- **In use:** only the danger notice. A failed sign-in; an app or its builds that could not be loaded on the builds page; a build that could not be loaded on the review screen. The load failures carry a warning triangle, say what may have happened, and, where the page is a dead end, offer one default button as the way out, centred vertically against the text. A failed builds list shows its notice inside the list card with a 16px margin.
+- **In use:** the danger notice for failures: a failed sign-in; an app or its builds that could not be loaded on the builds page; a build that could not be loaded on the review screen. The load failures carry a warning triangle, say what may have happened, and, where the page is a dead end, offer one default button as the way out, centred vertically against the text. A failed builds list shows its notice inside the list card with a 16px margin.
+
+### Screen gallery
+
+Screens as thumbnails, outside the review flow: an app's baseline screens, or one build's screens. Full width, like the review screen.
+
+- **Header:** the page header with a second row. Row one: back button, app name, a context line (the baseline or build's branch, short hash and subject, and for a build its status tag), then the actions: "Tolerances" (default, sliders icon) and, in a build, the way into the comparison ("Review build", primary while the build needs review; otherwise "Compare with reference", default). Row two: a search field (at most 280px), a segmented filter with counts, the result count in 12px Meta Grey pushed right, and a thumbnail size select. At 640px and below the header is not sticky.
+- **Tile:** a button. Card White, Hairline border, 12px radius, resting shadow, 8px padding. Inside, the screenshot on a Screenshot Mat with 5px corners, then the screen name (13px semibold, two lines at most) with its tags on the right. Hover moves the fill to Row Hover and the border to Control Outline; the cursor is zoom-in. Nothing is laid over the screenshot.
+- **Shape:** tiles take the aspect ratio of the app's screenshots, read from the first screen in the list (clamped between 1:2 and 1.9:1) and remembered per app. A screenshot much taller than its tile shows its top and fades out over its last 28px.
+- **Grid:** auto-fill columns of at least 180px, 260px or 400px (small, medium, large; remembered), 16px gaps (12px when small).
+- **Loading:** an unloaded thumbnail is the skeleton shimmer across the whole mat. Thumbnails load as their tiles approach the viewport. They are scaled-down copies, 640px wide at most and cropped to 2.5 times their width, so a tile never downloads the full screenshot; the lightbox does.
+- **Tags:** the screen's status in a build; "Not in baseline" (release tone) for a screen uploaded since the baseline; and a neutral "Custom" tag with a sliders icon when the screen has its own tolerances.
+
+### Lightbox
+
+One screen at full size, opened from a gallery tile or from "Tolerance" on a review card. A modal through the shared wrapper, filling the viewport less a 16px margin.
+
+- **Bar:** previous and next icon buttons with "3 of 12" in 12px Meta Grey, the screen name (14px semibold, truncated), then on the right a segmented control for the image shown (the screenshot, Reference, Diff; only what exists), a zoom select (Fit, 100%, 200%), and a ghost close button.
+- **Stage:** the screenshot centred on Screenshot Mat. Fit never scales above natural size; 100% and 200% are true scale and the stage scrolls; 200% is pixelated.
+- **Panel:** 360px on the right, hairline on its left edge, sections divided by hairlines. Details (status, source, size as a definition list, and one default button to the related build or review), then Tolerance, then a key legend pinned to the bottom. At 900px and below the panel follows the stage in one scrolling column and the legend hides.
+- **Keyboard:** left and right arrows step between screens, holding D shows the diff, Escape closes. Focus starts on the stage so the arrows work at once.
+
+### Tolerance fields
+
+Three rows (Color tolerance, Shift tolerance, Changed pixels allowed), divided by hairlines. Used in the lightbox panel and in the app tolerance dialog.
+
+- **Row:** label (13px medium) and a 12px Meta Grey hint on the left; on the right a 104px number box (the input style, with its unit in Meta Grey inside the box) over a 12px caption. In a column narrower than 400px the hint and caption run full width under the label and box.
+- **Inheriting:** an empty field shows the value it would use as its placeholder and the caption says where it comes from ("Using the app default"). A typed value is semibold, and the caption becomes the inherited value plus a "Reset" link.
+- **Errors:** the box border and the caption turn Rejected Red, and the caption states the range.
+- **Preview:** where there is a comparison to run, a notice under the rows gives the verdict for the values in the fields: info tone with a check for "Would pass", warning tone with a magnifying glass for "Would be flagged", with the measured difference, the allowance, and the pixels ignored as shifted, and a small "Show diff" button that puts the resulting diff on the stage. While it runs the notice is neutral with the spinner.
+- **Saving:** one primary button ("Save for this screen", "Save tolerances"), disabled until something valid has changed, with "Unsaved changes" beside it in the lightbox.
 
 ### Navigation
 
@@ -632,7 +662,7 @@ The dialog between the decision bar's button and the build being submitted. A 44
 ### Loader and skeleton
 
 - **Loader:** a spinning circle-notch icon in Action Indigo, centred, at five sizes (20px, 24px, 36px default, 48px, 60px). Under reduced motion it keeps turning but slows to one turn per 3 seconds.
-- **Skeleton:** a 10px tall bar with 4px radius that shimmers between Inset Grey and Screenshot Mat over 1.4s, and stops under reduced motion. Defined, not currently used; pages show the loader modal instead.
+- **Skeleton:** a 10px tall bar with 4px radius that shimmers between Inset Grey and Screenshot Mat over 1.4s, and stops under reduced motion. Used for gallery thumbnails that have not loaded, filling the mat instead of a bar; pages still show the loader modal.
 
 ### Empty state
 
@@ -725,6 +755,6 @@ Used for sign-in and first-run setup. A single card centred in the viewport (max
 - **Off-ramp sizes.** 15px (empty state title), 17px (dialog title), 18px (full-page error), 12.5px (unused card header subtitle), and two near-identical title sizes (19px and 20px). Status tags are 19px or 24px depending on the screen.
 - **Mono size drift.** Commit hashes in build rows still use Tailwind's `font-mono` utility, which applies the mono stack but not the 0.92em reduction given to inline code, so they render at the surrounding 14px. The review header now uses the shared mono style, so the same hash is 0.92em of 12px there.
 - **Shared and borrowed tones.** "Processing" and "Needs Review" builds share the warning tone and differ only by icon. "New" screens use a token named `release`.
-- **Unused primitives.** Defined in the stylesheet but not used by any screen: card header and body, large button, link button, skeleton, warning and info notices, and the menu separator and meta block.
+- **Unused primitives.** Defined in the stylesheet but not used by any screen: card header and body, large button, the skeleton bar at its own size, and the menu separator and meta block.
 - **Local one-offs.** Nine pieces are styled inside the screens that use them rather than as shared primitives: the Approve and Reject buttons, the admin toggle, the search field, the back button, and now the segmented control, the submit confirm, the decision bar, the key cap, and the active ring. The 1280px cap on a lone screenshot is a literal.
 - **Dialogs outside the wrapper.** The alert and confirm dialogs that come from the foundation library (delete confirmations, error alerts, the notices after a submit) and the loading modal do not go through the shared modal wrapper, so they do not get its dialog role, focus trap, or focus restore.

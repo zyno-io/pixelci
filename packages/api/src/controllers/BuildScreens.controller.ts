@@ -26,16 +26,28 @@ import { BuildShardEntity } from '../entities/BuildShard.entity';
 import { ScreenEntity } from '../entities/Screen.entity';
 import { UserEntity } from '../entities/User.entity';
 import { AppAccessService } from '../services/AppAccess.service';
-import { S3Service } from '../services/S3.service';
+import { PixelMatchService } from '../services/PixelMatch.service';
+import { isNotFound, S3Service } from '../services/S3.service';
 import { parseScreenName, validateScreenName, readPngHeader, repairLatin1Filename } from '../services/ScreenUpload';
+import { ThumbnailService } from '../services/Thumbnail.service';
+import { ITolerances, IToleranceOverrides, validateTolerances } from '../services/Tolerance';
 import { CI_TOKEN_TTL_MS } from './Builds.controller';
 
 const SHARD_NAME_CLASH = 'screen names must be unique across shards';
 
 export type IAppScreenResponse = Pick<ScreenEntity, 'id' | 'name'>;
+export type IBuildScreenCompareResponse = {
+    diffPct: number;
+    diffPixels: number;
+    totalPixels: number;
+    shiftTolerantPixels: number;
+    passes: boolean;
+    diffImage: string;
+};
 export type IBuildScreenResponse = {
     screenId: string;
     name: string;
+    tolerances: IToleranceOverrides;
     currentBuildScreen:
         | Pick<
               BuildScreenEntity,
@@ -106,8 +118,19 @@ export class BuildScreensController {
         private db: Db,
         private s3Svc: S3Service,
         private appAccessSvc: AppAccessService,
-        private appConfig: AppConfig
+        private appConfig: AppConfig,
+        private pixelMatch: PixelMatchService,
+        private thumbnails: ThumbnailService
     ) {}
+
+    /** The latest approved build on the app's default branch that precedes the given build. */
+    private async findReferenceBuild(app: AppEntity, build: BuildEntity): Promise<BuildEntity | undefined> {
+        if (!app.defaultBranchId) return undefined;
+        return BuildEntity.query()
+            .filter({ appId: app.id, branchId: app.defaultBranchId, status: 'changes approved', id: { $lt: build.id } })
+            .orderBy('id', 'desc')
+            .findOneOrUndefined();
+    }
 
     @http.GET('screens')
     @http.middleware(UserAuthMiddleware)
@@ -119,12 +142,7 @@ export class BuildScreensController {
 
         const app = await this.db.query(AppEntity).filter({ id: appId }).findOne();
 
-        const referenceBuild = app.defaultBranchId
-            ? await BuildEntity.query()
-                  .filter({ appId: app.id, branchId: app.defaultBranchId, status: 'changes approved', id: { $lt: build.id } })
-                  .orderBy('id', 'desc')
-                  .findOneOrUndefined()
-            : undefined;
+        const referenceBuild = await this.findReferenceBuild(app, build);
 
         // Ordered by id (UUID7, so upload order). Postgres returns unordered rows in heap order, which
         // changes whenever a row is updated — without this the list reshuffles after each review.
@@ -154,14 +172,74 @@ export class BuildScreensController {
 
         const screens = await ScreenEntity.query()
             .filter({ id: { $in: screenIds } })
-            .select('id', 'name')
+            .select('id', 'name', 'colorTolerance', 'shiftTolerance', 'diffPctTolerance')
             .find();
         const screensById = keyBy(screens, 'id');
 
         return buildScreens.map(buildScreen => ({
             ...buildScreen,
-            name: screensById[buildScreen.screenId]?.name
+            name: screensById[buildScreen.screenId]?.name,
+            tolerances: {
+                colorTolerance: screensById[buildScreen.screenId]?.colorTolerance ?? null,
+                shiftTolerance: screensById[buildScreen.screenId]?.shiftTolerance ?? null,
+                diffPctTolerance: screensById[buildScreen.screenId]?.diffPctTolerance ?? null
+            }
         }));
+    }
+
+    /** Previews a comparison of this build's screen against the reference build's screen with arbitrary tolerances. Writes nothing. */
+    @http.POST('screens/:screenId/compare')
+    @http.middleware(UserAuthMiddleware)
+    async compareScreen(
+        appId: UuidString,
+        id: UuidString,
+        screenId: UuidString,
+        user: UserEntity,
+        body: HttpBody<ITolerances>
+    ): Promise<IBuildScreenCompareResponse> {
+        await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
+        validateTolerances(body);
+
+        const build = await BuildEntity.query()
+            .filter({ id, appId, status: { $nin: ['draft', 'canceled'] } })
+            .findOneOrUndefined();
+        if (!build) throw new HttpNotFoundError();
+        const app = await this.db.query(AppEntity).filter({ id: appId }).findOne();
+
+        const referenceBuild = await this.findReferenceBuild(app, build);
+        if (!referenceBuild) throw new HttpBadRequestError('No reference build to compare against');
+
+        const current = await BuildScreenEntity.query().filter({ appId, buildId: build.id, screenId, isRemoved: false }).findOneOrUndefined();
+        const reference = await BuildScreenEntity.query()
+            .filter({ appId, buildId: referenceBuild.id, screenId, isRemoved: false })
+            .findOneOrUndefined();
+        if (!current) throw new HttpBadRequestError('Screen is not in this build');
+        if (!reference) throw new HttpBadRequestError('Screen is not in the reference build');
+
+        // The same pair processing compares: each build's own upload. `matchedBuildId` on the current
+        // screen points at the image it was judged equal to, so following it would compare the
+        // reference with itself and report no difference at any tolerance.
+        const [referenceImage, currentImage] = await Promise.all([this.getOwnScreenImage(appId, reference), this.getOwnScreenImage(appId, current)]);
+
+        const result = await this.pixelMatch.getDiffExclusive(referenceImage, currentImage, body.colorTolerance, body.shiftTolerance);
+        return {
+            diffPct: result.diffPct,
+            diffPixels: result.diffPixels,
+            totalPixels: result.totalPixels,
+            shiftTolerantPixels: result.shiftTolerantPixels,
+            passes: result.diffPct <= body.diffPctTolerance,
+            diffImage: 'data:image/png;base64,' + result.getDiffPng().toString('base64')
+        };
+    }
+
+    /** A build screen's own upload, falling back to the build it matched if its own copy is gone. */
+    private async getOwnScreenImage(appId: string, buildScreen: BuildScreenEntity) {
+        try {
+            return await this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, buildScreen.buildId, buildScreen.screenId));
+        } catch (err) {
+            if (!buildScreen.matchedBuildId) throw err;
+            return this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, buildScreen.matchedBuildId, buildScreen.screenId));
+        }
     }
 
     @http.POST('screens')
@@ -276,6 +354,22 @@ export class BuildScreensController {
         return Redirect.toUrl(url);
     }
 
+    /** A scaled-down copy of the screenshot for gallery tiles, generated on first request and kept in storage. */
+    @http.GET('screens/:screenId/thumbnail')
+    @http.middleware(UserAuthMiddleware)
+    async getScreenThumbnail(appId: UuidString, id: UuidString, screenId: UuidString, user: UserEntity): AnyResponse {
+        await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
+        const buildScreen = await this.findStoredImage(appId, id, screenId);
+        let path: string;
+        try {
+            path = await this.thumbnails.ensure(appId, id, screenId, buildScreen.id);
+        } catch (err) {
+            if (isNotFound(err)) throw new HttpNotFoundError();
+            throw err;
+        }
+        return Redirect.toUrl(await this.s3Svc.getSignedUrl(path));
+    }
+
     @http.GET('screens/:screenId/diff')
     @http.middleware(UserAuthMiddleware)
     async getScreenDiff(appId: UuidString, id: UuidString, screenId: UuidString, user: UserEntity): AnyResponse {
@@ -328,13 +422,13 @@ export class BuildScreensController {
         return result;
     }
 
-    /** 404s unless the build belongs to the app (and isn't a draft/canceled) and has a row for the screen. */
+    /** 404s unless the build belongs to the app (and isn't a draft/canceled) and has an image row (not a removal marker) for the screen. */
     private async findStoredImage(appId: string, buildId: string, screenId: string): Promise<BuildScreenEntity> {
         const build = await BuildEntity.query()
             .filter({ id: buildId, appId, status: { $nin: ['draft', 'canceled'] } })
             .findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
-        const row = await BuildScreenEntity.query().filter({ appId, buildId, screenId }).findOneOrUndefined();
+        const row = await BuildScreenEntity.query().filter({ appId, buildId, screenId, isRemoved: false }).findOneOrUndefined();
         if (!row) throw new HttpNotFoundError();
         return row;
     }

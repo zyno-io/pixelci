@@ -27,6 +27,10 @@
                 </div>
                 <div class="flex gap-4 items-center">
                     <span v-if="branchesFailed" class="muted branches-failed" role="alert">Branches couldn't be loaded.</span>
+                    <RouterLink :to="`/apps/${app.id}/screens`" class="btn" data-testid="browse-screens">
+                        <i class="fa fa-table-cells-large" aria-hidden="true" />
+                        Screens
+                    </RouterLink>
                     <select class="select" v-model="selectedBranchId" aria-label="Branch">
                         <option value="">All Branches</option>
                         <option v-for="branch in branches" :key="branch.id" :value="branch.id">{{ branch.name }}</option>

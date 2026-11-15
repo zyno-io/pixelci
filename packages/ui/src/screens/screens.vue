@@ -37,6 +37,16 @@
                 </div>
 
                 <div v-if="screens" class="header-tools">
+                    <RouterLink
+                        :to="`${buildsPath}/builds/${buildId}/screens`"
+                        class="btn icon"
+                        aria-label="Browse this build's screens as thumbnails"
+                        v-tooltip="'Browse all screens as thumbnails'"
+                        data-testid="open-gallery"
+                    >
+                        <i class="fa fa-table-cells-large" aria-hidden="true" />
+                    </RouterLink>
+
                     <ScreensSegmented v-model="filter" label="Screens to show" :options="filterOptions" />
 
                     <label class="diff-toggle" v-tooltip="'Shift+click a screenshot to toggle, or hold D to flash the diff'">
@@ -108,21 +118,36 @@
                                 <h2 :id="`screen-name-${screen.screenId}`" class="screen-name">{{ screen.name }}</h2>
                             </div>
 
-                            <span
-                                v-if="screen.currentBuildScreen?.reviewStatus"
-                                class="review-badge tag"
-                                :class="screen.currentBuildScreen.reviewStatus === 'approved' ? 'success' : 'danger'"
-                            >
-                                <i
-                                    class="fa"
-                                    :class="screen.currentBuildScreen.reviewStatus === 'approved' ? 'fa-check' : 'fa-xmark'"
-                                    aria-hidden="true"
-                                />
-                                {{ screen.currentBuildScreen.reviewStatus === 'approved' ? 'Approved' : 'Rejected' }}
-                            </span>
-                            <span v-else-if="getScreenStatus(screen)" class="screen-status tag" :class="getScreenStatus(screen)!.tone">
-                                {{ getScreenStatus(screen)!.label }}
-                            </span>
+                            <div class="screen-meta-end">
+                                <button
+                                    v-if="screen.currentBuildScreen"
+                                    type="button"
+                                    class="btn ghost sm tolerance-open"
+                                    :aria-label="`Tolerance for ${screen.name}`"
+                                    v-tooltip="'View or change how strictly this screen is compared'"
+                                    data-testid="open-tolerance"
+                                    @click="openTolerance(screen)"
+                                >
+                                    <i class="fa fa-sliders" aria-hidden="true" />
+                                    {{ hasOverride(screen.tolerances) ? 'Custom tolerance' : 'Tolerance' }}
+                                </button>
+
+                                <span
+                                    v-if="screen.currentBuildScreen?.reviewStatus"
+                                    class="review-badge tag"
+                                    :class="screen.currentBuildScreen.reviewStatus === 'approved' ? 'success' : 'danger'"
+                                >
+                                    <i
+                                        class="fa"
+                                        :class="screen.currentBuildScreen.reviewStatus === 'approved' ? 'fa-check' : 'fa-xmark'"
+                                        aria-hidden="true"
+                                    />
+                                    {{ screen.currentBuildScreen.reviewStatus === 'approved' ? 'Approved' : 'Rejected' }}
+                                </span>
+                                <span v-else-if="getScreenStatus(screen)" class="screen-status tag" :class="getScreenStatus(screen)!.tone">
+                                    {{ getScreenStatus(screen)!.label }}
+                                </span>
+                            </div>
                         </div>
 
                         <div v-show="!isCollapsed(screen)" class="image-wrapper-outer" :class="{ single: isUnchanged(screen) }">
@@ -291,6 +316,18 @@
             </template>
         </template>
 
+        <ScreenLightbox
+            v-if="lightboxIndex !== null && lightboxItems.length"
+            v-model:index="lightboxIndex"
+            :app-id="appId"
+            :items="lightboxItems"
+            :app-tolerances="appTolerances"
+            :can-edit="userCanReview"
+            current-label="New build"
+            @close="lightboxIndex = null"
+            @saved="onToleranceSaved"
+        />
+
         <div class="sr-only" role="status" aria-live="polite">{{ announcement }}</div>
     </div>
 </template>
@@ -312,6 +349,9 @@ import {
 import { accessDeniedMessage, signOut } from '@/shared/access-error';
 import LoaderModal from '@/shared/components/loader-modal.vue';
 import Loader from '@/shared/components/loader.vue';
+import ScreenLightbox, { type ILightboxScreen } from '@/shared/components/screen-lightbox.vue';
+import { BUILD_STATUS, REMOVED_STATUS, REVIEW_STATUS, SCREEN_STATUS } from '@/shared/status';
+import { hasOverride, type IToleranceOverrides, type ITolerances, pickOverrides, resolveTolerances } from '@/shared/tolerances';
 
 import ScreensSegmented from './screens-segmented.vue';
 import SubmitConfirm from './screens-submit-confirm.vue';
@@ -415,29 +455,11 @@ const commitUrl = computed(() => {
     return null;
 });
 
-// Same tones, icons and wording as the build list.
-const BUILD_STATUS: Record<IBuildResponse['status'], { label: string; tone: string; icon?: string }> = {
-    'needs review': { label: 'Needs Review', tone: 'warning', icon: 'fa-magnifying-glass' },
-    processing: { label: 'Processing', tone: 'warning', icon: 'fa-stopwatch' },
-    'no changes': { label: 'No Changes', tone: 'info', icon: 'fa-check' },
-    'changes approved': { label: 'Changes Approved', tone: 'success', icon: 'fa-check' },
-    'changes rejected': { label: 'Changes Rejected', tone: 'danger', icon: 'fa-xmark' },
-    failed: { label: 'Failed', tone: 'danger', icon: 'fa-xmark' },
-    draft: { label: 'Draft', tone: '', icon: 'fa-pen-to-square' },
-    canceled: { label: 'Canceled', tone: '' }
-};
 const buildStatus = computed(() => (build.value ? BUILD_STATUS[build.value.status] : undefined));
-
-const SCREEN_STATUS: Record<string, { label: string; tone: string }> = {
-    new: { label: 'New', tone: 'release' },
-    'needs review': { label: 'Needs Review', tone: 'warning' },
-    'no changes': { label: 'No Changes', tone: 'info' },
-    'changes approved': { label: 'Changes Approved', tone: 'success' }
-};
 
 // Unknown or empty statuses get no tag at all rather than an empty one.
 function getScreenStatus(screen: IScreen) {
-    if (!screen.currentBuildScreen) return { label: 'Removed', tone: '' };
+    if (!screen.currentBuildScreen) return REMOVED_STATUS;
     return SCREEN_STATUS[screen.currentBuildScreen.status ?? ''];
 }
 
@@ -522,6 +544,41 @@ function onImageShiftClick(e: MouseEvent, screen: IScreen) {
     if (!e.shiftKey || !hasDiff(screen)) return;
     e.preventDefault();
     showDiff.value = !showDiff.value;
+}
+
+// ── Tolerances ──
+// The lightbox shows one screen at full size with its tolerances, and previews proposed values
+// against this build's comparison. It steps through the screens currently listed.
+const FALLBACK_TOLERANCES: ITolerances = { colorTolerance: 0.2, shiftTolerance: 1, diffPctTolerance: 0.01 };
+const appTolerances = computed(() => resolveTolerances(app.value, app.value?.instanceTolerances ?? FALLBACK_TOLERANCES));
+const lightboxIndex = ref<number | null>(null);
+
+const lightboxItems = computed<ILightboxScreen[]>(() =>
+    displayScreens.value.map(screen => {
+        const current = screen.currentBuildScreen;
+        const reference = screen.referenceBuildScreen;
+        const currentImage = current ? { buildId: current.matchedBuildId ?? current.buildId } : null;
+        return {
+            screenId: screen.screenId,
+            name: screen.name,
+            status: current?.reviewStatus ? REVIEW_STATUS[current.reviewStatus] : getScreenStatus(screen),
+            tolerances: pickOverrides(screen.tolerances),
+            current: currentImage,
+            reference: reference ? { buildId: reference.matchedBuildId ?? reference.buildId } : null,
+            diff: hasDiff(screen) ? currentImage : null,
+            compare: { buildId }
+        };
+    })
+);
+
+function openTolerance(screen: IScreen) {
+    const index = displayScreens.value.indexOf(screen);
+    if (index >= 0) lightboxIndex.value = index;
+}
+
+function onToleranceSaved(screenId: string, tolerances: IToleranceOverrides) {
+    const screen = screens.value?.find(s => s.screenId === screenId);
+    if (screen) screen.tolerances = tolerances;
 }
 
 // ── Sticky chrome ──
@@ -688,6 +745,13 @@ async function scrollToNextScreen(current: IScreen, activeAtStart: string | unde
 // If the filter hides the active screen, drop it so J/K start from the top of the new list.
 watch(filter, () => {
     if (!displayScreens.value.some(s => s.screenId === activeScreenId.value)) activeScreenId.value = undefined;
+});
+
+// Reviewing can shorten the list under the open lightbox; keep its position in range.
+watch(displayScreens, list => {
+    if (lightboxIndex.value === null) return;
+    if (!list.length) lightboxIndex.value = null;
+    else if (lightboxIndex.value > list.length - 1) lightboxIndex.value = list.length - 1;
 });
 
 // ── Keyboard ──
@@ -1142,8 +1206,18 @@ async function submitBuild() {
         flex-shrink: 0;
         font-family: var(--font-mono);
     }
-    .screen-meta > .tag {
+    .screen-meta-end {
+        display: flex;
+        align-items: center;
+        gap: 8px;
         flex-shrink: 0;
+    }
+    .tolerance-open {
+        color: var(--text-3);
+
+        i {
+            font-size: 11px;
+        }
     }
     .collapse-toggle {
         width: 24px;

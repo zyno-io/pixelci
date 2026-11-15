@@ -8,7 +8,7 @@ PixelCI helps teams catch unintended visual changes by comparing screenshots fro
 
 ## Key Features
 
-- **Intelligent Change Detection**: Pixel-perfect comparison with configurable thresholds (default 1%)
+- **Intelligent Change Detection**: Pixel-perfect comparison with tolerances you can tune per app and per screen
 - **Branch-Aware Comparisons**: Automatically compares against the right baseline for each branch
 - **Cross-Branch Approval Tracking**: Changes approved on one branch are automatically recognized on others
 - **Visual Diff Viewer**: Side-by-side comparison with highlighted differences
