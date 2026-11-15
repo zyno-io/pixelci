@@ -108,7 +108,7 @@ For issues, questions, or contributions, please open an issue on [GitHub](https:
 
 ## License
 
-PixelCI is source-available under the PixelCI Source Available License, Version 1.1. It is free for internal use within your organization; see [LICENSE.md](LICENSE.md) for details.
+PixelCI is source-available under the PixelCI Source Available License, Version 1.2. It is free for internal use within your organization; see [LICENSE.md](LICENSE.md) for details.
 
 The CLI (`packages/cli`, the `pixelci/cli` container image) and the MCP server (`packages/mcp`) are licensed separately under the MIT License ([CLI](packages/cli/LICENSE), [MCP](packages/mcp/LICENSE)), so you can run them in any CI or development environment.
 

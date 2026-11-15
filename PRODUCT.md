@@ -54,7 +54,7 @@ Success: a reviewer reaches a confident approve/reject decision quickly, and the
 - **Auth:** login is via the configured OAuth provider; there are no local passwords.
 - **Generated code:** `packages/ui/src/openapi-client-generated/` is generated from the API and never hand-edited.
 - **Screenshots are the content.** Image dimensions and counts vary per app and are outside PixelCI's control.
-- **License:** PixelCI Source Available License v1.1 (`LICENSE.md` is authoritative): source-available, with hosting it as a service for third parties reserved to the licensor. The CLI and MCP server are MIT.
+- **License:** PixelCI Source Available License v1.2 (`LICENSE.md` is authoritative): source-available, with hosting it as a service for third parties reserved to the licensor. The CLI and MCP server are MIT.
 
 Undecided or unshipped (do not present as available): hosted SaaS, teams and multi-user permissions, baseline management UI, Slack/Discord notifications, comparison history and analytics. No pricing has been published.
 
