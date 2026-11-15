@@ -29,9 +29,9 @@ import { AppAccessService } from '../services/AppAccess.service';
 import { PixelMatchService } from '../services/PixelMatch.service';
 import { isNotFound, S3Service } from '../services/S3.service';
 import { parseScreenName, validateScreenName, readPngHeader, repairLatin1Filename } from '../services/ScreenUpload';
-import { CI_TOKEN_TTL_MS } from './Builds.controller';
 import { ThumbnailService } from '../services/Thumbnail.service';
 import { ITolerances, IToleranceOverrides, validateTolerances } from '../services/Tolerance';
+import { CI_TOKEN_TTL_MS } from './Builds.controller';
 
 const SHARD_NAME_CLASH = 'screen names must be unique across shards';
 
@@ -200,7 +200,9 @@ export class BuildScreensController {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
         validateTolerances(body);
 
-        const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
+        const build = await BuildEntity.query()
+            .filter({ id, appId, status: { $nin: ['draft', 'canceled'] } })
+            .findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
         const app = await this.db.query(AppEntity).filter({ id: appId }).findOne();
 
@@ -208,7 +210,9 @@ export class BuildScreensController {
         if (!referenceBuild) throw new HttpBadRequestError('No reference build to compare against');
 
         const current = await BuildScreenEntity.query().filter({ appId, buildId: build.id, screenId, isRemoved: false }).findOneOrUndefined();
-        const reference = await BuildScreenEntity.query().filter({ appId, buildId: referenceBuild.id, screenId, isRemoved: false }).findOneOrUndefined();
+        const reference = await BuildScreenEntity.query()
+            .filter({ appId, buildId: referenceBuild.id, screenId, isRemoved: false })
+            .findOneOrUndefined();
         if (!current) throw new HttpBadRequestError('Screen is not in this build');
         if (!reference) throw new HttpBadRequestError('Screen is not in the reference build');
 

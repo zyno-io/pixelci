@@ -143,7 +143,10 @@
                         </div>
                         <p v-else class="lb-note">{{ noCompareText }}</p>
 
-                        <div class="lb-save">
+                        <p v-if="!canEdit" class="lb-note" data-testid="tolerance-readonly">
+                            You can try values here, but only people who can review this app can save them.
+                        </p>
+                        <div v-else class="lb-save">
                             <p class="lb-note">Saved values apply from the next build. Results of earlier builds stay as they are.</p>
                             <div class="lb-save-row">
                                 <span v-if="isDirty" class="lb-unsaved" role="status">Unsaved changes</span>
@@ -237,6 +240,8 @@ const props = defineProps<{
     /** Label for the screen's own image when it sits beside a reference, e.g. "New build". */
     currentLabel?: string;
     images?: ScreenImages;
+    /** Whether the user may save screen tolerances (the same role as reviewing; the API enforces it). */
+    canEdit: boolean;
     /**
      * Called with a screen's saved overrides. A prop, not an emit: a save can still be in flight
      * when the lightbox closes, and Vue drops events emitted by an unmounted component.

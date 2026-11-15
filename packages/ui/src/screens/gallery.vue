@@ -157,6 +157,7 @@
             :app-id="appId"
             :items="visibleTiles"
             :app-tolerances="appTolerances"
+            :can-edit="app?.canReview === true"
             :current-label="buildId ? 'New build' : undefined"
             :images="images"
             @close="lightboxIndex = null"

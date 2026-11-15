@@ -322,6 +322,7 @@
             :app-id="appId"
             :items="lightboxItems"
             :app-tolerances="appTolerances"
+            :can-edit="userCanReview"
             current-label="New build"
             @close="lightboxIndex = null"
             @saved="onToleranceSaved"

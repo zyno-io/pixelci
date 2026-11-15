@@ -9,9 +9,9 @@ import { BuildEntity } from '../entities/Build.entity';
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
 import { ScreenEntity } from '../entities/Screen.entity';
 import { UserEntity } from '../entities/User.entity';
+import { IBuildResponse, toBuildResponse } from '../responses/build.response';
 import { AppAccessService } from '../services/AppAccess.service';
 import { IToleranceOverrides, validateToleranceOverrides } from '../services/Tolerance';
-import { IBuildResponse, toBuildResponse } from '../responses/build.response';
 
 export type IAppGalleryScreen = {
     screenId: string;
@@ -144,7 +144,8 @@ export class ScreensController {
         user: UserEntity,
         body: HttpBody<IToleranceOverrides>
     ): Promise<IToleranceOverrides> {
-        await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
+        // a looser tolerance can turn a change into "no changes", so it needs the same role as approving
+        await this.appAccessSvc.assertCanReviewAppId(user, appId);
         validateToleranceOverrides(body);
 
         const screen = await ScreenEntity.query().filter({ id: screenId, appId }).findOneOrUndefined();

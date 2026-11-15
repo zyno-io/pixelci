@@ -65,7 +65,9 @@ export class S3Service {
     /** Whether an object is in the bucket. Only "not found" answers false; any other failure throws. */
     async exists(path: string): Promise<boolean> {
         try {
-            await this.s3Client.send(new HeadObjectCommand({ Bucket: this.appConfig.S3_BUCKET, Key: path }));
+            await this.s3Client.send(new HeadObjectCommand({ Bucket: this.appConfig.S3_BUCKET, Key: path }), {
+                abortSignal: AbortSignal.timeout(S3_CALL_TIMEOUT_MS)
+            });
             return true;
         } catch (err) {
             if (isNotFound(err)) return false;

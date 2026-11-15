@@ -238,6 +238,30 @@ async function run() {
         { colorTolerance: 0.3, shiftTolerance: 2, diffPctTolerance: null },
         'tolerances unchanged after rejected PUTs'
     );
+
+    // a looser tolerance can pass a change without review, so saving one needs the review role
+    console.log('\nTest: screen tolerances PUT requires the review role');
+    const readerId = '00000000-0000-0000-0000-0000000000b1';
+    await createPersistedEntity(UserEntity, {
+        id: readerId,
+        name: 'Tolerance Test Reader',
+        createdAt: new Date(),
+        lastLoginAt: new Date(),
+        isAdmin: false,
+        vcsId: ZERO_ID,
+        vcsUserId: readerId,
+        vcsSession: sealVcsSession({ accessToken: 'a', expiresAt: Date.now() + 3600_000, refreshToken: 'r', redirectUri: 'http://localhost' })
+    });
+    const readerJwt = await JWT.generate({ subject: readerId });
+    const reader = (r: HttpRequest) => r.header('authorization', `Bearer ${readerJwt}`);
+    await call(reader(HttpRequest.GET(`/api/apps/${APP_ID}/screens`)));
+    await call(reader(HttpRequest.PUT(putUrl)).json({ colorTolerance: null, shiftTolerance: null, diffPctTolerance: 100 }), 403);
+    assertEq(
+        (await call<IBuildScreenResponse[]>(user(HttpRequest.GET(`/api/apps/${APP_ID}/builds/${feat.id}/screens`)))).find(s => s.screenId === f2)!
+            .tolerances,
+        { colorTolerance: 0.3, shiftTolerance: 2, diffPctTolerance: null },
+        'tolerances unchanged after a non-reviewer PUT'
+    );
     await call(
         user(HttpRequest.PUT(`/api/apps/${APP_ID}/screens/${ZERO_ID}/tolerances`)).json({
             colorTolerance: null,
