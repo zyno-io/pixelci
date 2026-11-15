@@ -293,6 +293,28 @@ function buildCases(): Record<string, ICase> {
             status: 200,
             build: c => c.user(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${c.buildId}/approve`))
         },
+        'GET /api/apps/:appId/builds/:id/screens/:screenId/thumbnail': {
+            status: 302,
+            build: c => c.user(HttpRequest.GET(`/api/apps/${APP_ID}/builds/${c.buildId}/screens/${c.screenId}/thumbnail`))
+        },
+        // after approve: build 1 is now the approved reference for build 2, which holds the same screen from the upload case
+        'POST /api/apps/:appId/builds/:id/screens/:screenId/compare': {
+            status: 200,
+            build: c =>
+                c
+                    .user(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${c.b2BuildId}/screens/${c.screenId}/compare`))
+                    .json({ colorTolerance: 0.2, shiftTolerance: 1, diffPctTolerance: 0.01 })
+        },
+
+        // screens (gallery and per-screen tolerances)
+        'GET /api/apps/:appId/screens': { status: 200, build: c => c.user(HttpRequest.GET(`/api/apps/${APP_ID}/screens`)) },
+        'PUT /api/apps/:appId/screens/:screenId/tolerances': {
+            status: 200,
+            build: c =>
+                c
+                    .user(HttpRequest.PUT(`/api/apps/${APP_ID}/screens/${c.screenId}/tolerances`))
+                    .json({ colorTolerance: 0.3, shiftTolerance: 2, diffPctTolerance: null })
+        },
 
         // /api/ext (VCS personal access token)
         'GET /api/ext/apps': { status: 200, build: c => c.pat(HttpRequest.GET('/api/ext/apps')) },

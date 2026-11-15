@@ -1322,19 +1322,18 @@ components:
         - name
         - deletedAt
         - approvalMinRole
+        - colorTolerance
+        - shiftTolerance
+        - diffPctTolerance
         - commitUrlBase
         - canReview
+        - instanceTolerances
     IApprovalMinRole:
       enum:
         - read
         - write
         - maintain
       type: string
-        - colorTolerance
-        - shiftTolerance
-        - diffPctTolerance
-        - commitUrlBase
-        - instanceTolerances
     ITolerances:
       type: object
       properties:

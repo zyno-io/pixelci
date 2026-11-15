@@ -12,6 +12,7 @@ import { AppEntity } from '../../src/entities/App.entity';
 import { BranchEntity } from '../../src/entities/Branch.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 
 process.env.CI = 'true';
@@ -92,13 +93,13 @@ async function run() {
         isAdmin: true,
         vcsId: ZERO_ID,
         vcsUserId: ZERO_ID,
-        vcsSession: { accessToken: 'a', expiresAt: Date.now() + 3600_000, refreshToken: 'r', redirectUri: 'http://localhost' }
+        vcsSession: sealVcsSession({ accessToken: 'a', expiresAt: Date.now() + 3600_000, refreshToken: 'r', redirectUri: 'http://localhost' })
     });
     await createPersistedEntity(VcsIntegrationEntity, {
         id: ZERO_ID,
         name: 'Tolerance Test VCS',
         platform: 'gitlab',
-        config: { url: `http://127.0.0.1:${mockPort}`, clientId: 'c', clientSecret: 's' }
+        config: sealIntegrationConfig({ url: `http://127.0.0.1:${mockPort}`, clientId: 'c', clientSecret: 's' })
     });
     await createPersistedEntity(AppEntity, {
         id: APP_ID,
