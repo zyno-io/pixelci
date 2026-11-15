@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- License updated to the PixelCI Source Available License, Version 1.2
+    - Anything you mark “Not a Contribution” (for example, code from your own app pasted into an issue) is excluded from
+      the contribution terms, matching the CLA
+
 ## v0.5.0
 
 - **Breaking:** PixelCI now requires PostgreSQL 15+ (PostgreSQL 18 recommended); MySQL is no longer supported

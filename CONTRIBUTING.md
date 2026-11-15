@@ -25,7 +25,7 @@ Every commit in the pull request must be authored by a GitHub account that has s
 
 ## License
 
-PixelCI is source-available, under the [PixelCI Source Available License, Version 1.1](LICENSE.md). In short:
+PixelCI is source-available, under the [PixelCI Source Available License, Version 1.2](LICENSE.md). In short:
 
 - Self-hosting PixelCI for your organization's internal use is free.
 - Offering PixelCI as a hosted or managed service, embedding it in a product, distributing it, or white-labelling it requires a commercial license.
