@@ -328,6 +328,25 @@ function buildCases(): Record<string, ICase> {
             build: c => c.pat(HttpRequest.GET(`/api/ext/apps/${APP_ID}/builds/${c.buildId}/screens/${c.screenId}/image?kind=new`))
         },
 
+        // /api/mcp (same PAT auth); a get_build call so build data passes through the scanner
+        'POST /api/mcp': {
+            status: 200,
+            build: c =>
+                c.pat(
+                    HttpRequest.POST('/api/mcp')
+                        .header('accept', 'application/json, text/event-stream')
+                        .header('mcp-protocol-version', '2025-06-18')
+                        .json({
+                            jsonrpc: '2.0',
+                            id: 1,
+                            method: 'tools/call',
+                            params: { name: 'get_build', arguments: { appId: APP_ID, buildId: c.buildId } }
+                        })
+                )
+        },
+        'GET /api/mcp': { status: 405, build: c => c.pat(HttpRequest.GET('/api/mcp')) },
+        'DELETE /api/mcp': { status: 405, build: c => c.pat(HttpRequest.DELETE('/api/mcp')) },
+
         // last: a final-status poll revokes the polling session's CI token
         'GET /api/apps/:appId/builds/:id/status': {
             status: 200,
