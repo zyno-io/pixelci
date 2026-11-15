@@ -8,6 +8,7 @@ import { BuildShardEntity } from '../entities/BuildShard.entity';
 import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { BoundedTtlCache } from '../helpers/BoundedTtlCache';
+import { IAppAccessPrincipal } from '../services/AppAccess.service';
 import { VcsService } from '../services/Vcs.service';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -107,6 +108,13 @@ const vcsAuthContextByRequest = new WeakMap<HttpRequest, IVcsAuthContext>();
 
 export function getVcsAuthContext(request: HttpRequest): IVcsAuthContext | undefined {
     return vcsAuthContextByRequest.get(request);
+}
+
+/** The access principal for a request that passed VcsTokenAuthMiddleware. */
+export function vcsPrincipal(request: HttpRequest): IAppAccessPrincipal {
+    const ctx = getVcsAuthContext(request);
+    if (!ctx) throw new HttpUnauthorizedError();
+    return { kind: 'token', token: ctx.token, vcsId: ctx.vcsId };
 }
 
 export async function resolveUserFromVcsToken(

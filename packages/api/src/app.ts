@@ -9,6 +9,7 @@ import { BranchesController } from './controllers/Branches.controller';
 import { BuildsController } from './controllers/Builds.controller';
 import { BuildScreensController } from './controllers/BuildScreens.controller';
 import { ExternalReadController } from './controllers/ExternalRead.controller';
+import { McpController } from './controllers/Mcp.controller';
 import { ScreensController } from './controllers/Screens.controller';
 import { SessionController } from './controllers/Session.controller';
 import { UsersController } from './controllers/Users.controller';
@@ -18,6 +19,7 @@ import { ProcessBuildJob } from './jobs/ProcessBuild.job';
 import { ReapStuckBuildsJob } from './jobs/ReapStuckBuilds.job';
 import { RerunCiJobJob } from './jobs/RerunCiJob.job';
 import { AppAccessService } from './services/AppAccess.service';
+import { ExternalReadService } from './services/ExternalRead.service';
 import { PixelMatchService } from './services/PixelMatch.service';
 import { S3Service } from './services/S3.service';
 import { assertSecretsConfig } from './services/secrets/SecretBox';
@@ -47,7 +49,8 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         ScreensController,
         VcsIntegrationsController,
         UsersController,
-        ExternalReadController
+        ExternalReadController,
+        McpController
     ],
     commands: [SetIntegrationSecretCommand],
     providers: [
@@ -61,6 +64,7 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         PixelMatchService,
         VcsService,
         AppAccessService,
+        ExternalReadService,
         S3Service,
         ThumbnailService
     ]

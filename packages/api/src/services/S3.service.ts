@@ -105,6 +105,39 @@ export class S3Service {
         });
     }
 
+    /**
+     * Like getBuffer, but returns undefined instead of reading an object larger than maxBytes
+     * (checked against ContentLength, and enforced while streaming if the length is missing).
+     */
+    async getBufferWithLimit(path: string, maxBytes: number): Promise<Buffer | undefined> {
+        const command = new GetObjectCommand({
+            Bucket: this.appConfig.S3_BUCKET,
+            Key: path
+        });
+        const response = await this.s3Client.send(command, { abortSignal: AbortSignal.timeout(S3_CALL_TIMEOUT_MS) });
+        assert(response.Body instanceof Readable);
+        const body = response.Body as Readable;
+        if (response.ContentLength !== undefined && response.ContentLength > maxBytes) {
+            body.destroy();
+            return undefined;
+        }
+        return new Promise<Buffer | undefined>((resolve, reject) => {
+            const chunks: Buffer[] = [];
+            let total = 0;
+            body.on('data', (chunk: Buffer) => {
+                total += chunk.length;
+                if (total > maxBytes) {
+                    body.destroy();
+                    resolve(undefined);
+                    return;
+                }
+                chunks.push(chunk);
+            });
+            body.on('end', () => resolve(Buffer.concat(chunks)));
+            body.on('error', (err: Error) => reject(err));
+        });
+    }
+
     getPathForScreen(appId: string, buildId: string, screenId: string): string {
         return `screens/${appId}/${buildId}/${screenId}.png`;
     }

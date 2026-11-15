@@ -40,11 +40,11 @@ Success: a reviewer reaches a confident approve/reject decision quickly, and the
 - Decisions are per screen (approve/reject, with comments) and per build (approve).
 - After approval the user leaves PixelCI for the VCS pipeline.
 - Access mirrors the VCS: users see only apps whose project their account can access on GitLab or GitHub (operators can disable this).
-- A CLI runs inside CI to upload screenshots and poll for a result; a read-only MCP server lets AI assistants read build status, decisions, and comments.
+- A CLI runs inside CI to upload screenshots and poll for a result; a read-only MCP endpoint served by the API (`/api/mcp`) lets AI assistants read build status, decisions, and comments.
 
 ## Capabilities and Constraints
 
-- **Workspaces:** `packages/ui` (Vue 3 review app), `packages/api` (backend and worker), `packages/cli` (CI uploader), `packages/mcp` (read-only MCP server), `docs/` (documentation site, docs.pixelci.dev).
+- **Workspaces:** `packages/ui` (Vue 3 review app), `packages/api` (backend and worker), `packages/cli` (CI uploader), `docs/` (documentation site, docs.pixelci.dev).
 - **UI routes:** login, apps, builds, screens, admin (users, VCS integrations), first-run onboarding.
 - **Build statuses (fixed terminology):** `draft`, `processing`, `no changes`, `needs review`, `changes approved`.
 - **Other fixed terms:** app, branch, build, screen, reference build, baseline, diff, threshold.
@@ -54,7 +54,7 @@ Success: a reviewer reaches a confident approve/reject decision quickly, and the
 - **Auth:** login is via the configured OAuth provider; there are no local passwords.
 - **Generated code:** `packages/ui/src/openapi-client-generated/` is generated from the API and never hand-edited.
 - **Screenshots are the content.** Image dimensions and counts vary per app and are outside PixelCI's control.
-- **License:** PixelCI Source Available License v1.2 (`LICENSE.md` is authoritative): source-available, with hosting it as a service for third parties reserved to the licensor. The CLI and MCP server are MIT.
+- **License:** PixelCI Source Available License v1.2 (`LICENSE.md` is authoritative): source-available, with hosting it as a service for third parties reserved to the licensor. The CLI is MIT.
 
 Undecided or unshipped (do not present as available): hosted SaaS, teams and multi-user permissions, baseline management UI, Slack/Discord notifications, comparison history and analytics. No pricing has been published.
 
