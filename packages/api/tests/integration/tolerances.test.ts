@@ -10,8 +10,10 @@ import type { IAppGalleryResponse } from '../../src/controllers/Screens.controll
 import { CoreAppOptions } from '../../src/app';
 import { AppEntity } from '../../src/entities/App.entity';
 import { BranchEntity } from '../../src/entities/Branch.entity';
+import { BuildScreenEntity } from '../../src/entities/BuildScreen.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { S3Service } from '../../src/services/S3.service';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 
@@ -316,6 +318,23 @@ async function run() {
         }),
         400
     );
+    console.log('  PASS');
+
+    // --- thumbnails are made when a build is processed
+    console.log('\nTest: processing a build generates thumbnails for its own screens');
+    {
+        const s3 = facade.get<S3Service>(S3Service);
+        const rows = await BuildScreenEntity.query().filter({ appId: APP_ID, buildId: base.id }).find();
+        assertEq(rows.length, 2, 'baseline build screens');
+        const deadline = Date.now() + 10_000;
+        for (const row of rows) {
+            const path = s3.getPathForThumbnail(APP_ID, base.id, row.screenId, row.id);
+            while (!(await s3.exists(path))) {
+                if (Date.now() > deadline) throw new Error(`Thumbnail was not generated: ${path}`);
+                await sleepSecs(0.25);
+            }
+        }
+    }
     console.log('  PASS');
 
     // --- thumbnails

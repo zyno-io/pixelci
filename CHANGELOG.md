@@ -12,8 +12,8 @@
   per screen by anyone who can review the app, each falling back to the level above. The tolerance panel previews proposed
   values against the build you are looking at before you save
 - Screen gallery: browse an app's baseline screens, or one build's screens, as thumbnails and open any of them at full size.
-  Thumbnails are scaled-down copies made the first time a screen is shown and kept in storage beside the screenshot
-  (`<screen>.<upload>.thumb.png`)
+  Thumbnails are scaled-down copies made when a build is processed (or the first time a screen is shown, for
+  builds processed before this) and kept in storage beside the screenshot (`<screen>.<upload>.thumb.png`)
 - License updated to the PixelCI Source Available License, Version 1.2
     - Material you post in an issue or discussion and mark “Not a Contribution” (for example, code from your own app
       pasted into a bug report) is excluded from the contribution terms. The marking does not apply to pull requests,
