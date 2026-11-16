@@ -3,7 +3,10 @@ import type { IncomingMessage } from 'http';
 
 // otel must be initialized before all else
 
-require('@zyno-io/ts-server-foundation/otel').init({
+const otel = require('@zyno-io/ts-server-foundation/otel');
+otel.init({
+    // Query strings can carry authorization codes and OAuth state; redact them from exported spans.
+    redactQueryKeys: [...otel.DEFAULT_REDACTED_QUERY_KEYS, 'request'],
     httpIncomingRequestAttributeHook(request: IncomingMessage) {
         return {
             'openreplay.sid': request.headers['x-openreplay-sessionid'] ?? 'unk'

@@ -7,6 +7,7 @@ import { SecretUnreadableError } from './secrets/SecretBox';
 import { openIntegrationConfig } from './secrets/VcsSecrets';
 import { VcsGitHubService } from './VcsGitHub.service';
 import { VcsGitLabService } from './VcsGitLab.service';
+import { isVcsSessionFresh, VcsSessionExpiredError } from './VcsSessionRefresh';
 
 export interface IVcsLoginSessionResponse extends IUserVcsSession {
     id: string;
@@ -100,7 +101,12 @@ export interface IVcsServiceImpl {
     getUserProjectRole(user: UserEntity, projectIdentifier: string): Promise<IVcsProjectRole>;
     /** Resolves the provider user a personal access token belongs to; null if the token is invalid. */
     getTokenUser(token: string): Promise<IVcsTokenUser | null>;
+    /** Refreshes the user's stored session if it is expired or about to be. Throws VcsSessionExpiredError when it can't be recovered. */
+    ensureUserSession(user: UserEntity): Promise<void>;
 }
+
+/** `ok`: usable. `reauth`: gone for good, the user must sign in again. `unavailable`: couldn't tell (provider or network trouble). */
+export type IVcsSessionCheck = 'ok' | 'reauth' | 'unavailable';
 
 export class VcsService {
     constructor(private logger: ScopedLogger) {}
@@ -220,6 +226,22 @@ export class VcsService {
     async getUserProjectRole(user: UserEntity, vcsId: string, projectIdentifier: string): Promise<IVcsProjectRole> {
         if (user.vcsId !== vcsId) return 'none';
         return this.runWithProvider(vcsId, provider => provider.getUserProjectRole(user, projectIdentifier));
+    }
+
+    /**
+     * Whether the user's stored VCS session is still usable, refreshing it when needed. Never clears the stored session on failure:
+     * a replica's concurrent refresh may have succeeded, and its result must not be overwritten.
+     */
+    async checkUserSession(user: UserEntity): Promise<IVcsSessionCheck> {
+        if (isVcsSessionFresh(user.vcsSession)) return 'ok';
+        try {
+            await this.runWithProvider(user.vcsId, provider => provider.ensureUserSession(user));
+            return 'ok';
+        } catch (err) {
+            if (err instanceof VcsSessionExpiredError) return 'reauth';
+            this.logger.warn('VCS session check was inconclusive', { userId: user.id, error: err instanceof Error ? err.message : String(err) });
+            return 'unavailable';
+        }
     }
 
     async tokenCanAccessProject(token: string, vcsId: string, projectIdentifier: string): Promise<boolean> {

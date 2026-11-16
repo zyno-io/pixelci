@@ -172,10 +172,10 @@ The Helm chart does this for you: it runs the migrations in a pre-upgrade job.
 
 ### Authentication
 
-| Variable          | Required | Default | Description                                                                                                                                                                                |
-| ----------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AUTH_JWT_SECRET` | Yes      | —       | Secret key for JWT token signing (also used to sign the OAuth login state)                                                                                                                 |
-| `PUBLIC_URL`      | Yes      | —       | Public origin of PixelCI, e.g. `https://pixelci.example.com` (no path). Login fails without it. The OAuth callback registered with GitLab or GitHub must be exactly `${PUBLIC_URL}/login`. |
+| Variable          | Required | Default | Description                                                                                                                                                                                                                                                                                                                        |
+| ----------------- | -------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AUTH_JWT_SECRET` | Yes      | —       | Secret key for JWT token signing (also used to sign the OAuth login state)                                                                                                                                                                                                                                                         |
+| `PUBLIC_URL`      | Yes      | —       | Public origin of PixelCI, e.g. `https://pixelci.example.com` (no path). Login fails without it. The OAuth callback registered with GitLab or GitHub must be exactly `${PUBLIC_URL}/login`. It is also the issuer of PixelCI's own [MCP OAuth server](#mcp-oauth): `https` is required for that (plain `http` only on `localhost`). |
 
 ### PostgreSQL
 
@@ -205,6 +205,8 @@ PixelCI creates its tables at startup (migrations) and at runtime (the job queue
 | `REDIS_SENTINEL_NAME` | Yes\*    | —            | Redis Sentinel master name (required with sentinel)   |
 
 \* Provide either `REDIS_HOST` or `REDIS_SENTINEL_HOST` + `REDIS_SENTINEL_NAME`.
+
+Redis also backs the rate limits on the [MCP OAuth](#mcp-oauth) endpoints. If it is unreachable the limits fail open (requests are allowed and a warning is logged).
 
 ### S3 Storage
 
@@ -285,6 +287,23 @@ On github.com, any GitHub user with access to an installation of your GitHub App
 | `ENFORCE_VCS_PROJECT_ACCESS` | No       | `true`  | Gate app reads by VCS project access. Set `false` to make every authenticated user able to read every app (e.g. for environments without a reachable VCS). |
 
 Reviewing screens and approving builds needs more than read access: the user must be a PixelCI admin, or hold at least the app's **Who Can Approve Builds** role on the project (set per app by an admin; default: write access, i.e. Developer in GitLab or Write in GitHub). With `ENFORCE_VCS_PROJECT_ACCESS=false`, only PixelCI admins can review and approve.
+
+### MCP OAuth
+
+PixelCI is its own OAuth 2.1 authorization server for MCP clients such as claude.ai, Claude Desktop and Claude Code (see [LLM Access](/llm-access)). The issuer is `PUBLIC_URL`, so it must be an `https` origin with no path (plain `http` is accepted only on `localhost`, for development). If `PUBLIC_URL` is unsuitable, or `MCP_OAUTH_ENABLED` is `false`, the OAuth and discovery endpoints answer `404` and `/api/mcp` accepts only personal access tokens.
+
+Make sure your reverse proxy forwards `/.well-known/*`, `/api/oauth/*` and `/api/mcp` to the API like everything else, and sets the client address header so the per-IP limits see real client IPs (`USE_REAL_IP_HEADER=true` behind a trusted proxy). claude.ai connects from Anthropic's servers, so for it the instance must be reachable from the public internet.
+
+| Variable                        | Required | Default | Description                                                                                           |
+| ------------------------------- | -------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| `MCP_OAUTH_ENABLED`             | No       | `true`  | Offer OAuth sign-in for MCP clients. Set `false` to allow personal access tokens only.                |
+| `OAUTH_DCR_MAX_PER_IP_PER_HOUR` | No       | `20`    | Dynamic client registrations allowed per client IP per hour (over the limit gets `429`)               |
+| `OAUTH_DCR_MAX_PER_HOUR`        | No       | `200`   | Dynamic client registrations allowed across all callers per hour                                      |
+| `OAUTH_CIMD_ENABLED`            | No       | `true`  | Accept clients identified by a metadata URL (see below). Set `false` to allow registered clients only |
+
+Clients may also identify themselves with an `https` URL whose published metadata document PixelCI fetches (Client ID Metadata Documents). This needs outbound HTTPS from the API to arbitrary public hosts (port 443 only; private, loopback and link-local addresses, redirects and responses over 5 KB are refused), so allow that egress if you restrict it. Fetches are rate limited per URL (`OAUTH_CIMD_MAX_FETCHES_PER_URL_PER_10_MIN`, 10), per host (`OAUTH_CIMD_MAX_FETCHES_PER_HOST_PER_10_MIN`, 30) and overall (`OAUTH_CIMD_MAX_FETCHES_PER_HOUR`, 300). Only public clients (no secret) are supported.
+
+Users can review and revoke what they have approved under **Connected apps**. Access tokens last one hour, refresh tokens expire after 30 days unused, and a connection is capped at 90 days; it also ends when the user's GitLab or GitHub sign-in expires. Cleanup of expired state runs hourly in the worker.
 
 ### Tuning
 

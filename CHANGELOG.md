@@ -20,7 +20,11 @@
       merge requests or patches, which are covered by the CLA
 - **Breaking:** the MCP server is now served by the API at `/api/mcp` over Streamable HTTP, and the stdio `@zyno-io/pixelci-mcp` package is removed
     - Reconfigure MCP clients to use the HTTP endpoint, e.g. `claude mcp add --transport http pixelci https://pixelci.example.com/api/mcp --header "Authorization: Bearer <token>"`. See the LLM Access guide
-    - Authentication is unchanged (GitLab or GitHub personal access token). OAuth-based connectors (claude.ai, Claude Desktop) are not supported yet
+    - Personal access tokens keep working
+- MCP connectors can sign in with OAuth (claude.ai, Claude Desktop, Claude Code), no personal access token needed. PixelCI acts as the authorization server (PKCE, dynamic client registration). Manage access under Connected apps
+    - Requires `PUBLIC_URL` to be an `https` address. Set `MCP_OAUTH_ENABLED=false` to turn it off. Registration is rate limited (Redis-backed), see the deployment guide
+- OAuth clients can identify themselves with a metadata URL (Client ID Metadata Documents); the approval screen shows the publishing domain. Set `OAUTH_CIMD_ENABLED=false` to turn it off; it needs outbound HTTPS from the API, see the deployment guide
+- Request logs and traces now redact query-string values such as OAuth `code` and `state`
 
 ## v0.5.0
 

@@ -11,6 +11,7 @@
                     <RouterLink to="/apps" class="nav-link" active-class="active">Apps</RouterLink>
                 </nav>
                 <div class="topbar-right">
+                    <RouterLink to="/connected-apps" class="nav-link" active-class="active">Connected apps</RouterLink>
                     <ThemeMenu />
                     <DropdownMenu v-if="store.isAdmin" label="Administration" trigger-class="icon-trigger">
                         <template #trigger><i class="fa-solid fa-gear" aria-hidden="true" /></template>

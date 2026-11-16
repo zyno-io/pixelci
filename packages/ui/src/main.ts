@@ -30,4 +30,6 @@ const pinia = createPinia();
 app.use(pinia);
 app.use(router);
 
-app.mount('#app');
+// Mount once the first route has resolved: rendering against the router's start location would briefly show the login screen
+// on public routes (e.g. /oauth/error), whose provider auto-redirect then navigates away even after the real route renders.
+void router.isReady().then(() => app.mount('#app'));

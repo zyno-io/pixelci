@@ -9,6 +9,8 @@ const { version } = JSON.parse(readFileSync(new URL('./package.json', import.met
 process.env.VITE_APP_VERSION = version;
 
 // https://vitejs.dev/config/
+const FRAME_HEADERS = { 'Content-Security-Policy': "frame-ancestors 'none'", 'X-Frame-Options': 'DENY' };
+
 export default defineConfig({
     css: {
         preprocessorOptions: {
@@ -18,7 +20,19 @@ export default defineConfig({
         }
     },
     server: {
-        port: 7925
+        port: 7925,
+        // Same frame protection the API sends on the built SPA (packages/api/src/app.ts STATIC_FILE_HEADERS).
+        headers: FRAME_HEADERS,
+        // The OAuth issuer is PUBLIC_URL (the dev UI origin); its discovery, protocol and MCP endpoints live on the API, so MCP clients
+        // can be pointed at the dev UI (http://localhost:7925/api/mcp) end to end.
+        proxy: {
+            '/.well-known': 'http://localhost:7924',
+            '/api/mcp': 'http://localhost:7924',
+            '/api/oauth': 'http://localhost:7924'
+        }
+    },
+    preview: {
+        headers: FRAME_HEADERS
     },
     build: {
         sourcemap: true,

@@ -310,9 +310,62 @@ async function seedS3() {
     console.log('S3 seeded with test images.');
 }
 
+// Fixed OAuth state for the visual-regression screenshots of the connect-app screens (oauth-screens.spec.ts): a
+// dynamically registered "Claude Code" client (loopback redirect), a Client ID Metadata Document client for claude.ai
+// whose cached document is fresh (so authorizing it never fetches), and one grant for each with fixed dates. Any other
+// grants of the seeded user are revoked so the Connected apps list is deterministic.
+const OAUTH_DCR_CLIENT_ID = '00000000-0000-4000-8000-0000000000c1';
+const OAUTH_CIMD_CLIENT_ID = '00000000-0000-4000-8000-0000000000c2';
+const OAUTH_CIMD_URL = 'https://claude.ai/oauth/mcp-oauth-client-metadata';
+const OAUTH_DCR_GRANT_ID = '00000000-0000-4000-8000-0000000000d1';
+const OAUTH_CIMD_GRANT_ID = '00000000-0000-4000-8000-0000000000d2';
+// Timestamps are naive UTC in this schema.
+const utc = iso => iso.replace('Z', '');
+
+async function seedOAuthScreens(conn) {
+    const now = utc(new Date().toISOString());
+    await conn.query(`DELETE FROM oauth_tokens WHERE "grantId" IN (SELECT id FROM oauth_grants WHERE "userId" = $1)`, [ZERO_ID]);
+    await conn.query(`UPDATE oauth_grants SET "revokedAt" = $2, "revokedReason" = 'user' WHERE "userId" = $1 AND "revokedAt" IS NULL`, [ZERO_ID, now]);
+
+    const clients = [
+        [OAUTH_DCR_CLIENT_ID, 'Claude Code', ['http://127.0.0.1:53682/callback'], null, null, null],
+        [OAUTH_CIMD_CLIENT_ID, 'Claude', ['https://claude.ai/api/mcp/auth_callback'], OAUTH_CIMD_URL, now, '2099-01-01T00:00:00']
+    ];
+    for (const [id, name, redirectUris, metadataUrl, fetchedAt, expiresAt] of clients) {
+        await conn.query(
+            `INSERT INTO oauth_clients (id, name, "redirectUris", "tokenEndpointAuthMethod", "createdAt", "metadataUrl", "metadataFetchedAt", "metadataExpiresAt")
+             VALUES ($1, $2, $3, 'none', $4, $5, $6, $7)
+             ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, "redirectUris" = EXCLUDED."redirectUris",
+                 "metadataUrl" = EXCLUDED."metadataUrl", "metadataFetchedAt" = EXCLUDED."metadataFetchedAt", "metadataExpiresAt" = EXCLUDED."metadataExpiresAt"`,
+            [id, name, JSON.stringify(redirectUris), now, metadataUrl, fetchedAt, expiresAt]
+        );
+    }
+
+    const grants = [
+        [OAUTH_CIMD_GRANT_ID, OAUTH_CIMD_CLIENT_ID, 'https://claude.ai/api/mcp/auth_callback', '2026-11-10T15:04:00', '2026-11-14T09:30:00'],
+        [OAUTH_DCR_GRANT_ID, OAUTH_DCR_CLIENT_ID, 'http://127.0.0.1:53682/callback', '2026-11-12T11:20:00', null]
+    ];
+    for (const [id, clientId, redirectUri, createdAt, lastUsedAt] of grants) {
+        await conn.query(
+            `INSERT INTO oauth_grants (id, "clientId", "userId", scope, resource, "redirectUri", "createdAt", "expiresAt", "lastUsedAt", "revokedAt", "revokedReason")
+             VALUES ($1, $2, $3, 'mcp:read', 'http://localhost:7924/api/mcp', $4, $5, '2099-01-01T00:00:00', $6, NULL, NULL)
+             ON CONFLICT (id) DO UPDATE SET "createdAt" = EXCLUDED."createdAt", "lastUsedAt" = EXCLUDED."lastUsedAt",
+                 "expiresAt" = EXCLUDED."expiresAt", "revokedAt" = NULL, "revokedReason" = NULL`,
+            [id, clientId, ZERO_ID, redirectUri, createdAt, lastUsedAt]
+        );
+    }
+}
+
 async function main() {
     // `--reset-reviews` is a fast path used between E2E tests to undo review decisions
     // without re-running the full seed (DB inserts + S3 uploads).
+    if (process.argv.includes('--oauth-screens')) {
+        const conn = await connect();
+        await seedOAuthScreens(conn);
+        await conn.end();
+        console.log('E2E OAuth screen state seeded.');
+        return;
+    }
     if (process.argv.includes('--reset-reviews')) {
         const conn = await connect();
         await resetReviews(conn);

@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, type Tool } from '@modelcontextprotocol/sdk/types.js';
 import { http, HttpError, HttpRequest, Logger, openapi, rawResponse, webResponse } from '@zyno-io/ts-server-foundation';
 
-import { VcsTokenAuthMiddleware, vcsPrincipal } from '../accessories/AuthMiddleware.accessory';
+import { McpAuthMiddleware, mcpPrincipal } from '../accessories/AuthMiddleware.accessory';
 import { IAppAccessPrincipal } from '../services/AppAccess.service';
 import { ExternalReadService } from '../services/ExternalRead.service';
 import { S3Service } from '../services/S3.service';
@@ -79,14 +79,15 @@ function errorResult(message: string): CallToolResult {
 
 /**
  * MCP server (Streamable HTTP, stateless, JSON responses) exposing the same read-only data as
- * /api/ext. Authenticated with a VCS personal access token via VcsTokenAuthMiddleware, so
- * unauthenticated requests of any method get 401 before any 405.
+ * /api/ext. Authenticated via McpAuthMiddleware with either an OAuth access token issued by PixelCI (acting as the
+ * signed-in user) or a VCS personal access token, so unauthenticated requests of any method get 401 (with a
+ * WWW-Authenticate challenge that points MCP clients at the OAuth metadata) before any 405.
  *
  * Stateless: a fresh Server + transport is created per POST. There is no SSE stream, so GET and
  * DELETE answer 405 with `Allow: POST` (permitted by the spec).
  */
 @http.controller('/api/mcp')
-@http.middleware(VcsTokenAuthMiddleware)
+@http.middleware(McpAuthMiddleware)
 @openapi.ignore()
 export class McpController {
     constructor(
@@ -97,7 +98,7 @@ export class McpController {
 
     @http.POST()
     async handlePost(request: HttpRequest) {
-        const principal = vcsPrincipal(request);
+        const principal = mcpPrincipal(request);
         request.setDeadline(REQUEST_DEADLINE_MS);
 
         // JSON-RPC batches are rejected: the 2025-06-18 spec dropped them, and a batch would run many

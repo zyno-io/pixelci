@@ -4049,13 +4049,15 @@ __metadata:
     "@aws-sdk/s3-request-presigner": "npm:^3.1146.0"
     "@faker-js/faker": "npm:^10.6.0"
     "@modelcontextprotocol/sdk": "npm:^1.32.0"
+    "@opentelemetry/api": "npm:^1.10.0"
+    "@opentelemetry/core": "npm:^3.0.0"
     "@types/lodash": "npm:^4.17.27"
     "@types/mime-types": "npm:^3.0.1"
     "@types/node": "npm:^26.6.4"
     "@types/pg": "npm:^8.23.1"
     "@types/pngjs": "npm:^6.0.5"
-    "@zyno-io/ts-reflection": "npm:^26.1115.2203"
-    "@zyno-io/ts-server-foundation": "npm:26.1115.2203"
+    "@zyno-io/ts-reflection": "npm:^26.1115.2357"
+    "@zyno-io/ts-server-foundation": "npm:26.1115.2357"
     axios: "npm:^1.20.0"
     date-fns: "npm:^4.4.0"
     date-fns-tz: "npm:^3.2.0"
@@ -4065,6 +4067,7 @@ __metadata:
     pixelmatch: "npm:^8.0.0"
     pngjs: "npm:^7.0.0"
     sharp: "npm:^0.34.5"
+    tldts: "npm:^7.4.19"
     ttsc: "npm:0.34.2"
     typescript: "npm:^7.0.2"
   dependenciesMeta:
@@ -4172,15 +4175,15 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@zyno-io/ts-reflection@npm:26.1115.2203, @zyno-io/ts-reflection@npm:^26.1115.2203":
-  version: 26.1115.2203
-  resolution: "@zyno-io/ts-reflection@npm:26.1115.2203"
+"@zyno-io/ts-reflection@npm:26.1115.2357, @zyno-io/ts-reflection@npm:^26.1115.2357":
+  version: 26.1115.2357
+  resolution: "@zyno-io/ts-reflection@npm:26.1115.2357"
   peerDependencies:
     ttsc: "*"
   peerDependenciesMeta:
     ttsc:
       optional: true
-  checksum: 10c0/54fd0c56e1e34b059a73cf45603d6611e57c7a1cb7fd131e33642e5c074e678af992639f679f415faedf4133a68083e2eafe62ff90d793dba20731c60a723e06
+  checksum: 10c0/82fb184cb4ba4b5c1f8d4fce6e85a3ac6cb94de32ff9f9423282a6c7c79c03588c9c03d85929f7e1ca5b725ecfc2c68f5a1e26147724e8694179a83a2953fd94
   languageName: node
   linkType: hard
 
@@ -4196,9 +4199,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@zyno-io/ts-server-foundation@npm:26.1115.2203":
-  version: 26.1115.2203
-  resolution: "@zyno-io/ts-server-foundation@npm:26.1115.2203"
+"@zyno-io/ts-server-foundation@npm:26.1115.2357":
+  version: 26.1115.2357
+  resolution: "@zyno-io/ts-server-foundation@npm:26.1115.2357"
   dependencies:
     "@bufbuild/protobuf": "npm:^2.16.0"
     "@opentelemetry/api": "npm:^1.10.0"
@@ -4222,7 +4225,7 @@ __metadata:
     "@ttsc/graph": "npm:^0.34.2"
     "@types/ws": "npm:^8.18.2"
     "@zyno-io/config": "npm:^1.14.0"
-    "@zyno-io/ts-reflection": "npm:26.1115.2203"
+    "@zyno-io/ts-reflection": "npm:26.1115.2357"
     bcrypt: "npm:^6.0.0"
     bullmq: "npm:^6.3.4"
     busboy: "npm:^1.6.0"
@@ -4279,7 +4282,7 @@ __metadata:
     tsf-repl: dist/src/cli/tsf-repl.js
     tsf-test: dist/src/cli/tsf-test.js
     tsf-update: dist/src/cli/tsf-update.js
-  checksum: 10c0/bf2faf900d5ed78c6779dbc3a18ff6d7f6c6575b701a47940288acae83b51abf623d75f23b5a55da197f5bc793bdd4e7dd4f2664341475fe808a6d070d0d2a03
+  checksum: 10c0/110bc2bbcb87c9d1fb60c36d918049c078cc9b41ddf8557d7efd28f5fb114cf928162c9ff7b834ced2da5443bb74e890bd6f8800cd7bc9a821e18a8c914d9e9c
   languageName: node
   linkType: hard
 
@@ -9986,6 +9989,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"tldts-core@npm:^7.5.3":
+  version: 7.5.3
+  resolution: "tldts-core@npm:7.5.3"
+  checksum: 10c0/e632d6fe1132c6d55f2888256caf564a12d090cde6c43733d3cc34fe859a2492c6f25ef911749052296ddeae4c352c525d3f7f0fc83ad21fd06320835a243005
+  languageName: node
+  linkType: hard
+
 "tldts@npm:^7.0.5":
   version: 7.4.19
   resolution: "tldts@npm:7.4.19"
@@ -9994,6 +10004,17 @@ __metadata:
   bin:
     tldts: bin/cli.js
   checksum: 10c0/86a35f5508cd8a1d4e6516d54f0aa375efa643efd4a5d61c84f844f26c07fdea9a29320c341398127fa0d67877697820177f5362108cbcbf6ea06c1ed0795854
+  languageName: node
+  linkType: hard
+
+"tldts@npm:^7.4.19":
+  version: 7.5.3
+  resolution: "tldts@npm:7.5.3"
+  dependencies:
+    tldts-core: "npm:^7.5.3"
+  bin:
+    tldts: bin/cli.js
+  checksum: 10c0/47f067f5931f03db713da878f222957dfb2138753c580d5e52a1939ef59aee49118ab6efd38c680416024286754b5ffec1eb0c66509ea40c9d9a11180a512da1
   languageName: node
   linkType: hard
 

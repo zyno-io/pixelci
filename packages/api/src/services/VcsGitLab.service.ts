@@ -375,6 +375,10 @@ export class VcsGitLabService implements IVcsServiceImpl {
         }
     }
 
+    async ensureUserSession(user: UserEntity): Promise<void> {
+        await this.renewToken(user);
+    }
+
     private async renewToken(user: UserEntity): Promise<void> {
         try {
             await ensureFreshVcsSession(

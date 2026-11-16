@@ -4,7 +4,11 @@
 
         <Onboarding v-else-if="isOnboarded === false" :setup-enabled="setupEnabled" @complete="isOnboarded = true" />
 
+        <router-view v-else-if="$route.meta.public" />
+
         <login v-else-if="!store.sessionUser || $route.path === '/login'" />
+
+        <router-view v-else-if="$route.meta.bare" />
 
         <layout v-else>
             <router-view />
