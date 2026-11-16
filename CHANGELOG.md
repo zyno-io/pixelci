@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.1
+
+- Re-release of v0.6.0, whose tag build failed before publishing the server and CLI images. No changes to PixelCI itself
+
 ## v0.6.0
 
 - **Breaking:** `DEFAULT_PIXEL_DIFF_PCT_THRESHOLD` is now a true percentage of pixels. It used to be divided by 100 a second
