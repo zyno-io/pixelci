@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 export interface IOAuthUrls {
     /** The PUBLIC_URL origin, no trailing slash. Also the OAuth issuer. */
     issuer: string;
@@ -17,6 +19,41 @@ export interface IOAuthUrls {
 export const OAUTH_MCP_PATH = '/api/mcp';
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/** Eight 16-bit groups of an IPv6 literal (with or without an embedded dotted IPv4), or undefined. */
+export function ipv6Groups(ip: string): number[] | undefined {
+    let text = ip;
+    const dotted = /^(.*:)(\d+\.\d+\.\d+\.\d+)$/.exec(text);
+    if (dotted) {
+        const o = dotted[2].split('.').map(Number);
+        if (o.some(n => n > 255)) return undefined;
+        text = dotted[1] + ((o[0] << 8) | o[1]).toString(16) + ':' + ((o[2] << 8) | o[3]).toString(16);
+    }
+    const halves = text.split('::');
+    if (halves.length > 2) return undefined;
+    const part = (h: string) => (h ? h.split(':') : []);
+    const head = part(halves[0]);
+    const tail = halves.length === 2 ? part(halves[1]) : [];
+    if (halves.length === 1 ? head.length !== 8 : head.length + tail.length > 7) return undefined;
+    const groups = [...head, ...Array<string>(halves.length === 2 ? 8 - head.length - tail.length : 0).fill('0'), ...tail].map(g => parseInt(g, 16));
+    return groups.length === 8 && groups.every(g => g >= 0 && g <= 0xffff) ? groups : undefined;
+}
+
+/**
+ * Whether a redirect host is the user's own machine however it is spelled: localhost (also `*.localhost` and trailing dots),
+ * 127/8 and 0/8, `::1`, `::`, and IPv4-mapped or -compatible forms of those. Used to classify, never to validate.
+ */
+export function isLoopbackLikeHost(hostname: string): boolean {
+    let h = hostname.toLowerCase().replace(/\.+$/, '');
+    if (h.startsWith('[') && h.endsWith(']')) h = h.slice(1, -1);
+    if (h.includes('%')) h = h.slice(0, h.indexOf('%'));
+    if (h === 'localhost' || h.endsWith('.localhost')) return true;
+    if (isIP(h) === 4) return /^(127|0)\./.test(h);
+    if (isIP(h) !== 6) return false;
+    const g = ipv6Groups(h);
+    if (!g || g.slice(0, 5).some(x => x !== 0) || (g[5] !== 0 && g[5] !== 0xffff)) return false;
+    return g[6] >> 8 === 127 || g[6] >> 8 === 0;
+}
 
 export function isLoopbackHostname(hostname: string): boolean {
     return LOOPBACK_HOSTS.has(hostname.toLowerCase());

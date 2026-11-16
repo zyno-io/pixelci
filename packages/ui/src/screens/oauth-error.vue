@@ -27,6 +27,8 @@ const MESSAGES: Record<string, string> = {
     invalid_client: "This app isn't registered with this PixelCI server. Remove it from your MCP client and add it again.",
     invalid_redirect_uri:
         "The address this app asked to send you back to doesn't match what it registered, so we stopped before sending it anything.",
+    client_metadata_unavailable:
+        "PixelCI couldn't load this app's published registration details, so it can't be connected right now. Try again in a few minutes; if it keeps failing, the app's publisher may have changed or withdrawn them.",
     invalid_request: 'The connection request was malformed or incomplete.',
     rate_limited: 'There have been too many connection attempts. Wait a few minutes and try again.',
     disabled: "Connecting apps with OAuth isn't turned on for this PixelCI server."

@@ -619,7 +619,10 @@ async function seedOAuth() {
         tokenEndpointAuthMethod: 'client_secret_basic',
         secretHash: sha256(OAUTH_CLIENT_SECRET),
         createdAt: now,
-        lastUsedAt: null
+        lastUsedAt: null,
+        metadataUrl: null,
+        metadataFetchedAt: null,
+        metadataExpiresAt: null
     });
     const grant = (id: string) =>
         createPersistedEntity(OAuthGrantEntity, {

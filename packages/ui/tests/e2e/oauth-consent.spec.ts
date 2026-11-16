@@ -178,9 +178,48 @@ test.describe('OAuth consent', () => {
         await expect(page.getByTestId('consent-ended')).toContainText("couldn't find this request");
     });
 
-    test('refuses to run inside a frame', async ({ page, request }) => {
+    test('the SPA is served with frame-protection headers', async ({ request }) => {
+        // Read the asset path from the HTML rather than a page: unauthenticated, the login screen navigates away to the provider.
+        const html = await (await request.get('/')).text();
+        const scriptSrc = /<script[^>]+src="([^"]+)"/.exec(html)?.[1];
+        expect(scriptSrc).toBeTruthy();
+        for (const path of ['/', '/oauth/consent?request=00000000-0000-4000-8000-000000000000', scriptSrc!]) {
+            const response = await request.get(path);
+            expect(response.status(), path).toBe(200);
+            const headers = response.headers();
+            expect(headers['content-security-policy'], path).toBe("frame-ancestors 'none'");
+            expect(headers['x-frame-options'], path).toBe('DENY');
+        }
+    });
+
+    test('the browser refuses to frame the consent screen', async ({ page, request }) => {
         const auth = await startAuthorization(request);
         await useSession(page);
+        await page.goto('/apps');
+        await page.evaluate(requestId => {
+            const frame = document.createElement('iframe');
+            frame.id = 'attacker';
+            frame.src = `/oauth/consent?request=${requestId}`;
+            document.body.append(frame);
+        }, auth.requestId);
+
+        // frame-ancestors 'none' blocks the document, so the consent UI never renders in the frame.
+        await page.waitForTimeout(1000);
+        await expect(page.frameLocator('#attacker').getByTestId('consent-allow')).toHaveCount(0);
+        await expect(page.frameLocator('#attacker').getByRole('link', { name: 'Open in its own tab' })).toHaveCount(0);
+    });
+
+    test('refuses to run inside a frame even without the frame headers', async ({ page, request }) => {
+        const auth = await startAuthorization(request);
+        await useSession(page);
+        // Simulate a proxy that strips the frame-protection headers, to exercise the in-component guard.
+        await page.route('**/oauth/consent?*', async route => {
+            const response = await route.fetch();
+            const headers = { ...response.headers() };
+            delete headers['content-security-policy'];
+            delete headers['x-frame-options'];
+            await route.fulfill({ response, headers });
+        });
         await page.goto('/apps');
         await page.evaluate(requestId => {
             const frame = document.createElement('iframe');

@@ -12,6 +12,7 @@ import {
 import { ApiController } from '../accessories/Controller.accessory';
 import { AppConfig } from '../config';
 import { UserEntity } from '../entities/User.entity';
+import { ClientVerification, describeClientIdentity } from '../services/oauth/ClientMetadata';
 import { OAUTH_SCOPE, OAUTH_SCOPE_DESCRIPTION } from '../services/oauth/OAuthConstants';
 import { DecisionResult, OAuthServerService } from '../services/oauth/OAuthServer.service';
 import { IOAuthUrls } from '../services/oauth/OAuthUrls';
@@ -29,6 +30,11 @@ interface IConnectedAppRequest {
     redirectUri: string;
     redirectDisplay: string;
     redirectKind: 'web' | 'loopback';
+    /** CIMD clients: the (punycode) host the client_id URL is on. */
+    clientIdHost: string | null;
+    verification: ClientVerification;
+    /** Web redirects only: the redirect host is not the client_id host or one of its subdomains. */
+    redirectOffDomain: boolean;
     scopes: IConnectedAppScope[];
     expiresAt: Date;
 }
@@ -41,6 +47,8 @@ interface IConnectedApp {
     id: string;
     clientName: string;
     redirectDisplay: string;
+    /** CIMD clients: the host that publishes the app's details. */
+    publisher: string | null;
     createdAt: Date;
     lastUsedAt: Date | null;
 }
@@ -78,6 +86,7 @@ export class ConnectedAppsController {
             clientName: client.name,
             redirectUri: authorization.redirectUri,
             ...describeRedirectUri(authorization.redirectUri),
+            ...describeClientIdentity(client.metadataUrl, authorization.redirectUri),
             scopes: [{ name: OAUTH_SCOPE, description: OAUTH_SCOPE_DESCRIPTION }],
             expiresAt: authorization.expiresAt
         };
@@ -108,6 +117,7 @@ export class ConnectedAppsController {
             id: row.id,
             clientName: row.clientName,
             redirectDisplay: describeRedirectUri(row.redirectUri).redirectDisplay,
+            publisher: row.publisher,
             createdAt: row.createdAt,
             lastUsedAt: row.lastUsedAt
         }));

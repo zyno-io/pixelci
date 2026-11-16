@@ -436,7 +436,7 @@ async function testDiscovery(ctx: Ctx) {
     eq(meta.revocation_endpoint, `${ISSUER}/api/oauth/revoke`, 'revocation_endpoint');
     eq(JSON.stringify(meta.code_challenge_methods_supported), JSON.stringify(['S256']), 'PKCE methods');
     eq(meta.authorization_response_iss_parameter_supported, true, 'iss parameter supported');
-    check(!('client_id_metadata_document_supported' in meta), 'client id metadata documents are not advertised');
+    eq(meta.client_id_metadata_document_supported, true, 'client id metadata documents are advertised (covered in oauth-cimd.test.ts)');
     console.log('  PASS');
 
     console.log('\nTest: discovery - probes for other documents get 404 JSON, not the SPA');
@@ -1342,7 +1342,10 @@ async function testPrune(ctx: Ctx) {
             tokenEndpointAuthMethod: 'none',
             secretHash: null,
             createdAt,
-            lastUsedAt
+            lastUsedAt,
+            metadataUrl: null,
+            metadataFetchedAt: null,
+            metadataExpiresAt: null
         });
     const oldUnused = await mkClient('old unused', new Date(Date.now() - 8 * day), null);
     const freshUnused = await mkClient('fresh unused', new Date(Date.now() - 1 * day), null);

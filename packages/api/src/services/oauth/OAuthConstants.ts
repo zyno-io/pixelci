@@ -23,6 +23,8 @@ export const OAUTH_PREFIX_ANY = 'pixelci_';
 export const OAUTH_DEFAULT_CLIENT_NAME = 'Unnamed MCP client';
 export const OAUTH_MAX_CLIENT_NAME_LENGTH = 100;
 export const OAUTH_MAX_REDIRECT_URIS = 10;
+/** Metadata documents may list more URIs than a DCR request (the 5 KB document cap already bounds it). */
+export const OAUTH_CIMD_MAX_REDIRECT_URIS = 50;
 export const OAUTH_MAX_REDIRECT_URI_LENGTH = 2048;
 export const OAUTH_MAX_STATE_LENGTH = 4096;
 

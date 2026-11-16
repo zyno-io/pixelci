@@ -6,6 +6,9 @@ import { OAuthAuthorizationEntity } from '../../entities/OAuthAuthorization.enti
 import { OAuthClientEntity } from '../../entities/OAuthClient.entity';
 import { OAuthGrantEntity } from '../../entities/OAuthGrant.entity';
 import { OAuthTokenEntity } from '../../entities/OAuthToken.entity';
+import { parseClientIdUrl } from './ClientMetadata';
+import { ClientMetadataResolver } from './ClientMetadataResolver.service';
+import { sanitizeClientName } from './ClientName';
 import {
     OAUTH_ACCESS_TOKEN_TTL_MS,
     OAUTH_AUTH_METHODS,
@@ -13,7 +16,6 @@ import {
     OAUTH_DEFAULT_CLIENT_NAME,
     OAUTH_GRANT_TTL_MS,
     OAUTH_LAST_USED_THROTTLE_MS,
-    OAUTH_MAX_CLIENT_NAME_LENGTH,
     OAUTH_MAX_REDIRECT_URIS,
     OAUTH_MAX_STATE_LENGTH,
     OAUTH_PENDING_REQUEST_TTL_MS,
@@ -33,11 +35,9 @@ import { OAuthPolicy } from './OAuthPolicy';
 import { getOAuthUrls, IOAuthUrls, normalizeResource } from './OAuthUrls';
 import { isValidRedirectUri, matchesAnyRedirectUri } from './RedirectUris';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export { sanitizeClientName };
 
-/** Control, bidi-override and zero-width characters: never shown in a client name. */
-// oxlint-disable-next-line no-control-regex
-const NAME_STRIP_RE = /[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁠-⁩﻿]/g;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface IRegisteredClient {
     client: OAuthClientEntity;
@@ -54,7 +54,7 @@ export interface ITokenResponse {
 }
 
 /** Why an authorize request couldn't be trusted enough to redirect to the client. */
-export type AuthorizeErrorReason = 'invalid_client' | 'invalid_redirect_uri' | 'invalid_request';
+export type AuthorizeErrorReason = 'invalid_client' | 'invalid_redirect_uri' | 'invalid_request' | 'client_metadata_unavailable';
 
 export type AuthorizeResult =
     /** Send the user to our own error page: the client or redirect URI is unverified, so nothing may be sent to it. */
@@ -87,6 +87,8 @@ export interface IConnectedAppRow {
     redirectUri: string;
     createdAt: Date;
     lastUsedAt: Date | null;
+    /** The host of the client's metadata document (CIMD clients); null for dynamically registered ones. */
+    publisher: string | null;
 }
 
 /**
@@ -99,7 +101,8 @@ export class OAuthServerService {
         private db: Db,
         private appConfig: AppConfig,
         private logger: ScopedLogger,
-        private policy: OAuthPolicy
+        private policy: OAuthPolicy,
+        private cimd: ClientMetadataResolver
     ) {}
 
     /** The OAuth URLs, or null when OAuth is disabled or PUBLIC_URL is unsuitable as an issuer. */
@@ -109,9 +112,18 @@ export class OAuthServerService {
 
     // ------------------------------------------------------------------ clients
 
+    /** Whether URL client_ids (Client ID Metadata Documents) are accepted. */
+    cimdEnabled(): boolean {
+        return this.cimd.isEnabled();
+    }
+
+    /**
+     * A dynamically registered client by its uuid. Metadata-document rows are excluded: their internal uuid is never a client_id
+     * (accepting it would bypass the refetch and the domain display).
+     */
     async findClient(clientId: string | undefined): Promise<OAuthClientEntity | undefined> {
         if (typeof clientId !== 'string' || !UUID_RE.test(clientId)) return undefined;
-        return OAuthClientEntity.query().filter({ id: clientId.toLowerCase() }).findOneOrUndefined();
+        return OAuthClientEntity.query().filter({ id: clientId.toLowerCase(), metadataUrl: null }).findOneOrUndefined();
     }
 
     /** RFC 7591 registration. `metadata` is the parsed JSON body; anything unrecognised or unsafe is ignored or rejected. */
@@ -158,7 +170,10 @@ export class OAuthServerService {
             tokenEndpointAuthMethod: method,
             secretHash: secret ? hashToken(secret) : null,
             createdAt: new Date(),
-            lastUsedAt: null
+            lastUsedAt: null,
+            metadataUrl: null,
+            metadataFetchedAt: null,
+            metadataExpiresAt: null
         });
         return { client, clientSecret: secret };
     }
@@ -166,8 +181,12 @@ export class OAuthServerService {
     /**
      * Authenticates the client of a token or revocation request. Throws invalid_client (401) on any failure, with a Basic challenge
      * when Basic was attempted. Secrets are compared as SHA-256 digests in constant time.
+     *
+     * A URL client_id names a metadata-document client, which must already be stored (the token endpoint never fetches for an unknown
+     * URL). With `refresh`, a stored document past its expiry is refetched: a definitive failure is invalid_client, a transient one
+     * a 503 (existing grants are untouched either way).
      */
-    async authenticateClient(creds: IClientCredentials): Promise<OAuthClientEntity> {
+    async authenticateClient(creds: IClientCredentials, opts: { refresh?: boolean; clientIp?: string } = {}): Promise<OAuthClientEntity> {
         const basicAttempted = creds.basic !== undefined;
         const fail = (): never => {
             throw new OAuthError(
@@ -186,7 +205,27 @@ export class OAuthServerService {
 
         const clientId = creds.basic?.id ?? creds.bodyClientId;
         const secret = creds.basic ? creds.basic.secret : creds.bodyClientSecret;
-        const client = await this.findClient(clientId);
+        let client: OAuthClientEntity | undefined;
+        if (typeof clientId === 'string' && clientId.startsWith('https://')) {
+            const stored = await this.cimd.findStored(clientId);
+            if (!stored) return fail();
+            if (opts.refresh) {
+                const resolved = await this.cimd.resolveStored(clientId, opts.clientIp);
+                if (!resolved.ok) {
+                    if (resolved.transient) {
+                        throw new OAuthError('temporarily_unavailable', "The client's metadata document could not be retrieved right now.", 503, {
+                            'Retry-After': '30'
+                        });
+                    }
+                    return fail();
+                }
+                client = resolved.client;
+            } else {
+                client = stored;
+            }
+        } else {
+            client = await this.findClient(clientId);
+        }
         if (!client) return fail();
 
         if (client.tokenEndpointAuthMethod === 'none') {
@@ -204,7 +243,7 @@ export class OAuthServerService {
      * Validates an authorization request and stores it as pending consent. Nothing is ever redirected to the client until its
      * client_id and redirect_uri have been verified; failures before that go to our own error page.
      */
-    async startAuthorization(params: Record<string, string | string[] | undefined>, urls: IOAuthUrls): Promise<AuthorizeResult> {
+    async startAuthorization(params: Record<string, string | string[] | undefined>, urls: IOAuthUrls, clientIp?: string): Promise<AuthorizeResult> {
         const q = new Map<string, string[]>();
         for (const [key, value] of Object.entries(params)) {
             if (value !== undefined) q.set(key, Array.isArray(value) ? value : [value]);
@@ -213,10 +252,21 @@ export class OAuthServerService {
         for (const [key, values] of q) if (key !== 'resource' && values.length > 1) return { type: 'error_page', reason: 'invalid_request' };
         const one = (name: string): string | undefined => q.get(name)?.[0];
 
-        const client = await this.findClient(one('client_id'));
-        if (!client) return { type: 'error_page', reason: 'invalid_client' };
-
+        const rawClientId = one('client_id');
         const redirectUri = one('redirect_uri');
+        let client: OAuthClientEntity | undefined;
+        if (typeof rawClientId === 'string' && rawClientId.startsWith('https://')) {
+            if (!this.cimd.isEnabled() || !parseClientIdUrl(rawClientId).ok) return { type: 'error_page', reason: 'invalid_client' };
+            // Junk requests must never cause an outbound fetch: the redirect URI has to be well-formed first.
+            if (!redirectUri || !isValidRedirectUri(redirectUri)) return { type: 'error_page', reason: 'invalid_redirect_uri' };
+            const resolved = await this.cimd.resolveForAuthorize(rawClientId, clientIp);
+            if (!resolved.ok) return { type: 'error_page', reason: resolved.reason };
+            client = resolved.client;
+        } else {
+            client = await this.findClient(rawClientId);
+            if (!client) return { type: 'error_page', reason: 'invalid_client' };
+        }
+
         if (!redirectUri || !matchesAnyRedirectUri(client.redirectUris, redirectUri)) {
             return { type: 'error_page', reason: 'invalid_redirect_uri' };
         }
@@ -277,7 +327,12 @@ export class OAuthServerService {
     async approve(requestId: string, userId: string, urls: IOAuthUrls): Promise<DecisionResult> {
         const pending = await this.getPendingRequest(requestId);
         if (pending.status !== 'ok') return pending;
-        const { authorization } = pending;
+        const { authorization, client } = pending;
+        // A metadata document can change between authorize and approval: the redirect URI must still be one it lists, and the
+        // feature still on. (Registered clients' URIs never change, so this never trips for them.)
+        if (client.metadataUrl !== null && (!this.cimd.isEnabled() || !matchesAnyRedirectUri(client.redirectUris, authorization.redirectUri))) {
+            return { status: 'gone' };
+        }
 
         const code = generateToken(OAUTH_PREFIX_CODE);
         const now = Date.now();
@@ -382,16 +437,19 @@ export class OAuthServerService {
                 txn
             );
 
-            // One live connection per user and client: a fresh authorization replaces the earlier one.
-            const superseded = await txn
-                .query(OAuthGrantEntity)
-                .filter({ userId: row.userId, clientId: client.id, revokedAt: null, id: { $ne: grant.id } })
-                .patchMany({ revokedAt: now, revokedReason: 'superseded' });
-            if (superseded.primaryKeys.length) {
-                await txn
-                    .query(OAuthTokenEntity)
-                    .filter({ grantId: { $in: superseded.primaryKeys.map(k => String(k.id)) } })
-                    .deleteMany();
+            // One live connection per user and registered client: a fresh authorization replaces the earlier one. Not for metadata
+            // clients: one client_id is shared by every install of that client, so superseding would cut off the user's other machines.
+            if (client.metadataUrl === null) {
+                const superseded = await txn
+                    .query(OAuthGrantEntity)
+                    .filter({ userId: row.userId, clientId: client.id, revokedAt: null, id: { $ne: grant.id } })
+                    .patchMany({ revokedAt: now, revokedReason: 'superseded' });
+                if (superseded.primaryKeys.length) {
+                    await txn
+                        .query(OAuthTokenEntity)
+                        .filter({ grantId: { $in: superseded.primaryKeys.map(k => String(k.id)) } })
+                        .deleteMany();
+                }
             }
 
             const tokens = await this.issueTokens(txn, grant, now);
@@ -612,10 +670,11 @@ export class OAuthServerService {
         const clients = await OAuthClientEntity.query()
             .filter({ id: { $in: [...new Set(grants.map(g => g.clientId))] } })
             .find();
-        const names = new Map(clients.map(c => [c.id, c.name]));
+        const byId = new Map(clients.map(c => [c.id, c]));
         return grants.map(g => ({
             id: g.id,
-            clientName: names.get(g.clientId) ?? OAUTH_DEFAULT_CLIENT_NAME,
+            clientName: byId.get(g.clientId)?.name ?? OAUTH_DEFAULT_CLIENT_NAME,
+            publisher: publisherOf(byId.get(g.clientId)?.metadataUrl),
             redirectUri: g.redirectUri,
             createdAt: g.createdAt,
             lastUsedAt: g.lastUsedAt
@@ -632,14 +691,6 @@ export class OAuthServerService {
     }
 }
 
-/** A client name safe to display: control, bidi and zero-width characters removed, whitespace collapsed, capped. */
-export function sanitizeClientName(value: unknown): string {
-    if (typeof value !== 'string') return OAUTH_DEFAULT_CLIENT_NAME;
-    const cleaned = value.replace(/\s+/g, ' ').replace(NAME_STRIP_RE, '').trim();
-    const capped = Array.from(cleaned).slice(0, OAUTH_MAX_CLIENT_NAME_LENGTH).join('').trim();
-    return capped || OAUTH_DEFAULT_CLIENT_NAME;
-}
-
 /** Appends parameters (and `iss`, RFC 9207) to a verified redirect URI using URL, never string concatenation. */
 export function buildRedirect(redirectUri: string, urls: Pick<IOAuthUrls, 'issuer'>, params: Record<string, string>, state?: string): string {
     const url = new URL(redirectUri);
@@ -647,4 +698,14 @@ export function buildRedirect(redirectUri: string, urls: Pick<IOAuthUrls, 'issue
     if (state !== undefined) url.searchParams.set('state', state);
     url.searchParams.set('iss', urls.issuer);
     return url.toString();
+}
+
+/** The (punycode) host a metadata-document client publishes under, or null. */
+export function publisherOf(metadataUrl: string | null | undefined): string | null {
+    if (!metadataUrl) return null;
+    try {
+        return new URL(metadataUrl).hostname;
+    } catch {
+        return null;
+    }
 }

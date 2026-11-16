@@ -17,9 +17,9 @@ import { BuildScreensController } from './controllers/BuildScreens.controller';
 import { ConnectedAppsController } from './controllers/ConnectedApps.controller';
 import { ExternalReadController } from './controllers/ExternalRead.controller';
 import { McpController } from './controllers/Mcp.controller';
-import { ScreensController } from './controllers/Screens.controller';
 import { OAuthController } from './controllers/OAuth.controller';
 import { OAuthWellKnownController } from './controllers/OAuthWellKnown.controller';
+import { ScreensController } from './controllers/Screens.controller';
 import { SessionController } from './controllers/Session.controller';
 import { UsersController } from './controllers/Users.controller';
 import { VcsIntegrationsController } from './controllers/VcsIntegrations.controller';
@@ -30,6 +30,8 @@ import { ReapStuckBuildsJob } from './jobs/ReapStuckBuilds.job';
 import { RerunCiJobJob } from './jobs/RerunCiJob.job';
 import { AppAccessService } from './services/AppAccess.service';
 import { ExternalReadService } from './services/ExternalRead.service';
+import { ClientMetadataFetcher, SafeHttpsClientMetadataFetcher } from './services/oauth/ClientMetadataFetcher';
+import { ClientMetadataResolver } from './services/oauth/ClientMetadataResolver.service';
 import { OAuthPolicy } from './services/oauth/OAuthPolicy';
 import { OAuthServerService } from './services/oauth/OAuthServer.service';
 import { PixelciOAuthPolicy } from './services/oauth/PixelciOAuthPolicy';
@@ -39,6 +41,12 @@ import { S3Service } from './services/S3.service';
 import { assertSecretsConfig } from './services/secrets/SecretBox';
 import { ThumbnailService } from './services/Thumbnail.service';
 import { VcsService } from './services/Vcs.service';
+
+export const STATIC_FILE_HEADERS = {
+    'content-security-policy': "frame-ancestors 'none'",
+    'x-frame-options': 'DENY',
+    'x-content-type-options': 'nosniff'
+};
 
 export const CoreAppOptions: CreateAppOptions<AppConfig> = {
     config: AppConfig,
@@ -63,7 +71,10 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         port: 7924
     },
     staticFiles: {
-        directory: 'static'
+        directory: 'static',
+        // The SPA (including the OAuth consent and build-approval screens) must never be framed: clickjacking defense. The consent
+        // screen also refuses to render inside a frame on its own, for when this header is missing (e.g. a proxy strips it).
+        headers: STATIC_FILE_HEADERS
     },
     enableWorker: true,
     controllers: [
@@ -97,8 +108,10 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         AppAccessService,
         ExternalReadService,
         RateLimiterService,
+        ClientMetadataResolver,
         OAuthServerService,
         { provide: OAuthPolicy, useClass: PixelciOAuthPolicy },
+        { provide: ClientMetadataFetcher, useClass: SafeHttpsClientMetadataFetcher },
         S3Service,
         ThumbnailService
     ]

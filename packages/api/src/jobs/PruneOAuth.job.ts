@@ -46,6 +46,7 @@ export class PruneOAuthJob extends BaseJob<void> {
                   AND NOT EXISTS (SELECT 1 FROM "oauth_authorizations" a WHERE a."clientId" = c."id" AND a."expiresAt" >= ${nowDate})
                   AND (
                       (c."lastUsedAt" IS NULL AND c."createdAt" < ${weekAgo})
+                      OR (c."metadataUrl" IS NOT NULL AND c."lastUsedAt" IS NULL AND c."createdAt" < ${dayAgo})
                       OR c."lastUsedAt" < ${quarterAgo}
                   )`
         );

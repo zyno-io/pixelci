@@ -85,7 +85,7 @@ export class OAuthController {
         const limited = await this.rateLimiter.hit(`authorize:ip:${request.getRemoteAddress()}`, AUTHORIZE_LIMIT_PER_10_MIN, TEN_MIN_S);
         if (!limited.allowed) return this.redirect(errorPageUrl(urls, 'rate_limited'));
 
-        const result = await this.oauth.startAuthorization(request.query, urls);
+        const result = await this.oauth.startAuthorization(request.query, urls, request.getRemoteAddress());
         switch (result.type) {
             case 'error_page':
                 return this.redirect(errorPageUrl(urls, result.reason));
@@ -106,7 +106,10 @@ export class OAuthController {
         try {
             await this.limit(`token:ip:${request.getRemoteAddress()}`, TOKEN_LIMIT_PER_10_MIN, TEN_MIN_S);
             const params = await this.readForm(request);
-            const client = await this.oauth.authenticateClient(clientCredentials(request, params));
+            const client = await this.oauth.authenticateClient(clientCredentials(request, params), {
+                refresh: true,
+                clientIp: request.getRemoteAddress()
+            });
 
             const grantType = params.require('grant_type');
             let tokens;

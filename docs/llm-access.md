@@ -30,7 +30,7 @@ PixelCI serves its MCP server from the API itself at `/api/mcp`, over [Streamabl
 
     then run `/mcp`, choose **pixelci** and **Authenticate**. Approve the request that opens in your browser.
 
-The approval screen shows which app is asking and where you'll be sent back to. Apps register themselves, so PixelCI marks every app **Unverified**: only approve a connection you just started. Manage what you've approved, and revoke it at any time, under **Connected apps** in the PixelCI top bar. A connection also stops working when your GitLab or GitHub sign-in expires; the client then asks you to approve it again.
+The approval screen shows which app is asking and where you'll be sent back to. Apps register themselves, so PixelCI marks apps that registered themselves **Unverified**: only approve a connection you just started. Apps that publish a metadata URL are identified by that domain instead ("Verified domain" means PixelCI loaded the app's details over HTTPS from that host, nothing more); the app still chooses its own name, and one that returns to your own computer is always shown as unverified. Manage what you've approved, and revoke it at any time, under **Connected apps** in the PixelCI top bar. A connection also stops working when your GitLab or GitHub sign-in expires; the client then asks you to approve it again.
 
 ### Connect with a personal access token
 

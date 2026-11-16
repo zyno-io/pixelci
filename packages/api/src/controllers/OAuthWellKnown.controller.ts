@@ -45,7 +45,8 @@ export class OAuthWellKnownController {
                 token_endpoint_auth_methods_supported: ['none', 'client_secret_post', 'client_secret_basic'],
                 revocation_endpoint_auth_methods_supported: ['none', 'client_secret_post', 'client_secret_basic'],
                 code_challenge_methods_supported: ['S256'],
-                authorization_response_iss_parameter_supported: true
+                authorization_response_iss_parameter_supported: true,
+                ...(this.oauth.cimdEnabled() ? { client_id_metadata_document_supported: true } : {})
             }),
             { contentType: 'application/json', headers: METADATA_HEADERS }
         );

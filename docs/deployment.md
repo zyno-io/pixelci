@@ -294,11 +294,14 @@ PixelCI is its own OAuth 2.1 authorization server for MCP clients such as claude
 
 Make sure your reverse proxy forwards `/.well-known/*`, `/api/oauth/*` and `/api/mcp` to the API like everything else, and sets the client address header so the per-IP limits see real client IPs (`USE_REAL_IP_HEADER=true` behind a trusted proxy). claude.ai connects from Anthropic's servers, so for it the instance must be reachable from the public internet.
 
-| Variable                        | Required | Default | Description                                                                             |
-| ------------------------------- | -------- | ------- | --------------------------------------------------------------------------------------- |
-| `MCP_OAUTH_ENABLED`             | No       | `true`  | Offer OAuth sign-in for MCP clients. Set `false` to allow personal access tokens only.  |
-| `OAUTH_DCR_MAX_PER_IP_PER_HOUR` | No       | `20`    | Dynamic client registrations allowed per client IP per hour (over the limit gets `429`) |
-| `OAUTH_DCR_MAX_PER_HOUR`        | No       | `200`   | Dynamic client registrations allowed across all callers per hour                        |
+| Variable                        | Required | Default | Description                                                                                           |
+| ------------------------------- | -------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| `MCP_OAUTH_ENABLED`             | No       | `true`  | Offer OAuth sign-in for MCP clients. Set `false` to allow personal access tokens only.                |
+| `OAUTH_DCR_MAX_PER_IP_PER_HOUR` | No       | `20`    | Dynamic client registrations allowed per client IP per hour (over the limit gets `429`)               |
+| `OAUTH_DCR_MAX_PER_HOUR`        | No       | `200`   | Dynamic client registrations allowed across all callers per hour                                      |
+| `OAUTH_CIMD_ENABLED`            | No       | `true`  | Accept clients identified by a metadata URL (see below). Set `false` to allow registered clients only |
+
+Clients may also identify themselves with an `https` URL whose published metadata document PixelCI fetches (Client ID Metadata Documents). This needs outbound HTTPS from the API to arbitrary public hosts (port 443 only; private, loopback and link-local addresses, redirects and responses over 5 KB are refused), so allow that egress if you restrict it. Fetches are rate limited per URL (`OAUTH_CIMD_MAX_FETCHES_PER_URL_PER_10_MIN`, 10), per host (`OAUTH_CIMD_MAX_FETCHES_PER_HOST_PER_10_MIN`, 30) and overall (`OAUTH_CIMD_MAX_FETCHES_PER_HOUR`, 300). Only public clients (no secret) are supported.
 
 Users can review and revoke what they have approved under **Connected apps**. Access tokens last one hour, refresh tokens expire after 30 days unused, and a connection is capped at 90 days; it also ends when the user's GitLab or GitHub sign-in expires. Cleanup of expired state runs hourly in the worker.
 

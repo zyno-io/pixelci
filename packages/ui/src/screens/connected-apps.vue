@@ -42,7 +42,9 @@
                         </thead>
                         <tbody>
                             <tr v-for="app in apps" :key="app.id" data-testid="connected-app">
-                                <th scope="row" class="app-name">{{ app.clientName }}</th>
+                                <th scope="row" class="app-name">
+                                    {{ app.clientName }}<span v-if="app.publisher" class="publisher"> · via {{ app.publisher }}</span>
+                                </th>
                                 <td>{{ app.redirectDisplay }}</td>
                                 <td class="nowrap">{{ $filters.dateTime(app.createdAt, 'M/d/yy H:mm') }}</td>
                                 <td class="nowrap">{{ app.lastUsedAt ? $filters.dateTime(app.lastUsedAt, 'M/d/yy H:mm') : 'Never' }}</td>
@@ -150,6 +152,11 @@ async function revoke(app: IConnectedApp) {
     .app-name {
         font-weight: 600;
         overflow-wrap: anywhere;
+    }
+
+    .publisher {
+        color: var(--text-3);
+        font-weight: 400;
     }
 
     .actions {

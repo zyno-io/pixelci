@@ -20,12 +20,31 @@
 
             <template v-else-if="phase === 'ready' && request">
                 <h1 class="consent-title" data-testid="consent-title">
-                    Allow <span class="client-name">{{ request.clientName }}</span> read-only access to PixelCI?
+                    Allow <span class="client-name">{{ request.clientName }}</span>
+                    <template v-if="request.verification === 'verified_domain' && request.clientIdHost">
+                        from <span class="client-name" data-testid="consent-client-host">{{ request.clientIdHost }}</span>
+                    </template>
+                    read-only access to PixelCI?
                 </h1>
 
-                <p class="unverified">
+                <p v-if="request.verification === 'verified_domain'" class="unverified" data-testid="consent-verification">
+                    <span class="tag success"><i class="fa-solid fa-globe" aria-hidden="true" /> Verified domain: {{ request.clientIdHost }}</span>
+                    <span class="hint">
+                        PixelCI loaded this app's details from {{ request.clientIdHost }}. The app chose its own name; continue only if you recognise
+                        {{ request.clientIdHost }} and just started this connection.
+                    </span>
+                </p>
+                <p v-else class="unverified" data-testid="consent-verification">
                     <span class="tag warning"><i class="fa-solid fa-circle-question" aria-hidden="true" /> Unverified app</span>
-                    <span class="hint">Anyone can register an app under any name. Continue only if you just started this connection.</span>
+                    <span v-if="request.verification === 'claimed_domain' && request.redirectKind === 'loopback'" class="hint">
+                        It says it's published by {{ request.clientIdHost }}, but it returns to an app on this computer, so any program here could
+                        make that claim. Continue only if you just started this connection.
+                    </span>
+                    <span v-else-if="request.verification === 'claimed_domain'" class="hint">
+                        Its details are hosted on {{ request.clientIdHost }}, a shared hosting service where anyone can publish. Continue only if you
+                        just started this connection.
+                    </span>
+                    <span v-else class="hint">Anyone can register an app under any name. Continue only if you just started this connection.</span>
                 </p>
 
                 <div class="notice return-to" data-testid="consent-redirect">
@@ -34,6 +53,13 @@
                         You'll be returned to <strong>{{ request.redirectDisplay }}</strong>
                     </div>
                 </div>
+
+                <p v-if="request.redirectOffDomain" class="notice warning" role="note" data-testid="consent-off-domain">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true" />
+                    <span class="notice-body">
+                        It returns you to {{ request.redirectDisplay }}, a different site from {{ request.clientIdHost }}.
+                    </span>
+                </p>
 
                 <ul class="abilities">
                     <li>

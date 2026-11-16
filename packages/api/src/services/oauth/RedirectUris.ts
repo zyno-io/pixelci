@@ -1,5 +1,5 @@
 import { OAUTH_MAX_REDIRECT_URI_LENGTH } from './OAuthConstants';
-import { isLoopbackHostname } from './OAuthUrls';
+import { isLoopbackHostname, isLoopbackLikeHost } from './OAuthUrls';
 
 /** Control characters, whitespace and backslashes are never legitimate in a registered or requested redirect URI. */
 // oxlint-disable-next-line no-control-regex
@@ -57,6 +57,7 @@ export interface IRedirectDisplay {
 export function describeRedirectUri(uri: string): IRedirectDisplay {
     const url = parse(uri);
     if (!url) return { redirectDisplay: 'an unknown location', redirectKind: 'web' };
-    if (isLoopbackHttp(url)) return { redirectDisplay: `an app on this computer (${url.host})`, redirectKind: 'loopback' };
+    // Loopback over https is still the user's own machine.
+    if (isLoopbackLikeHost(url.hostname)) return { redirectDisplay: `an app on this computer (${url.host})`, redirectKind: 'loopback' };
     return { redirectDisplay: url.host, redirectKind: 'web' };
 }

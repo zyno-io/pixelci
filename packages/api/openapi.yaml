@@ -2220,6 +2220,14 @@ components:
             - web
             - loopback
           type: string
+        clientIdHost:
+          type:
+            - string
+            - "null"
+        verification:
+          $ref: "#/components/schemas/ClientVerification"
+        redirectOffDomain:
+          type: boolean
         scopes:
           type: array
           items:
@@ -2233,8 +2241,17 @@ components:
         - redirectUri
         - redirectDisplay
         - redirectKind
+        - clientIdHost
+        - verification
+        - redirectOffDomain
         - scopes
         - expiresAt
+    ClientVerification:
+      enum:
+        - unverified
+        - verified_domain
+        - claimed_domain
+      type: string
     IConnectedAppScope:
       type: object
       properties:
@@ -2268,6 +2285,10 @@ components:
           type: string
         redirectDisplay:
           type: string
+        publisher:
+          type:
+            - string
+            - "null"
         createdAt:
           type: string
           format: date-time
@@ -2280,5 +2301,6 @@ components:
         - id
         - clientName
         - redirectDisplay
+        - publisher
         - createdAt
         - lastUsedAt
