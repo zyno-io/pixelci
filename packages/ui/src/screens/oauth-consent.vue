@@ -49,9 +49,7 @@
 
                 <div class="notice return-to" data-testid="consent-redirect">
                     <i class="fa-solid fa-arrow-right" aria-hidden="true" />
-                    <div class="notice-body">
-                        You'll be returned to <strong>{{ request.redirectDisplay }}</strong>
-                    </div>
+                    <div class="notice-body">You'll be returned to <strong>{{ request.redirectDisplay }}</strong></div>
                 </div>
 
                 <p v-if="request.redirectOffDomain" class="notice warning" role="note" data-testid="consent-off-domain">
@@ -73,8 +71,8 @@
                 </ul>
 
                 <p class="signed-in">
-                    Signed in as <strong data-testid="consent-user">{{ store.sessionUser?.name }}</strong
-                    >. Not you? <button type="button" class="link-btn" data-testid="consent-switch" @click="switchAccount">Switch account</button>
+                    Signed in as <strong data-testid="consent-user">{{ store.sessionUser?.name }}</strong>. Not you?
+                    <button type="button" class="link-btn" data-testid="consent-switch" @click="switchAccount">Switch account</button>
                 </p>
 
                 <p v-if="errorMessage" class="notice danger" role="alert">
