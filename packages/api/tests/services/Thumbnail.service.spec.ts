@@ -100,7 +100,8 @@ describe('ThumbnailService', () => {
         assert.deepEqual(paths, ['screens/a/b/s.u.thumb.png', 'screens/a/b/s.u.thumb.png']);
         await svc.ensure('a', 'b', 's', 'u');
 
-        assert.deepEqual(calls, { exists: 1, get: 1, upload: 1 });
+        // the third call checks storage again (nothing is remembered in memory) but generates nothing
+        assert.deepEqual(calls, { exists: 2, get: 1, upload: 1 });
         assert.equal(PNG.sync.read(objects.get('screens/a/b/s.u.thumb.png')!).width, 640);
     });
 

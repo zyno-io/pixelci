@@ -12,6 +12,7 @@ import { claimBuildLease, Lease, LeaseLostError } from '../services/BuildProcess
 import { PixelMatchService } from '../services/PixelMatch.service';
 import { computeRemovals } from '../services/RemovedScreens';
 import { S3Service } from '../services/S3.service';
+import { ThumbnailService } from '../services/Thumbnail.service';
 import { ITolerances, resolveTolerances } from '../services/Tolerance';
 
 interface IProcessBuildJobData {
@@ -28,7 +29,8 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         private appConfig: AppConfig,
         private db: Db,
         private s3Svc: S3Service,
-        private pixelMatch: PixelMatchService
+        private pixelMatch: PixelMatchService,
+        private thumbnails: ThumbnailService
     ) {
         super();
     }
@@ -44,10 +46,11 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         }
         lease.startHeartbeat();
 
+        let ownScreens: BuildScreenEntity[];
         try {
             const work = this.processScreens(data.buildId, lease);
             work.catch(() => undefined); // if the race below is lost, the orphaned attempt's rejection is irrelevant
-            await Promise.race([work, lease.lostSignal]);
+            ownScreens = await Promise.race([work, lease.lostSignal]);
         } catch (err) {
             if (err instanceof LeaseLostError) {
                 logger.warn('Processing lease lost; abandoning attempt', { id: data.buildId });
@@ -63,9 +66,30 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         } finally {
             lease.stopHeartbeat();
         }
+
+        await this.generateThumbnails(ownScreens, logger);
     }
 
-    private async processScreens(buildId: string, lease: Lease): AnyResponse {
+    /**
+     * Makes gallery thumbnails ahead of time, so the first person to open a gallery doesn't wait for
+     * them (and the API doesn't do the scaling). Runs after the build's result is committed and never
+     * changes it: a thumbnail that fails here is made on demand when it is first asked for.
+     */
+    private async generateThumbnails(buildScreens: BuildScreenEntity[], logger: ScopedLogger) {
+        let failed = 0;
+        for (const buildScreen of buildScreens) {
+            try {
+                await this.thumbnails.ensure(buildScreen.appId, buildScreen.buildId, buildScreen.screenId, buildScreen.id);
+            } catch (err) {
+                failed++;
+                logger.warn('Failed to generate thumbnail', { screenId: buildScreen.screenId, error: (err as Error).message });
+            }
+        }
+        logger.info('Generated thumbnails', { count: buildScreens.length - failed, failed });
+    }
+
+    /** Returns the build screens that keep their own image (those that matched another build show that build's). */
+    private async processScreens(buildId: string, lease: Lease): Promise<BuildScreenEntity[]> {
         const logger = this.logger.scoped(buildId);
 
         const currentBuild = await BuildEntity.query().filter({ id: buildId }).findOne();
@@ -342,6 +366,8 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                     storageStatus: 'pendingDeletion'
                 });
         });
+
+        return currentBuildScreens.filter(bs => !bs.matchedBuildId);
     }
 
     private async loadAndDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, tolerances: ITolerances) {

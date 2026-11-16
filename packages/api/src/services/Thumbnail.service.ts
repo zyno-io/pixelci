@@ -103,11 +103,10 @@ export async function makeThumbnail(source: Uint8Array): Promise<Buffer> {
     return encodePng(dst);
 }
 
-const MAX_KNOWN = 20_000;
-
 export class ThumbnailService {
-    /** Thumbnails this process has seen in storage, so repeat requests skip the existence check. */
-    private known = new Set<string>();
+    // Storage is the only record of which thumbnails exist, so any number of API and worker processes
+    // agree. These two fields only coordinate work inside one process; if two processes generate the
+    // same thumbnail at once they write identical bytes to the same key.
     private inFlight = new Map<string, Promise<void>>();
     // Scaling is synchronous CPU work on the API process (decode and encode run off it, in sharp): one
     // at a time, with a turn of the event loop between them, so a gallery's first load doesn't starve
@@ -123,8 +122,6 @@ export class ThumbnailService {
      */
     async ensure(appId: string, buildId: string, screenId: string, buildScreenId: string): Promise<string> {
         const path = this.s3Svc.getPathForThumbnail(appId, buildId, screenId, buildScreenId);
-        if (this.known.has(path)) return path;
-
         let pending = this.inFlight.get(path);
         if (!pending) {
             pending = this.generateIfMissing(path, this.s3Svc.getPathForScreen(appId, buildId, screenId)).finally(() => this.inFlight.delete(path));
@@ -135,16 +132,13 @@ export class ThumbnailService {
     }
 
     private async generateIfMissing(path: string, sourcePath: string) {
-        if (!(await this.s3Svc.exists(path))) {
-            const source = await this.s3Svc.getBuffer(sourcePath);
-            const run = this.queue.then(async () => {
-                await new Promise(resolve => setImmediate(resolve));
-                return makeThumbnail(source);
-            });
-            this.queue = run.catch(() => undefined);
-            await this.s3Svc.uploadFile(await run, path, 'image/png');
-        }
-        if (this.known.size >= MAX_KNOWN) this.known.clear();
-        this.known.add(path);
+        if (await this.s3Svc.exists(path)) return;
+        const source = await this.s3Svc.getBuffer(sourcePath);
+        const run = this.queue.then(async () => {
+            await new Promise(resolve => setImmediate(resolve));
+            return makeThumbnail(source);
+        });
+        this.queue = run.catch(() => undefined);
+        await this.s3Svc.uploadFile(await run, path, 'image/png');
     }
 }
