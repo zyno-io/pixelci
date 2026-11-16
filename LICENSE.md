@@ -12,7 +12,7 @@ Copyright (c) 2026 Signal24 LLC dba Zyno Consulting. All rights reserved.
 
 **“Modifications”** means any modification to, or derivative work of, the Licensed Work that is created by You or on Your behalf. Except in Sections 8 and 9 and in the definitions of Licensed Work, Modifications, and Contribution, references in this License to the Licensed Work include Your Modifications.
 
-**“Contribution”** means any work of authorship, including any modification of or addition to the Licensed Work, that is intentionally submitted to the Licensor for inclusion in the Licensed Work or in any other component of the repository in which the Licensor publishes the Licensed Work, including by pull request, merge request, patch, or other electronic or written communication, but excluding any communication that You conspicuously mark or otherwise designate in writing as “Not a Contribution.”
+**“Contribution”** means any work of authorship, including any modification of or addition to the Licensed Work, that is intentionally submitted to the Licensor for inclusion in the Licensed Work or in any other component of the repository in which the Licensor publishes the Licensed Work, including by pull request, merge request, patch, or other electronic or written communication. Material that You post in an issue, discussion, or similar forum, and conspicuously mark or otherwise designate in writing as “Not a Contribution,” is not a Contribution. That marking has no effect on a pull request, merge request, or patch.
 
 **“Licensor”** means Signal24 LLC dba Zyno Consulting.
 
