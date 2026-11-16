@@ -2,7 +2,8 @@ THIRD-PARTY SOFTWARE LICENSES
 
 PixelCI includes or depends on third-party software components subject to
 the following licenses. The full license texts are included in each
-package's directory under node_modules/.
+package's directory under node_modules/, or in licenses/ where a package
+does not include its own.
 
 ================================================================================
 
@@ -35,6 +36,37 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
 LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
 OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGES.
+
+================================================================================
+
+libvips and its bundled libraries (via sharp)
+Package: @img/sharp-libvips-<platform> 1.2.4 (used by sharp 0.34)
+Source: https://github.com/lovell/sharp-libvips/tree/v1.2.4
+Versions of each library: node_modules/@img/sharp-libvips-<platform>/versions.json
+
+These are shared libraries, loaded dynamically by sharp from
+node_modules/@img/sharp-libvips-<platform>/lib/, and are not modified by
+PixelCI. You may replace them with your own builds of the same libraries.
+Corresponding source for each library is available from the source above.
+
+Licensed under the GNU Lesser General Public License, version 3 (used via
+the "any later version" clause of LGPLv2/LGPLv2.1); texts in
+licenses/LGPL-3.0.txt and licenses/GPL-3.0.txt:
+libvips, glib, pango, fribidi, libexif, libheif, librsvg, proxy-libintl
+
+Licensed under the Mozilla Public License 2.0
+(https://www.mozilla.org/en-US/MPL/2.0/):
+cairo
+
+Licensed under BSD 2-Clause plus the Alliance for Open Media Patent License
+1.0 (https://aomedia.org/license/patent-license/):
+aom
+
+The remaining bundled libraries (cgif, expat, fontconfig, freetype,
+harfbuzz, highway, lcms, libarchive, libffi, libimagequant, libnsgif,
+libpng, libspng, libtiff, libwebp, libxml2, mozjpeg, pixman, zlib-ng) are
+under permissive licenses (MIT, BSD, zlib, libpng, IJG, Apache-2.0 or
+similar), listed in the sharp-libvips README.
 
 ================================================================================
 

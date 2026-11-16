@@ -55,7 +55,10 @@ export function readPngHeader(buf: Buffer, maxPixels: number): { width: number; 
     }
 
     // The decoder lets a later IHDR override the dimensions, so walk the chunk headers and reject any other IHDR.
+    // Also require the IDAT chunks to be consecutive (as the PNG spec does): the decoder fails on split image
+    // data, and that should be a 400 here rather than a failed build later.
     let pos = PNG_HEADER_LENGTH;
+    let idat: 'none' | 'in' | 'after' = 'none';
     for (let i = 0; ; i++) {
         if (i >= MAX_CHUNKS) throw new HttpBadRequestError('Image has too many PNG chunks');
         if (pos + 8 > buf.length) throw new HttpBadRequestError('Image is truncated');
@@ -65,6 +68,12 @@ export function readPngHeader(buf: Buffer, maxPixels: number): { width: number; 
         if (length > MAX_CHUNK_LENGTH) throw new HttpBadRequestError('Image has an invalid PNG chunk length');
         if (pos + 8 + length + 4 > buf.length) throw new HttpBadRequestError('Image is truncated');
         if (type === 'IEND') break;
+        if (type === 'IDAT') {
+            if (idat === 'after') throw new HttpBadRequestError('Image has non-consecutive PNG image data chunks');
+            idat = 'in';
+        } else if (idat === 'in') {
+            idat = 'after';
+        }
         pos += 8 + length + 4;
     }
     return { width, height };

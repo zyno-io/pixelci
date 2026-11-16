@@ -1,5 +1,4 @@
-import { PNG } from 'pngjs/browser';
-
+import { decodeRgba, encodePng, IRgbaImage } from './Image';
 import { S3Service } from './S3.service';
 
 /** Thumbnails are at most this wide: enough for a gallery tile on a high-density display. */
@@ -32,9 +31,14 @@ function axisWeights(srcSize: number, dstSize: number) {
     return { starts, counts, offsets, weights: Float64Array.from(weights) };
 }
 
-/** Scales a PNG down to a gallery thumbnail. Never scales up; an already small image is only re-encoded. */
-export function makeThumbnail(source: Buffer): Buffer {
-    const src = PNG.sync.read(source);
+/**
+ * Scales a screenshot down to a gallery thumbnail. Never scales up; an already small image is only
+ * re-encoded. Colour profiles are applied (converted to sRGB), so the tile looks like the full-size
+ * image does in the browser. The scaling is our own area average: libvips' kernels ring and darken
+ * the edge columns of fine 1px detail, which is most of what a screenshot is.
+ */
+export async function makeThumbnail(source: Uint8Array): Promise<Buffer> {
+    const src = await decodeRgba(source, { toSrgb: true });
     const dstWidth = Math.min(src.width, THUMBNAIL_MAX_WIDTH);
     const scale = src.width / dstWidth;
     // crop from the top before scaling, so a very long page costs no more than a tall one
@@ -70,7 +74,7 @@ export function makeThumbnail(source: Buffer): Buffer {
         }
     }
 
-    const dst = new PNG({ width: dstWidth, height: dstHeight });
+    const dst: IRgbaImage = { width: dstWidth, height: dstHeight, data: Buffer.alloc(dstWidth * dstHeight * 4) };
     for (let y = 0; y < dstHeight; y++) {
         const start = ys.starts[y];
         for (let x = 0; x < dstWidth; x++) {
@@ -96,7 +100,7 @@ export function makeThumbnail(source: Buffer): Buffer {
         }
     }
 
-    return PNG.sync.write(dst);
+    return encodePng(dst);
 }
 
 const MAX_KNOWN = 20_000;
@@ -105,8 +109,9 @@ export class ThumbnailService {
     /** Thumbnails this process has seen in storage, so repeat requests skip the existence check. */
     private known = new Set<string>();
     private inFlight = new Map<string, Promise<void>>();
-    // Decoding and scaling are synchronous CPU work on the API process: one at a time, with a turn
-    // of the event loop between them, so a gallery's first load doesn't starve other requests.
+    // Scaling is synchronous CPU work on the API process (decode and encode run off it, in sharp): one
+    // at a time, with a turn of the event loop between them, so a gallery's first load doesn't starve
+    // other requests.
     private queue: Promise<unknown> = Promise.resolve();
 
     constructor(private s3Svc: S3Service) {}

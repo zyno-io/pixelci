@@ -16,24 +16,24 @@ function png(width: number, height: number, paint: (x: number, y: number) => [nu
 }
 
 describe('makeThumbnail', () => {
-    it('scales a wide image down to the maximum width, keeping its shape', () => {
-        const out = PNG.sync.read(makeThumbnail(png(1920, 1080, () => [10, 20, 30, 255])));
+    it('scales a wide image down to the maximum width, keeping its shape', async () => {
+        const out = PNG.sync.read(await makeThumbnail(png(1920, 1080, () => [10, 20, 30, 255])));
         assert.equal(out.width, THUMBNAIL_MAX_WIDTH);
         assert.equal(out.height, 360);
         assert.deepEqual([...out.data.subarray(0, 4)], [10, 20, 30, 255]);
         assert.deepEqual([...out.data.subarray(out.data.length - 4)], [10, 20, 30, 255]);
     });
 
-    it('does not scale a small image up', () => {
-        const out = PNG.sync.read(makeThumbnail(png(200, 100, (x, y) => [x, y, 0, 255])));
+    it('does not scale a small image up', async () => {
+        const out = PNG.sync.read(await makeThumbnail(png(200, 100, (x, y) => [x, y, 0, 255])));
         assert.equal(out.width, 200);
         assert.equal(out.height, 100);
         assert.deepEqual([...out.data.subarray((50 * 200 + 120) * 4, (50 * 200 + 120) * 4 + 4)], [120, 50, 0, 255]);
     });
 
-    it('averages the source pixels each output pixel covers', () => {
+    it('averages the source pixels each output pixel covers', async () => {
         // 1px black/white columns halve to a uniform mid grey; sampling would give all black or all white
-        const out = PNG.sync.read(makeThumbnail(png(1280, 4, x => (x % 2 ? [255, 255, 255, 255] : [0, 0, 0, 255]))));
+        const out = PNG.sync.read(await makeThumbnail(png(1280, 4, x => (x % 2 ? [255, 255, 255, 255] : [0, 0, 0, 255]))));
         assert.equal(out.width, 640);
         assert.equal(out.height, 2);
         for (let i = 0; i < out.data.length; i += 4) {
@@ -42,9 +42,9 @@ describe('makeThumbnail', () => {
         }
     });
 
-    it('handles a scale that is not a whole number', () => {
+    it('handles a scale that is not a whole number', async () => {
         // 960 -> 640 is 1.5 source pixels per output pixel; a flat colour must stay exactly flat
-        const out = PNG.sync.read(makeThumbnail(png(960, 300, () => [200, 100, 50, 255])));
+        const out = PNG.sync.read(await makeThumbnail(png(960, 300, () => [200, 100, 50, 255])));
         assert.equal(out.width, 640);
         assert.equal(out.height, 200);
         for (let i = 0; i < out.data.length; i += 4) {
@@ -52,17 +52,17 @@ describe('makeThumbnail', () => {
         }
     });
 
-    it('keeps the top of a very long page and crops the rest', () => {
+    it('keeps the top of a very long page and crops the rest', async () => {
         // top half red, bottom half blue; only the top fits in the cropped thumbnail
-        const out = PNG.sync.read(makeThumbnail(png(1280, 8000, (_x, y) => (y < 4000 ? [255, 0, 0, 255] : [0, 0, 255, 255]))));
+        const out = PNG.sync.read(await makeThumbnail(png(1280, 8000, (_x, y) => (y < 4000 ? [255, 0, 0, 255] : [0, 0, 255, 255]))));
         assert.equal(out.width, 640);
         assert.equal(out.height, 640 * THUMBNAIL_MAX_ASPECT);
         assert.deepEqual([...out.data.subarray(out.data.length - 4)], [255, 0, 0, 255]);
     });
 
-    it('does not let transparent pixels tint their neighbours', () => {
+    it('does not let transparent pixels tint their neighbours', async () => {
         // transparent green beside opaque red: the blend is half-transparent red, with no green in it
-        const out = PNG.sync.read(makeThumbnail(png(1280, 2, x => (x % 2 ? [0, 255, 0, 0] : [255, 0, 0, 255]))));
+        const out = PNG.sync.read(await makeThumbnail(png(1280, 2, x => (x % 2 ? [0, 255, 0, 0] : [255, 0, 0, 255]))));
         assert.deepEqual([...out.data.subarray(0, 4)], [255, 0, 0, 128]);
     });
 });

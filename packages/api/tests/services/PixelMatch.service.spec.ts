@@ -102,7 +102,7 @@ describe('PixelMatchService', () => {
         const blue = createPng(4, 4, [0, 0, 255, 255]);
         const result = await service.getDiff(red, blue);
 
-        const diffPng = result.getDiffPng();
+        const diffPng = await result.getDiffPng();
         assert.ok(diffPng instanceof Uint8Array);
 
         const parsed = PNG.sync.read(Buffer.from(diffPng));
@@ -174,7 +174,7 @@ describe('PixelMatchService', () => {
         assert.ok(result.diffPixels > 0);
         assert.ok(result.diffPct > 0);
 
-        const diffPng = result.getDiffPng();
+        const diffPng = await result.getDiffPng();
         const parsed = PNG.sync.read(Buffer.from(diffPng));
         assert.equal(parsed.width, 4);
         assert.equal(parsed.height, 4);
@@ -212,7 +212,7 @@ describe('PixelMatchService', () => {
             assert.equal(result.diffPct, 0);
             assert.equal(result.shiftTolerantPixels, 8);
 
-            const parsed = PNG.sync.read(Buffer.from(result.getDiffPng()));
+            const parsed = PNG.sync.read(Buffer.from(await result.getDiffPng()));
             const idx = (12 * 4 + 3) << 2; // left edge of the original rect
             assert.deepEqual([...parsed.data.subarray(idx, idx + 4)], [255, 255, 0, 255]);
         });

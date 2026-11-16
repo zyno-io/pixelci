@@ -41,6 +41,7 @@ RUN apt-get update && apt-get install --no-install-recommends --yes tini && rm -
 COPY --from=builder /app/packages/api .
 COPY --from=builder /app/node_modules node_modules
 COPY LICENSE.md THIRD-PARTY-LICENSES.md ./
+COPY licenses licenses
 
 ARG BUILD_VERSION
 RUN if [ -n "${BUILD_VERSION}" ]; then npm version "${BUILD_VERSION}" --allow-same-version; fi
