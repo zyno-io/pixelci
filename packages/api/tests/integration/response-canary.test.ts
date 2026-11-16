@@ -189,6 +189,10 @@ function buildCases(): Record<string, ICase> {
             status: 200,
             build: () => HttpRequest.GET(`/api/session/providers/${GL_ID}/login-url?redirectUri=http://localhost/cb`)
         },
+        'GET /api/session/build-provider': {
+            status: 200,
+            build: c => HttpRequest.GET(`/api/session/build-provider?appId=${APP_ID}&buildId=${c.buildId}`)
+        },
         'GET /api/session/onboarding-status': { status: 200, build: () => HttpRequest.GET('/api/session/onboarding-status') },
         // error paths only: already onboarded, and the mock GitLab rejects the code
         'POST /api/session/onboarding/vcs-integration': {

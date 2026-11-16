@@ -35,6 +35,11 @@ configureVfOpenApiClient(client, {
                 return new UserError('The phone number provided is invalid.');
             }
 
+            // a build link that matches no live build + app: an expected miss, login.vue falls back to the picker
+            if ((err.response?.status === 400 || err.response?.status === 404) && err.response.url.includes('/api/session/build-provider')) {
+                return err;
+            }
+
             if (err.response?.status === 401) {
                 localStorage.removeItem(LOCAL_STORAGE_AUTH_KEY);
                 useStore().sessionUser = null;

@@ -175,6 +175,19 @@ async function load() {
     return loadSession();
 }
 
+/** On a build link (/apps/:id/builds/:buildId…), the provider of the build's app; undefined if unknown or mismatched. */
+async function findBuildProvider(): Promise<ISessionProvider | undefined> {
+    const { id: appId, buildId } = route.params;
+    if (typeof appId !== 'string' || typeof buildId !== 'string') return undefined;
+    try {
+        const { id } = await dataFromAsync(SessionApi.getSessionGetBuildProvider({ query: { appId, buildId } }));
+        return providers.value?.find(p => p.id === id);
+    } catch {
+        // unknown build or app, or not a UUID: fall back to the picker
+        return undefined;
+    }
+}
+
 async function loadSession() {
     try {
         const identityResponse = await SessionApi.getSessionGetIdentity();
@@ -210,9 +223,11 @@ async function loadSession() {
         // the field is optional; carry on without it
     }
 
-    // with a single provider, skip the picker and go straight to it (unless the setup token may need to be typed first)
-    if (providers.value.length === 1 && !suppressAutoLogin.value && !needsSetupToken.value && !store.showProviderPicker) {
-        return login(providers.value[0]);
+    // skip the picker when the provider is known: the one owning the linked build's app, or the only one there is
+    // (unless the setup token may need to be typed first)
+    if (!suppressAutoLogin.value && !needsSetupToken.value && !store.showProviderPicker) {
+        const provider = (await findBuildProvider()) ?? (providers.value.length === 1 ? providers.value[0] : undefined);
+        if (provider) return login(provider);
     }
 
     isLoading.value = false;

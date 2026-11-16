@@ -16,10 +16,12 @@ import { createHash, timingSafeEqual } from 'crypto';
 import { ApiController } from '../accessories/Controller.accessory';
 import { AppConfig } from '../config';
 import { Db } from '../database';
+import { AppEntity } from '../entities/App.entity';
+import { BuildEntity } from '../entities/Build.entity';
 import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
-import { sealIntegrationConfig, sealVcsSession } from '../services/secrets/VcsSecrets';
 import { createOAuthState, deriveStateKey, sanitizeReturnTo, verifyOAuthState } from '../services/OAuthState';
+import { sealIntegrationConfig, sealVcsSession } from '../services/secrets/VcsSecrets';
 import { VcsService } from '../services/Vcs.service';
 import { normalizeCreateConfig } from '../services/VcsConfig';
 import { IVcsIntegrationCreateInput } from './VcsIntegrations.controller';
@@ -118,6 +120,19 @@ export class SessionController {
             name,
             platform
         }));
+    }
+
+    /**
+     * The provider that owns a build's app, so a review link can skip the provider picker. Unauthenticated, so it
+     * answers only when the build ID and app ID match (both unguessable), and the same 404 for every miss.
+     */
+    @http.GET('build-provider')
+    async getBuildProvider(query: HttpQueries<{ appId: UuidString; buildId: UuidString }>): Promise<ISessionProvider> {
+        const build = await BuildEntity.query().filter({ id: query.buildId, appId: query.appId }).findOneOrUndefined();
+        const app = build && (await AppEntity.query().filter({ id: build.appId, deletedAt: null }).findOneOrUndefined());
+        const provider = app && (await VcsIntegrationEntity.query().filterField('id', app.vcsId).findOneOrUndefined());
+        if (!provider) throw new HttpNotFoundError('Unknown build');
+        return { id: provider.id, name: provider.name, platform: provider.platform };
     }
 
     private getRedirectUri(): string {
