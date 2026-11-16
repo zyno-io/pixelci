@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PixelCI is a visual regression testing platform that compares screenshots across builds to detect visual changes. It consists of three main workspaces:
 
-- **api**: Backend API server built with Deepkit Framework
+- **api**: Backend API server built with TS Server Foundation (`@zyno-io/ts-server-foundation`)
 - **ui**: Frontend Vue.js application
 - **cli**: Command-line tool for CI/CD integration
 
@@ -94,7 +94,7 @@ yarn format
 
 ## Architecture
 
-### Database Schema (Deepkit ORM)
+### Database Schema (TSF ORM)
 
 Core entities in `packages/api/src/entities/`:
 
