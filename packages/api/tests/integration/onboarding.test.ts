@@ -1,8 +1,11 @@
 import { HttpRequest } from '@zyno-io/ts-server-foundation';
-import { createPersistedEntity, JWT, TestingHelpers } from '@zyno-io/ts-server-foundation';
+import { createPersistedEntity, JWT, TestingHelpers, uuid7 } from '@zyno-io/ts-server-foundation';
 import { generateKeyPairSync } from 'crypto';
 
 import { CoreAppOptions } from '../../src/app';
+import { AppEntity } from '../../src/entities/App.entity';
+import { BranchEntity } from '../../src/entities/Branch.entity';
+import { BuildEntity } from '../../src/entities/Build.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { getSecretBox, SecretBox, setSecretBoxForTesting } from '../../src/services/secrets/SecretBox';
@@ -85,6 +88,7 @@ async function run() {
     await testLostKeyRecovery(facade, adminJwt);
     await testSessionIncludesVcsId(facade, adminJwt);
     await testAppCreateRequiresVcsProjectId(facade, adminJwt);
+    await testBuildProviderLookup(facade);
     await testOnboardingGitHubOnFreshDb();
     await testOnboardingConcurrentRequests();
     await testOnboardingDisabledWithoutToken();
@@ -699,6 +703,58 @@ async function testVcsIntegrationCrud(facade: ReturnType<typeof TestingHelpers.c
     );
     assertStatus(verifyResponse, 404);
 
+    console.log('  PASS');
+}
+
+async function testBuildProviderLookup(facade: Facade) {
+    console.log("\nTest: build-provider returns the owning app's provider only for a matching build + app");
+    const integration = await VcsIntegrationEntity.query().filter({ platform: 'gitlab' }).findOne();
+    const appId = uuid7();
+    const otherAppId = uuid7();
+    const branchId = uuid7();
+    for (const id of [appId, otherAppId]) {
+        await createPersistedEntity(AppEntity, {
+            id,
+            name: 'Build provider app',
+            defaultBranchId: null,
+            projectPath: `group/bp-${id}`,
+            vcsProjectId: 1,
+            vcsId: integration.id,
+            deletedAt: null
+        });
+    }
+    await createPersistedEntity(BranchEntity, { id: branchId, appId, name: 'main' });
+    const build = await createPersistedEntity(BuildEntity, {
+        id: uuid7(),
+        appId,
+        branchId,
+        createdAt: new Date(),
+        commitHash: 'bp'.padStart(40, '0'),
+        commitSubject: 'build provider',
+        commitAuthor: 'int-test',
+        ciJobId: '1',
+        ciTokenHash: null,
+        ciReadTokenHashes: [],
+        status: 'needs review',
+        approvedById: null,
+        approvedAt: null
+    });
+    const lookup = (a: string, b: string) => facade.request(HttpRequest.GET(`/api/session/build-provider?appId=${a}&buildId=${b}`));
+
+    const ok = await lookup(appId, build.id);
+    assertStatus(ok, 200);
+    const body = ok.json as Record<string, unknown>;
+    if (Object.keys(body).sort().join(',') !== 'id,name,platform' || body.id !== integration.id) {
+        throw new Error(`Expected exactly {id, name, platform} of ${integration.id}, got ${ok.body}`);
+    }
+
+    // build exists but belongs to a different app
+    assertStatus(await lookup(otherAppId, build.id), 404);
+    // unknown build
+    assertStatus(await lookup(appId, uuid7()), 404);
+    // deleted app
+    await AppEntity.query().filter({ id: appId }).patchOne({ deletedAt: new Date() });
+    assertStatus(await lookup(appId, build.id), 404);
     console.log('  PASS');
 }
 

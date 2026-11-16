@@ -33,7 +33,7 @@
 </template>
 
 <script lang="ts" setup>
-import { LOCAL_STORAGE_AUTH_KEY } from '@/openapi-client';
+import { signOut } from '@/shared/access-error';
 import { useStore } from '@/store';
 
 import DropdownMenu from './dropdown-menu.vue';
@@ -41,9 +41,9 @@ import ThemeMenu from './theme-menu.vue';
 
 const store = useStore();
 
+// shows the provider picker in place: auto-redirecting (e.g. to a build's provider) would sign straight back in
 function logout() {
-    store.sessionUser = null;
-    localStorage.removeItem(LOCAL_STORAGE_AUTH_KEY);
+    signOut();
 }
 </script>
 

@@ -30,6 +30,36 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ISessionProvider"
+  /api/session/build-provider:
+    get:
+      operationId: getSessionGetBuildProvider
+      tags:
+        - session
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ISessionProvider"
+      summary: The provider that owns a build's app, so a review link can skip the
+        provider picker. Unauthenticated, so it answers only when the build ID
+        and app ID match (both unguessable), and the same 404 for every miss.
+      parameters:
+        - name: appId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        - name: buildId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/session/providers/{id}/login-url:
     get:
       operationId: getSessionGetProviderLoginUrl

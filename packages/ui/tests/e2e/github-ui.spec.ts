@@ -138,6 +138,64 @@ test.describe('GitHub UI', () => {
         await expect(page.locator('button i.fa-gitlab')).toHaveCount(1);
     });
 
+    test("a build link signs in through the provider of the build's app, skipping the picker", async ({ page }) => {
+        await mockApi(page, { authenticated: false });
+        let loginUrlPath: string | undefined;
+        await page.route(/\/api\/session\/build-provider/, route => {
+            const params = new URL(route.request().url()).searchParams;
+            expect(params.get('appId')).toBe('app-1');
+            expect(params.get('buildId')).toBe('build-1');
+            return json(route, GITHUB);
+        });
+        await page.route(/\/api\/session\/providers\/[^/]+\/login-url/, route => {
+            loginUrlPath ??= new URL(route.request().url()).pathname;
+            return json(route, { url: '/provider-redirect', state: 's' });
+        });
+        await page.goto('/apps/app-1/builds/build-1');
+
+        await expect.poll(() => new URL(page.url()).pathname).toBe('/provider-redirect');
+        expect(loginUrlPath).toBe(`/api/session/providers/${GITHUB.id}/login-url`);
+    });
+
+    test('a build link whose build and app do not match falls back to the picker', async ({ page }) => {
+        const requests = await mockApi(page, { authenticated: false });
+        let lookedUp = false;
+        await page.route(/\/api\/session\/build-provider/, route => {
+            lookedUp = true;
+            return json(route, { message: 'Unknown build' }, 404);
+        });
+        await page.goto('/apps/app-1/builds/other-build');
+
+        // the buttons render before the lookup settles: wait for it and the loader so a wrong auto-login can't slip past
+        await expect.poll(() => lookedUp).toBe(true);
+        await expect(page.locator('#m-loader')).toHaveCount(0);
+
+        await expect(page.getByRole('button', { name: /Login via Mock GitLab/ })).toBeVisible();
+        await expect(page.getByRole('button', { name: /Login via Mock GitHub/ })).toBeVisible();
+        expect(requests.filter(r => r.path.endsWith('/login-url'))).toHaveLength(0);
+    });
+
+    test('logging out shows the picker instead of signing straight back in', async ({ page }) => {
+        await mockApi(page, { providers: [GITHUB] });
+        let loggedOut = false;
+        let loginUrlRequested = false;
+        await page.route(/\/api\/session\/me$/, route =>
+            loggedOut ? json(route, { message: 'Unauthorized' }, 401) : json(route, { id: 'u1', vcsId: GITHUB.id, name: 'Mock Admin', isAdmin: true })
+        );
+        await page.route(/\/api\/session\/providers\/[^/]+\/login-url/, route => {
+            loginUrlRequested = true;
+            return json(route, { url: '/provider-redirect', state: 's' });
+        });
+        await page.goto('/admin/vcs-integrations');
+
+        loggedOut = true;
+        await page.getByRole('button', { name: 'Logout' }).click();
+
+        await expect(page.getByRole('button', { name: /Login via Mock GitHub/ })).toBeVisible();
+        await expect(page.locator('#m-loader')).toHaveCount(0);
+        expect(loginUrlRequested).toBe(false);
+    });
+
     test('login error is shown without auto-redirecting', async ({ page }) => {
         await mockApi(page, { authenticated: false, providers: [GITHUB] });
         await page.goto('/login?error=access_denied&error_description=The+user+denied+access');
