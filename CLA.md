@@ -1,6 +1,6 @@
 # PixelCI Contributor License Agreement, Version 1.0
 
-Thank you for contributing to PixelCI. This Contributor License Agreement (“Agreement”) sets out the terms under which contributions are made to Signal24 LLC dba Zyno Consulting (the “Licensor”). It lets the Licensor ship contributions in PixelCI under the [PixelCI Source Available License](LICENSE.md), in components it releases under other licenses (such as the MIT-licensed CLI and MCP server), in its hosted services, and under commercial licenses. You keep the copyright in what You contribute: this Agreement is a license, not an assignment.
+Thank you for contributing to PixelCI. This Contributor License Agreement (“Agreement”) sets out the terms under which contributions are made to Signal24 LLC dba Zyno Consulting (the “Licensor”). It lets the Licensor ship contributions in PixelCI under the [PixelCI Source Available License](LICENSE.md), in components it releases under other licenses (such as the MIT-licensed CLI), in its hosted services, and under commercial licenses. You keep the copyright in what You contribute: this Agreement is a license, not an assignment.
 
 This Agreement has two parts:
 
@@ -21,7 +21,7 @@ Posting that comment from Your GitHub account is Your electronic signature of Pa
 
 **“You”** means, in Part A, the individual who signs it and, in Part B, the legal entity that signs it, together with all other entities that control, are controlled by, or are under common control with that entity. “Control” means ownership of more than 50% of the voting interests (or equivalent).
 
-**“Contribution”** means any original work of authorship, including any modification of or addition to an existing work, that You intentionally submit to the Licensor for inclusion in, or documentation of, PixelCI (including the PixelCI CLI, the PixelCI MCP server, and every other component in the PixelCI repository, whatever license the Licensor releases it under) or any other product or project owned or managed by the Licensor (the “Work”). “Submit” means any form of electronic, verbal, or written communication sent to the Licensor or its representatives, including pull requests, merge requests, patches, source code control systems, and issue tracking systems managed by or on behalf of the Licensor, but excluding material that You post in an issue, discussion, or similar forum and conspicuously mark or otherwise designate in writing as “Not a Contribution.” That marking has no effect on a pull request, merge request, or patch.
+**“Contribution”** means any original work of authorship, including any modification of or addition to an existing work, that You intentionally submit to the Licensor for inclusion in, or documentation of, PixelCI (including the PixelCI CLI and every other component in the PixelCI repository, whatever license the Licensor releases it under) or any other product or project owned or managed by the Licensor (the “Work”). “Submit” means any form of electronic, verbal, or written communication sent to the Licensor or its representatives, including pull requests, merge requests, patches, source code control systems, and issue tracking systems managed by or on behalf of the Licensor, but excluding material that You post in an issue, discussion, or similar forum and conspicuously mark or otherwise designate in writing as “Not a Contribution.” That marking has no effect on a pull request, merge request, or patch.
 
 ## Part A: Individual Contributor License Agreement
 
@@ -74,7 +74,7 @@ Schedule A: Designated Contributors (GitHub usernames):
 
 ## General
 
-**Relationship to the PixelCI Source Available License.** As stated in Section 8 of the PixelCI Source Available License, a signed contributor license agreement prevails over that Section 8, to the extent of any conflict, for the Contributions it covers; the permission in that Section 8 to fork and modify PixelCI to prepare a Contribution continues to apply. Nothing in this Agreement grants You any rights in PixelCI; Your use of PixelCI is governed by the PixelCI Source Available License, the license file of the component concerned (for example, the MIT License for the CLI and MCP server), or a separate commercial license.
+**Relationship to the PixelCI Source Available License.** As stated in Section 8 of the PixelCI Source Available License, a signed contributor license agreement prevails over that Section 8, to the extent of any conflict, for the Contributions it covers; the permission in that Section 8 to fork and modify PixelCI to prepare a Contribution continues to apply. Nothing in this Agreement grants You any rights in PixelCI; Your use of PixelCI is governed by the PixelCI Source Available License, the license file of the component concerned (for example, the MIT License for the CLI), or a separate commercial license.
 
 **Versions.** The Licensor may publish new versions of this Agreement. The version You signed governs the Contributions You submit until You sign a later version. The Licensor may require You to sign a later version before accepting further Contributions.
 
