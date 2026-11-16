@@ -46,7 +46,7 @@
         "lodash": "^4.18.1",
         "pg": "^8.23.1",
         "pixelmatch": "^8.0.0",
-        "pngjs": "^7.0.0"
+        "sharp": "^0.34.5"
     },
     "devDependencies": {
         "@faker-js/faker": "^10.6.0",
@@ -54,6 +54,7 @@
         "@types/node": "^26.6.4",
         "@types/pg": "^8.23.1",
         "@types/pngjs": "^6.0.5",
+        "pngjs": "^7.0.0",
         "ttsc": "0.34.2",
         "typescript": "^7.0.2"
     },

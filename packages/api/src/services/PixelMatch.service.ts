@@ -1,6 +1,7 @@
 import { ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { memoize } from 'lodash';
-import { PNG } from 'pngjs/browser';
+
+import { decodeRgba, encodePng, IRgbaImage } from './Image';
 
 const loadPixelMatch = memoize(async () => {
     return (await import('pixelmatch')).default;
@@ -12,21 +13,24 @@ export interface IPixelMatchDiffResult {
     diffPct: number;
     /** pixels that differed in place but were explained by a small positional shift (not counted in diffPixels) */
     shiftTolerantPixels: number;
-    getDiffPng: () => Buffer;
+    getDiffPng: () => Promise<Buffer>;
 }
 
-function normalizeToCanvas(img: PNG, targetWidth: number, targetHeight: number): PNG {
-    const canvas = new PNG({ width: targetWidth, height: targetHeight, fill: true });
+function normalizeToCanvas(img: IRgbaImage, targetWidth: number, targetHeight: number): IRgbaImage {
+    const data = Buffer.alloc(targetWidth * targetHeight * 4);
     // fill with magenta (255, 0, 255, 255) so size differences are obvious
-    for (let i = 0; i < canvas.data.length; i += 4) {
-        canvas.data[i] = 255;
-        canvas.data[i + 1] = 0;
-        canvas.data[i + 2] = 255;
-        canvas.data[i + 3] = 255;
+    for (let i = 0; i < data.length; i += 4) {
+        data[i] = 255;
+        data[i + 1] = 0;
+        data[i + 2] = 255;
+        data[i + 3] = 255;
     }
     // copy the original image onto the top-left of the canvas
-    PNG.bitblt(img, canvas, 0, 0, img.width, img.height, 0, 0);
-    return canvas;
+    const rowBytes = img.width * 4;
+    for (let y = 0; y < img.height; y++) {
+        img.data.copy(data, y * targetWidth * 4, y * rowBytes, y * rowBytes + rowBytes);
+    }
+    return { width: targetWidth, height: targetHeight, data };
 }
 
 // ── Colour similarity, matching pixelmatch 8 ──
@@ -211,8 +215,7 @@ export class PixelMatchService {
 
         const diffStart = performance.now();
 
-        const img1 = PNG.sync.read(img1Buf);
-        const img2 = PNG.sync.read(img2Buf);
+        const [img1, img2] = await Promise.all([decodeRgba(img1Buf), decodeRgba(img2Buf)]);
 
         const sizesDiffer = img1.width !== img2.width || img1.height !== img2.height;
 
@@ -222,7 +225,7 @@ export class PixelMatchService {
         const norm1 = sizesDiffer ? normalizeToCanvas(img1, width, height) : img1;
         const norm2 = sizesDiffer ? normalizeToCanvas(img2, width, height) : img2;
 
-        const diffTarget = new PNG({ width, height });
+        const diffTarget: IRgbaImage = { width, height, data: Buffer.alloc(width * height * 4) };
         const rawDiffPixels = pixelmatch(norm1.data, norm2.data, diffTarget.data, width, height, {
             threshold: pixelMatchThreshold,
             includeAA: false
@@ -252,7 +255,7 @@ export class PixelMatchService {
             diffPixels,
             diffPct,
             shiftTolerantPixels,
-            getDiffPng: () => PNG.sync.write(diffTarget)
+            getDiffPng: () => encodePng(diffTarget)
         };
     }
 }

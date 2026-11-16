@@ -228,7 +228,7 @@ export class BuildScreensController {
             totalPixels: result.totalPixels,
             shiftTolerantPixels: result.shiftTolerantPixels,
             passes: result.diffPct <= body.diffPctTolerance,
-            diffImage: 'data:image/png;base64,' + result.getDiffPng().toString('base64')
+            diffImage: 'data:image/png;base64,' + (await result.getDiffPng()).toString('base64')
         };
     }
 

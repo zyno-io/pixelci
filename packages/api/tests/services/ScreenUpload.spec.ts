@@ -136,6 +136,15 @@ describe('readPngHeader', () => {
         assert.deepEqual(await readPngHeader(file(buf), 1e9), { width: 100, height: 50 });
     });
 
+    it('requires the image data chunks to be consecutive', async () => {
+        const idat = chunk('IDAT', Buffer.alloc(10));
+        const text = chunk('tEXt', Buffer.alloc(4));
+        const together = Buffer.concat([pngHeader(), text, idat, idat, text, iend()]);
+        assert.deepEqual(await readPngHeader(file(together), 1e9), { width: 100, height: 50 });
+        const split = Buffer.concat([pngHeader(), idat, text, idat, iend()]);
+        await assert.rejects(readPngHeader(file(split), 1e9), { httpCode: 400, message: /non-consecutive/ });
+    });
+
     it('rejects a second IHDR (which would override the checked dimensions)', async () => {
         const buf = Buffer.concat([pngHeader(), secondIhdr(6000, 6000), chunk('IDAT', Buffer.alloc(10)), iend()]);
         await assert.rejects(readPngHeader(file(buf), 25_000_000), { httpCode: 400 });

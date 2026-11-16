@@ -7,8 +7,8 @@ import { Db } from '../database';
 import { AppEntity } from '../entities/App.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
-import { claimBuildLease, Lease, LeaseLostError } from '../services/BuildProcessingLease';
 import { ScreenEntity } from '../entities/Screen.entity';
+import { claimBuildLease, Lease, LeaseLostError } from '../services/BuildProcessingLease';
 import { PixelMatchService } from '../services/PixelMatch.service';
 import { computeRemovals } from '../services/RemovedScreens';
 import { S3Service } from '../services/S3.service';
@@ -357,7 +357,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
 
         if (diffPct > tolerances.diffPctTolerance) {
             this.logger.info('Diff exceeds threshold. Storing diff.', { diffPct, diffThreshold: tolerances.diffPctTolerance });
-            const diffBuf = getDiffPng();
+            const diffBuf = await getDiffPng();
             await this.s3Svc.uploadFile(diffBuf, this.s3Svc.getPathForDiff(appId, rightBuildId, screenId), 'image/png');
             return false;
         }
