@@ -43,7 +43,9 @@ interface IAppCreateInput {
     approvalMinRole?: IApprovalMinRole;
 }
 
-export type IAppUpdateInput = Partial<Pick<AppEntity, 'name' | 'defaultBranchId'>> & { approvalMinRole?: IApprovalMinRole } & Partial<IToleranceOverrides>;
+export type IAppUpdateInput = Partial<Pick<AppEntity, 'name' | 'defaultBranchId'>> & {
+    approvalMinRole?: IApprovalMinRole;
+} & Partial<IToleranceOverrides>;
 
 @ApiController('/api/apps')
 @http.middleware(UserAuthMiddleware)

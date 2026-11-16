@@ -55,10 +55,7 @@
             <!-- Post-creation CI setup view -->
             <div v-if="createdApp" class="ci-setup">
                 <h2>App created!</h2>
-                <p class="subtitle">
-                    Add this to your <code>{{ createCiFileName }}</code
-                    >:
-                </p>
+                <p class="subtitle">Add this to your <code>{{ createCiFileName }}</code>:</p>
 
                 <div class="ci-snippet-header">
                     <span />
