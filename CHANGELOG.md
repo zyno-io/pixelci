@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.6.0
 
 - **Breaking:** `DEFAULT_PIXEL_DIFF_PCT_THRESHOLD` is now a true percentage of pixels. It used to be divided by 100 a second
   time, so the old default of `1` really flagged screens above 0.01%. The default is now `0.01` and behaves the same as
