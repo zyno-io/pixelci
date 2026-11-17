@@ -324,8 +324,12 @@
             :app-tolerances="appTolerances"
             :can-edit="userCanReview"
             current-label="New build"
+            :app-masks="{ masks: app?.masks ?? [], version: app?.masksVersion ?? 0 }"
+            :on-reload-masks="reloadMasks"
             @close="lightboxIndex = null"
             @saved="onToleranceSaved"
+            @masks-saved="onMasksSaved"
+            @app-masks-saved="onAppMasksSaved"
         />
 
         <div class="sr-only" role="status" aria-live="polite">{{ announcement }}</div>
@@ -342,9 +346,11 @@ import {
     AppsApi,
     BuildScreensApi,
     BuildsApi,
+    type IAppMasksResponse,
     type IAppShowResponse,
     type IBuildResponse,
-    type IBuildScreenResponse
+    type IBuildScreenResponse,
+    type IScreenMasksResponse
 } from '@/openapi-client-generated';
 import { accessDeniedMessage, signOut } from '@/shared/access-error';
 import LoaderModal from '@/shared/components/loader-modal.vue';
@@ -563,6 +569,7 @@ const lightboxItems = computed<ILightboxScreen[]>(() =>
             name: screen.name,
             status: current?.reviewStatus ? REVIEW_STATUS[current.reviewStatus] : getScreenStatus(screen),
             tolerances: pickOverrides(screen.tolerances),
+            masks: screen.masks,
             current: currentImage,
             reference: reference ? { buildId: reference.matchedBuildId ?? reference.buildId } : null,
             diff: hasDiff(screen) ? currentImage : null,
@@ -579,6 +586,29 @@ function openTolerance(screen: IScreen) {
 function onToleranceSaved(screenId: string, tolerances: IToleranceOverrides) {
     const screen = screens.value?.find(s => s.screenId === screenId);
     if (screen) screen.tolerances = tolerances;
+}
+
+// ── Masks ──
+function onMasksSaved(screenId: string, masks: IScreenMasksResponse) {
+    const screen = screens.value?.find(s => s.screenId === screenId);
+    if (screen) screen.masks = masks;
+}
+
+function onAppMasksSaved(masks: IAppMasksResponse) {
+    if (app.value) Object.assign(app.value, { masks: masks.masks, masksVersion: masks.version });
+}
+
+/** Re-reads the masks after a save was refused as stale, without closing the lightbox. */
+async function reloadMasks() {
+    const [screensResponse, appResponse] = await Promise.all([
+        dataFromAsync(BuildScreensApi.getBuildScreensGetScreens({ path: { appId, id: buildId } })),
+        dataFromAsync(AppsApi.getAppsShow({ path: { id: appId } }))
+    ]);
+    app.value = appResponse;
+    for (const fresh of screensResponse) {
+        const screen = screens.value?.find(s => s.screenId === fresh.screenId);
+        if (screen) screen.masks = fresh.masks;
+    }
 }
 
 // ── Sticky chrome ──

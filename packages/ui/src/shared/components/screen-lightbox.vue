@@ -58,7 +58,26 @@
                     <div v-if="stageSrc === false" class="lb-placeholder">This image couldn't be loaded.</div>
                     <div v-else-if="stageSrc === null" class="lb-placeholder">{{ missingText }}</div>
                     <Loader v-else-if="!stageSrc" class="lb-loading" />
-                    <img v-else :key="stageSrc" :src="stageSrc" :alt="`${stageLabel}: ${item.name}`" :style="naturalStyle" @load="onImageLoad" />
+                    <div v-else class="lb-canvas" :style="canvasStyle" data-testid="lightbox-canvas">
+                        <img :key="stageSrc" :src="stageSrc" :alt="`${stageLabel}: ${item.name}`" @load="onImageLoad($event, stageSrc)" />
+                        <MaskLayer
+                            v-if="layerShown && natural"
+                            v-model:masks="activeMasks"
+                            v-bind:selected-id="selectedMaskId"
+                            :width="natural.width"
+                            :height="natural.height"
+                            :context="contextMasks"
+                            :editable="maskEditable"
+                            :drawing="drawMode"
+                            :aria-label="maskTarget === 'app' ? 'App masks' : 'Masks for this screen'"
+                            @select="selectedMaskId = $event"
+                            @remove="removeMask"
+                            @draw-end="drawMode = false"
+                            @dragging="maskDragging = $event"
+                            @announce="announce"
+                            @escape="onMaskEscape"
+                        />
+                    </div>
                 </div>
 
                 <aside class="lb-panel" aria-label="Screen details">
@@ -124,8 +143,11 @@
                                     <span v-if="preview.shiftTolerantPixels > 0" class="lb-preview-line">
                                         {{ preview.shiftTolerantPixels.toLocaleString() }} px ignored as shifted.
                                     </span>
+                                    <span v-if="preview.maskedPixels > 0" class="lb-preview-line" data-testid="preview-masked">
+                                        {{ preview.maskedPixels.toLocaleString() }} px masked.
+                                    </span>
                                 </template>
-                                <template v-else-if="!isValid">Correct the highlighted value to preview it.</template>
+                                <template v-else-if="!previewValid">Correct the highlighted value to preview it.</template>
                                 <template v-else-if="previewFailed">The comparison couldn't be run with these values.</template>
                                 <template v-else>Comparing with these values…</template>
                             </div>
@@ -163,11 +185,180 @@
                         </div>
                     </section>
 
+                    <section class="lb-section" aria-labelledby="lb-masks-title" data-testid="masks-section">
+                        <div class="lb-section-head">
+                            <h3 id="lb-masks-title">{{ maskTarget === 'app' ? 'App masks' : 'Masks' }}</h3>
+                            <span v-if="activeMasks.length" class="tag" data-testid="mask-count">
+                                <i class="fa fa-table-cells-large" aria-hidden="true" /> {{ formatMaskCount(activeMasks.length) }}
+                            </span>
+                        </div>
+                        <p class="lb-lead">
+                            <template v-if="maskTarget === 'app'">
+                                Regions ignored on every screen that uses the app's masks. Changes there never count as differences.
+                            </template>
+                            <template v-else>Regions of this screen whose pixels never count as a difference, such as clocks or ads.</template>
+                        </p>
+
+                        <div v-if="maskTarget === 'app'" class="notice warning lb-app-mode" data-testid="app-mask-mode">
+                            <i class="fa fa-globe" aria-hidden="true" />
+                            <div class="notice-body">Editing the app's masks. They apply to every screen that uses them, not only this one.</div>
+                            <div class="notice-actions">
+                                <button type="button" class="btn sm" data-testid="app-masks-done" @click="leaveAppMasks">Back to screen</button>
+                            </div>
+                        </div>
+
+                        <div v-if="maskEditable" class="lb-mask-tools" role="toolbar" aria-label="Mask tools">
+                            <button
+                                type="button"
+                                class="btn sm"
+                                :aria-pressed="drawMode"
+                                :disabled="isSavingMasks || !natural"
+                                data-testid="mask-draw"
+                                @click="toggleDraw"
+                            >
+                                <i class="fa fa-crop-simple" aria-hidden="true" /> Draw mask
+                            </button>
+                            <button
+                                type="button"
+                                class="btn sm"
+                                :disabled="isSavingMasks || !natural || activeMasks.length >= MAX_MASKS"
+                                data-testid="mask-add"
+                                @click="addMask()"
+                            >
+                                <i class="fa fa-plus" aria-hidden="true" /> Add mask
+                            </button>
+                            <button
+                                type="button"
+                                class="btn sm ghost"
+                                :aria-pressed="!layerVisible"
+                                data-testid="mask-toggle-layer"
+                                @click="toggleLayer()"
+                            >
+                                <i class="fa" :class="layerVisible ? 'fa-eye-slash' : 'fa-eye'" aria-hidden="true" />
+                                {{ layerVisible ? 'Hide masks' : 'Show masks' }}
+                            </button>
+                        </div>
+                        <div v-else class="lb-mask-tools">
+                            <button
+                                type="button"
+                                class="btn sm ghost"
+                                :aria-pressed="!layerVisible"
+                                data-testid="mask-toggle-layer"
+                                @click="toggleLayer()"
+                            >
+                                <i class="fa" :class="layerVisible ? 'fa-eye-slash' : 'fa-eye'" aria-hidden="true" />
+                                {{ layerVisible ? 'Hide masks' : 'Show masks' }}
+                            </button>
+                        </div>
+
+                        <p v-if="drawMode" class="lb-note" data-testid="mask-draw-hint">Drag on the screenshot to draw a mask. Escape cancels.</p>
+
+                        <label v-if="maskTarget === 'screen'" class="lb-check" :class="{ disabled: !maskEditable || isSavingMasks }">
+                            <input
+                                v-model="maskDraft.inherit"
+                                type="checkbox"
+                                :disabled="!maskEditable || isSavingMasks"
+                                data-testid="mask-inherit"
+                            />
+                            <span>
+                                Use app masks
+                                <span class="lb-check-hint" data-testid="app-mask-count">
+                                    {{ appMasksNow.length ? `(${formatMaskCount(appMasksNow.length)}, shown dashed)` : '(the app has none)' }}
+                                </span>
+                            </span>
+                        </label>
+                        <div v-if="maskTarget === 'screen' && store.isAdmin" class="lb-app-edit">
+                            <button type="button" class="btn sm" data-testid="app-masks-edit" :disabled="isSavingMasks" @click="enterAppMasks">
+                                <i class="fa fa-globe" aria-hidden="true" /> Edit app masks
+                            </button>
+                            <span v-if="appDirty" class="lb-unsaved">Unsaved app masks</span>
+                        </div>
+
+                        <MaskFields
+                            v-if="activeMasks.length"
+                            v-model="activeMasks"
+                            :selected-id="selectedMaskId"
+                            :id-prefix="`lb-mask-${maskTarget}-${item.screenId}`"
+                            :disabled="!maskEditable || isSavingMasks"
+                            @select="selectedMaskId = $event"
+                            @remove="removeMask"
+                            @validity="masksFieldsValid = $event"
+                        />
+                        <p v-else class="lb-note" data-testid="mask-empty">
+                            <template v-if="maskEditable">No masks yet. Draw one on the screenshot, or add one and set its position here.</template>
+                            <template v-else>This screen has no masks of its own.</template>
+                        </p>
+
+                        <p v-if="listProblem" class="lb-note lb-problem" role="alert" data-testid="mask-problem">{{ listProblem }}</p>
+
+                        <p v-if="outside.partly || outside.outside" class="lb-note lb-warn" data-testid="mask-outside">
+                            <i class="fa fa-triangle-exclamation" aria-hidden="true" />
+                            <template v-if="outside.partly">
+                                {{ formatMaskCount(outside.partly) }} {{ outside.partly === 1 ? 'is' : 'are' }} partly outside this screenshot. The
+                                part outside is ignored.
+                            </template>
+                            <template v-if="outside.outside">
+                                {{ formatMaskCount(outside.outside) }} {{ outside.outside === 1 ? 'is' : 'are' }} entirely outside this screenshot and
+                                {{ outside.outside === 1 ? 'has' : 'have' }} no effect here.
+                            </template>
+                        </p>
+                        <p v-if="coverage > COVERAGE_WARNING_PCT" class="lb-note lb-warn" data-testid="mask-coverage">
+                            <i class="fa fa-triangle-exclamation" aria-hidden="true" />
+                            Masks cover {{ Math.round(coverage) }}% of this screenshot. Changes under them can't be flagged.
+                        </p>
+
+                        <div v-if="canCompare" class="lb-mask-preview" data-testid="mask-preview">
+                            <template v-if="preview">
+                                <strong>{{ preview.passes ? 'Would pass' : 'Would be flagged' }}</strong>
+                                <span> · {{ preview.maskedPixels.toLocaleString() }} px masked</span>
+                            </template>
+                            <span v-else-if="!previewValid">Correct the highlighted value to preview it.</span>
+                            <span v-else-if="previewFailed">No preview.</span>
+                            <span v-else>Comparing…</span>
+                        </div>
+
+                        <p v-if="maskInfo" class="lb-note" data-testid="mask-saved-by">{{ maskInfo }}</p>
+
+                        <p v-if="!canEditMaskTarget" class="lb-note" data-testid="mask-readonly">
+                            Only people who can review this app can change masks.
+                        </p>
+                        <div v-else class="lb-save">
+                            <p class="lb-note">Saved masks apply from the next build. Results of earlier builds stay as they are.</p>
+                            <div class="lb-save-row">
+                                <span v-if="activeMasksDirty" class="lb-unsaved" role="status">Unsaved changes</span>
+                                <button
+                                    type="button"
+                                    class="btn primary"
+                                    :disabled="!activeMasksDirty || !activeMasksValid || isSavingMasks"
+                                    data-testid="masks-save"
+                                    @click="saveMasks"
+                                >
+                                    {{ maskTarget === 'app' ? 'Save app masks' : 'Save masks' }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="sr-only" role="status" aria-live="polite" data-testid="mask-live">{{ announcement }}</div>
+                    </section>
+
                     <p class="lb-keys">
                         <span><kbd>←</kbd>/<kbd>→</kbd> previous/next</span>
                         <template v-if="hasDiffView">
                             <span aria-hidden="true">·</span>
                             <span>hold <kbd>D</kbd> for the diff</span>
+                        </template>
+                        <template v-if="maskEditable">
+                            <span aria-hidden="true">·</span>
+                            <span><kbd>N</kbd> add mask</span>
+                        </template>
+                        <span aria-hidden="true">·</span>
+                        <span><kbd>M</kbd> hide masks</span>
+                        <template v-if="maskEditable">
+                            <span aria-hidden="true">·</span>
+                            <span
+                                >on a mask: <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> move, <kbd>Alt</kbd> resize, <kbd>Shift</kbd> by 10,
+                                <kbd>Del</kbd> remove</span
+                            >
                         </template>
                         <span aria-hidden="true">·</span>
                         <span><kbd>Esc</kbd> close</span>
@@ -187,15 +378,35 @@ import type { RouteLocationRaw } from 'vue-router';
  * tolerances are run against that pair live, so the reviewer sees the resulting diff and verdict
  * before saving. Used by the galleries and by the review screen.
  */
-import { dataFromAsync } from '@zyno-io/openapi-client-codegen';
-import { handleError, handleErrorAndAlert, showToast } from '@zyno-io/vue-foundation';
+import { dataFromAsync, OpenApiError } from '@zyno-io/openapi-client-codegen';
+import { handleError, handleErrorAndAlert, showAlert, showToast } from '@zyno-io/vue-foundation';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import type { IStatusTag } from '@/shared/status';
 
 import { useScreenImages, type ScreenImages } from '@/composables/useScreenImages';
-import { BuildScreensApi, type IBuildScreenCompareResponse, ScreensApi } from '@/openapi-client-generated';
+import {
+    AppsApi,
+    BuildScreensApi,
+    type IAppMasksResponse,
+    type IBuildScreenCompareResponse,
+    type IScreenMasksResponse,
+    ScreensApi
+} from '@/openapi-client-generated';
 import ScreensSegmented from '@/screens/screens-segmented.vue';
+import {
+    cloneMasks,
+    coveragePct,
+    COVERAGE_WARNING_PCT,
+    describeMask,
+    formatMaskCount,
+    type IMaskRect,
+    listError,
+    MAX_MASKS,
+    newMaskId,
+    outsideSummary,
+    sameMasks
+} from '@/shared/masks';
 import {
     formatPct,
     formatTolerance,
@@ -206,9 +417,12 @@ import {
     resolveTolerances,
     sameOverrides
 } from '@/shared/tolerances';
+import { useStore } from '@/store';
 
 import A11yModal from './a11y-modal.vue';
 import Loader from './loader.vue';
+import MaskFields from './mask-fields.vue';
+import MaskLayer from './mask-layer.vue';
 import ToleranceFields from './tolerance-fields.vue';
 
 export interface ILightboxScreen {
@@ -217,6 +431,8 @@ export interface ILightboxScreen {
     status?: IStatusTag;
     /** The screen's saved overrides. */
     tolerances: IToleranceOverrides;
+    /** The screen's own masks and whether it uses the app's. */
+    masks: IScreenMasksResponse;
     /** Build whose stored image is this screen's screenshot (already resolved past matched builds). */
     current?: { buildId: string } | null;
     reference?: { buildId: string } | null;
@@ -247,6 +463,13 @@ const props = defineProps<{
      * when the lightbox closes, and Vue drops events emitted by an unmounted component.
      */
     onSaved?: (screenId: string, tolerances: IToleranceOverrides) => void;
+    /** The app's masks, which a screen that uses them is compared with. */
+    appMasks?: { masks: IMaskRect[]; version: number };
+    /** Props rather than emits for the same reason as `onSaved`. */
+    onMasksSaved?: (screenId: string, masks: IScreenMasksResponse) => void;
+    onAppMasksSaved?: (masks: IAppMasksResponse) => void;
+    /** Asked to re-fetch the masks (and `appMasks`) after a save was refused as stale. */
+    onReloadMasks?: () => Promise<void> | void;
 }>();
 
 const emit = defineEmits<{
@@ -324,14 +547,46 @@ function requestImages() {
     if (screen.diff && !canCompare.value) images.value.request('diff', screen.diff.buildId, screen.screenId);
 }
 
-function onImageLoad(e: Event) {
+// The image the mask layer is currently aligned to; a new image is loading until this catches up.
+const loadedSrc = ref<string>();
+
+function onImageLoad(e: Event, src: string) {
     const img = e.target as HTMLImageElement;
     natural.value = { width: img.naturalWidth, height: img.naturalHeight };
+    loadedSrc.value = src;
     if (shownView.value === 'current' || !item.value.current) currentSize.value = natural.value;
 }
 
-// The percentage zooms scale the image's own pixels.
-const naturalStyle = computed(() => (natural.value ? { '--natural-width': `${natural.value.width}px` } : undefined));
+// The canvas is sized in px from the image's natural size, so the mask layer (an SVG in the image's own
+// pixels) scales with Fit, 100% and 200% exactly as the image does.
+const stageBox = ref({ width: 0, height: 0 });
+let stageObserver: ResizeObserver | undefined;
+
+function measureStage() {
+    const el = stage.value;
+    if (!el) return;
+    const style = getComputedStyle(el);
+    const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    // narrow screens stack the panel under the stage, which then is only as tall as its screenshot (capped)
+    const narrow = window.matchMedia('(max-width: 900px)').matches;
+    stageBox.value = { width: el.clientWidth - padX, height: (narrow ? window.innerHeight * 0.5 : el.clientHeight) - padY };
+}
+
+const canvasScale = computed(() => {
+    if (zoom.value === '100') return 1;
+    if (zoom.value === '200') return 2;
+    const size = natural.value;
+    const { width, height } = stageBox.value;
+    if (!size || width <= 0 || height <= 0) return 1;
+    return Math.min(1, width / size.width, height / size.height);
+});
+
+const canvasStyle = computed(() => {
+    const size = natural.value;
+    if (!size) return { width: '0px', height: '0px', overflow: 'hidden' };
+    return { width: `${size.width * canvasScale.value}px`, height: `${size.height * canvasScale.value}px` };
+});
 
 const dimensions = computed(() => (currentSize.value ? `${currentSize.value.width} × ${currentSize.value.height} px` : ''));
 
@@ -366,6 +621,264 @@ async function save() {
     }
 }
 
+// ── Masks ──
+// Rectangles whose pixels never count as a difference. A screen's masks are saved on their own (they
+// are not a tolerance), and admins can edit the app's set from the same canvas. Unsaved edits are kept
+// per screen like tolerance drafts, and the app's set while the lightbox is open.
+type MaskTarget = 'screen' | 'app';
+interface IMaskDraft {
+    masks: IMaskRect[];
+    inherit: boolean;
+}
+
+const store = useStore();
+const maskTarget = ref<MaskTarget>('screen');
+const layerVisible = ref(true);
+const drawMode = ref(false);
+const selectedMaskId = ref<string | null>(null);
+const maskDragging = ref(false);
+const isSavingMasks = ref(false);
+const masksFieldsValid = ref(true);
+const announcement = ref('');
+
+const maskDrafts = new Map<string, IMaskDraft>();
+const freshMaskDraft = (): IMaskDraft => ({ masks: cloneMasks(item.value.masks.masks), inherit: item.value.masks.inheritAppMasks });
+const maskDraft = ref<IMaskDraft>(freshMaskDraft());
+// null until an admin starts editing the app's masks
+const appDraft = ref<IMaskRect[] | null>(null);
+
+const savedAppMasks = computed(() => props.appMasks?.masks ?? []);
+const appMasksNow = computed(() => appDraft.value ?? savedAppMasks.value);
+const appDirty = computed(() => appDraft.value !== null && !sameMasks(appDraft.value, savedAppMasks.value));
+const screenMasksDirty = computed(
+    () => !sameMasks(maskDraft.value.masks, item.value.masks.masks) || maskDraft.value.inherit !== item.value.masks.inheritAppMasks
+);
+
+watch(
+    maskDraft,
+    value => {
+        if (screenMasksDirty.value) maskDrafts.set(item.value.screenId, value);
+        else maskDrafts.delete(item.value.screenId);
+    },
+    { deep: true }
+);
+
+/** The list on the canvas and in the fields: the app's while an admin edits those, otherwise the screen's. */
+const activeMasks = computed<IMaskRect[]>({
+    get: () => (maskTarget.value === 'app' ? appMasksNow.value : maskDraft.value.masks),
+    set: masks => {
+        if (maskTarget.value === 'app') appDraft.value = masks;
+        else maskDraft.value = { ...maskDraft.value, masks };
+    }
+});
+/** The other set, drawn dashed and fixed for orientation. */
+const contextMasks = computed(() => (maskTarget.value === 'app' ? maskDraft.value.masks : maskDraft.value.inherit ? appMasksNow.value : []));
+/** What a comparison of this screen would ignore. */
+const effectiveMasks = computed(() => [...(maskDraft.value.inherit ? appMasksNow.value : []), ...maskDraft.value.masks]);
+
+const canEditMaskTarget = computed(() => (maskTarget.value === 'app' ? store.isAdmin : props.canEdit));
+const maskEditable = canEditMaskTarget;
+const activeMasksDirty = computed(() => (maskTarget.value === 'app' ? appDirty.value : screenMasksDirty.value));
+const listProblem = computed(() => listError(activeMasks.value));
+const activeMasksValid = computed(() => masksFieldsValid.value && !listProblem.value);
+const masksValid = computed(
+    () => masksFieldsValid.value && !listError(maskDraft.value.masks) && !listError(appMasksNow.value) && effectiveMasks.value.length <= MAX_MASKS * 2
+);
+const previewValid = computed(() => isValid.value && masksValid.value);
+
+const layerShown = computed(() => layerVisible.value && !!natural.value && loadedSrc.value === stageSrc.value);
+
+// Masks outside the screenshot are clipped by the comparison; say so rather than leave them silently inert.
+const boundsSize = computed(() => currentSize.value ?? natural.value);
+const outside = computed(() =>
+    boundsSize.value ? outsideSummary(effectiveMasks.value, boundsSize.value.width, boundsSize.value.height) : { partly: 0, outside: 0 }
+);
+const coverage = computed(() => (boundsSize.value ? coveragePct(effectiveMasks.value, boundsSize.value.width, boundsSize.value.height) : 0));
+
+const maskInfo = computed(() => {
+    const { updatedByName, updatedAt } = item.value.masks;
+    if (maskTarget.value === 'app' || (!updatedByName && !updatedAt)) return '';
+    const when = updatedAt ? new Date(updatedAt).toLocaleString() : '';
+    return 'Last saved' + (updatedByName ? ' by ' + updatedByName : '') + (when ? ' on ' + when : '') + '.';
+});
+
+watch(
+    () => activeMasks.value.length,
+    count => {
+        if (!count) masksFieldsValid.value = true;
+    }
+);
+
+function resetMasksForScreen() {
+    maskTarget.value = 'screen';
+    drawMode.value = false;
+    selectedMaskId.value = null;
+    maskDragging.value = false;
+    masksFieldsValid.value = true;
+    maskDraft.value = maskDrafts.get(item.value.screenId) ?? freshMaskDraft();
+}
+
+let announceFlip = false;
+function announce(message: string) {
+    // a repeated message still reads out again
+    announceFlip = !announceFlip;
+    announcement.value = announceFlip ? message : message + ' ';
+}
+
+function focusMask(id: string | null) {
+    void nextTick(() => {
+        const target = id ? stage.value?.querySelector<SVGElement>('[data-mask-id="' + id + '"]') : null;
+        if (target) target.focus({ preventScroll: true });
+        else document.querySelector<HTMLElement>('[data-testid="mask-add"]')?.focus();
+    });
+}
+
+function toggleDraw() {
+    drawMode.value = !drawMode.value;
+    announce(drawMode.value ? 'Draw mode on. Drag on the screenshot to draw a mask.' : 'Draw mode off.');
+}
+
+function toggleLayer() {
+    layerVisible.value = !layerVisible.value;
+    announce(layerVisible.value ? 'Masks shown.' : 'Masks hidden.');
+}
+
+function addMask() {
+    const size = natural.value;
+    if (!maskEditable.value || !size) return;
+    if (activeMasks.value.length >= MAX_MASKS) {
+        announce('At most ' + MAX_MASKS + ' masks.');
+        return;
+    }
+    // a modest box near the top-left of what is in view, cascading so several don't stack exactly
+    const width = Math.min(size.width, Math.max(8, Math.min(240, Math.round(size.width / 4))));
+    const height = Math.min(size.height, Math.max(8, Math.min(64, Math.round(size.height / 10))));
+    const originX = zoom.value === 'fit' || !stage.value ? 0 : Math.round(stage.value.scrollLeft / canvasScale.value);
+    const originY = zoom.value === 'fit' || !stage.value ? 0 : Math.round(stage.value.scrollTop / canvasScale.value);
+    const cascade = (activeMasks.value.length % 8) * 12;
+    const mask: IMaskRect = {
+        id: newMaskId(),
+        x: Math.min(Math.max(0, originX + 24 + cascade), Math.max(0, size.width - width)),
+        y: Math.min(Math.max(0, originY + 24 + cascade), Math.max(0, size.height - height)),
+        width,
+        height,
+        label: null
+    };
+    activeMasks.value = [...activeMasks.value, mask];
+    selectedMaskId.value = mask.id;
+    announce('Added ' + describeMask(mask, activeMasks.value.length - 1) + '. Use the arrow keys to move it, Alt and the arrow keys to resize it.');
+    focusMask(mask.id);
+}
+
+function removeMask(id: string) {
+    const list = activeMasks.value;
+    const index = list.findIndex(m => m.id === id);
+    if (index < 0) return;
+    activeMasks.value = list.filter(m => m.id !== id);
+    const next = activeMasks.value[Math.min(index, activeMasks.value.length - 1)];
+    selectedMaskId.value = next?.id ?? null;
+    announce('Removed mask ' + (index + 1) + '. ' + formatMaskCount(activeMasks.value.length) + ' left.');
+    focusMask(next?.id ?? null);
+}
+
+function onMaskEscape() {
+    selectedMaskId.value = null;
+    stage.value?.focus({ preventScroll: true });
+}
+
+function enterAppMasks() {
+    appDraft.value ??= cloneMasks(savedAppMasks.value);
+    maskTarget.value = 'app';
+    drawMode.value = false;
+    selectedMaskId.value = null;
+    announce("Editing the app's masks.");
+}
+
+function leaveAppMasks() {
+    maskTarget.value = 'screen';
+    drawMode.value = false;
+    selectedMaskId.value = null;
+    announce("Editing this screen's masks.");
+}
+
+// Escape ends draw mode before the modal (or anything else) can take it as "close".
+function onDrawEscape(e: KeyboardEvent) {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    drawMode.value = false;
+    announce('Draw mode off.');
+}
+watch(drawMode, on => {
+    if (on) window.addEventListener('keydown', onDrawEscape, true);
+    else window.removeEventListener('keydown', onDrawEscape, true);
+});
+
+/** A save refused because someone else saved first: the stored masks are re-read and the edits dropped. */
+async function handleMaskSaveError(err: unknown, target: MaskTarget, screenId: string) {
+    if (!(err instanceof OpenApiError) || err.response?.status !== 409) {
+        handleErrorAndAlert(err);
+        return;
+    }
+    if (target === 'app') appDraft.value = null;
+    else maskDrafts.delete(screenId);
+    try {
+        await props.onReloadMasks?.();
+    } catch (reloadErr) {
+        handleError(reloadErr);
+    }
+    await nextTick();
+    if (target === 'screen' && item.value.screenId === screenId) maskDraft.value = freshMaskDraft();
+    await showAlert(
+        (target === 'app' ? "Someone else changed the app's masks" : "Someone else changed this screen's masks") +
+            ' while you were editing. They have been reloaded, and your unsaved changes were discarded.'
+    );
+}
+
+async function saveMasks() {
+    if (maskTarget.value === 'app') {
+        await saveAppMasks();
+        return;
+    }
+    const screen = item.value;
+    const values = maskDraft.value;
+    try {
+        isSavingMasks.value = true;
+        const saved = await dataFromAsync(
+            ScreensApi.putScreensUpdateMasks({
+                path: { appId: props.appId, screenId: screen.screenId },
+                body: { masks: cloneMasks(values.masks), inheritAppMasks: values.inherit, baseVersion: screen.masks.version }
+            })
+        );
+        maskDrafts.delete(screen.screenId);
+        props.onMasksSaved?.(screen.screenId, saved);
+        if (item.value.screenId === screen.screenId) maskDraft.value = { masks: cloneMasks(saved.masks), inherit: saved.inheritAppMasks };
+        showToast({ message: 'Masks saved for ' + screen.name + '. They apply from the next build.' });
+    } catch (err) {
+        await handleMaskSaveError(err, 'screen', screen.screenId);
+    } finally {
+        isSavingMasks.value = false;
+    }
+}
+
+async function saveAppMasks() {
+    const masks = appDraft.value;
+    if (!masks) return;
+    try {
+        isSavingMasks.value = true;
+        const saved = await dataFromAsync(
+            AppsApi.putAppsUpdateMasks({ path: { id: props.appId }, body: { masks: cloneMasks(masks), baseVersion: props.appMasks?.version ?? 0 } })
+        );
+        appDraft.value = null;
+        props.onAppMasksSaved?.(saved);
+        showToast({ message: 'App masks saved. They apply from the next build.' });
+    } catch (err) {
+        await handleMaskSaveError(err, 'app', item.value.screenId);
+    } finally {
+        isSavingMasks.value = false;
+    }
+}
+
 // ── Live preview ──
 const canCompare = computed(() => !!item.value.compare && !!item.value.current && !!item.value.reference);
 const preview = ref<IBuildScreenCompareResponse>();
@@ -382,11 +895,11 @@ const noCompareText = computed(() =>
 
 const previewTone = computed(() => {
     if (preview.value) return preview.value.passes ? 'info' : 'warning';
-    return previewFailed.value && isValid.value ? 'danger' : '';
+    return previewFailed.value && previewValid.value ? 'danger' : '';
 });
 const previewIcon = computed(() => {
     if (preview.value) return preview.value.passes ? 'fa-check' : 'fa-magnifying-glass';
-    if (!isValid.value) return 'fa-circle-info';
+    if (!previewValid.value) return 'fa-circle-info';
     return previewFailed.value ? 'fa-triangle-exclamation' : 'fa-circle-notch fa-spin';
 });
 
@@ -400,7 +913,7 @@ function schedulePreview(delay: number) {
     previewRun++;
     previewQueued = false;
     if (!canCompare.value) return;
-    if (!isValid.value) {
+    if (!previewValid.value) {
         // a verdict for values that are no longer in the fields would mislead
         preview.value = undefined;
         previewFailed.value = false;
@@ -416,7 +929,7 @@ async function runPreview() {
     }
     const run = previewRun;
     const screen = item.value;
-    const values = effective.value;
+    const values = { ...effective.value, masks: cloneMasks(effectiveMasks.value) };
 
     previewInFlight = true;
     try {
@@ -447,8 +960,15 @@ async function runPreview() {
     }
 }
 
-// Re-run when the values change; the previous result stays up until the new one lands.
-watch([effective, isValid], () => schedulePreview(350), { deep: true });
+// Re-run when the values change; the previous result stays up until the new one lands. A mask drag
+// waits for the pointer to come up rather than running a comparison per pixel of movement.
+watch(
+    [effective, effectiveMasks, previewValid, maskDragging],
+    () => {
+        if (!maskDragging.value) schedulePreview(350);
+    },
+    { deep: true }
+);
 
 // ── Screen change ──
 watch(
@@ -456,9 +976,11 @@ watch(
     () => {
         draft.value = drafts.get(item.value.screenId) ?? pickOverrides(item.value.tolerances);
         isValid.value = true;
+        resetMasksForScreen();
         preview.value = undefined;
         previewFailed.value = false;
         natural.value = undefined;
+        loadedSrc.value = undefined;
         currentSize.value = undefined;
         requestImages();
         schedulePreview(0);
@@ -466,10 +988,6 @@ watch(
     },
     { immediate: true }
 );
-
-watch(shownView, () => {
-    natural.value = undefined;
-});
 
 // ── Keyboard ──
 function isTypingTarget(target: EventTarget | null) {
@@ -489,6 +1007,12 @@ function onKeydown(e: KeyboardEvent) {
     } else if (e.key.toLowerCase() === 'd' && hasDiffView.value) {
         e.preventDefault();
         if (!e.repeat) diffHeld.value = true;
+    } else if (e.key.toLowerCase() === 'n' && canEditMaskTarget.value) {
+        e.preventDefault();
+        if (!e.repeat) addMask();
+    } else if (e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        if (!e.repeat) toggleLayer();
     }
 }
 
@@ -507,10 +1031,19 @@ onMounted(() => {
     // The dialog would otherwise start on the zoom select, where the arrow keys change the zoom
     // instead of stepping between screens.
     stage.value?.focus({ preventScroll: true });
+    if (stage.value) {
+        stageObserver = new ResizeObserver(measureStage);
+        stageObserver.observe(stage.value);
+    }
+    window.addEventListener('resize', measureStage);
+    measureStage();
 });
 
 onBeforeUnmount(() => {
     disposed = true;
+    stageObserver?.disconnect();
+    window.removeEventListener('resize', measureStage);
+    window.removeEventListener('keydown', onDrawEscape, true);
     clearTimeout(previewTimer);
     previewRun++;
     window.removeEventListener('keydown', onKeydown);
@@ -602,33 +1135,26 @@ onBeforeUnmount(() => {
         outline-offset: -2px;
     }
 
-    img {
-        display: block;
-        border-radius: var(--radius-sm);
-    }
-    // Fit: the whole screenshot inside the stage, never above its natural size.
+    // Fit: the whole screenshot inside the stage, never above its natural size. The canvas is sized in
+    // script (canvasStyle) for every zoom; 100% and 200% are true scale of the image's own pixels and scroll.
     &[data-zoom='fit'] {
-        // definite tracks, so the image's percentage caps resolve against the stage
         grid-template: minmax(0, 1fr) / minmax(0, 1fr);
         overflow: hidden;
-
-        img {
-            max-width: 100%;
-            max-height: 100%;
-            min-width: 0;
-            min-height: 0;
-            object-fit: contain;
-        }
-    }
-    // 100% and 200% are true scale of the image's own pixels; the stage scrolls.
-    &[data-zoom='100'] img {
-        width: var(--natural-width, auto);
-        max-width: none;
     }
     &[data-zoom='200'] img {
-        width: calc(var(--natural-width, auto) * 2);
-        max-width: none;
         image-rendering: pixelated;
+    }
+}
+// The image and the mask layer share one box, so the layer's pixels are the image's pixels.
+.lb-canvas {
+    position: relative;
+    flex-shrink: 0;
+
+    img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: var(--radius-sm);
     }
 }
 .lb-placeholder {
@@ -726,6 +1252,62 @@ onBeforeUnmount(() => {
 .lb-preview {
     align-items: center;
 }
+.lb-mask-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+
+    .btn[aria-pressed='true']:not(.ghost) {
+        border-color: var(--focus);
+        background: var(--accent-soft);
+    }
+}
+.lb-check {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+
+    &.disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+    input {
+        margin-top: 2px;
+    }
+}
+.lb-check-hint {
+    color: var(--text-3);
+    font-weight: 400;
+}
+.lb-app-edit {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.lb-app-mode {
+    align-items: center;
+}
+.lb-warn {
+    display: flex;
+    gap: 6px;
+    color: var(--warning);
+
+    i {
+        margin-top: 2px;
+    }
+}
+.lb-problem {
+    color: var(--danger);
+}
+.lb-mask-preview {
+    color: var(--text-2);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
 .lb-save {
     display: flex;
     flex-direction: column;
@@ -788,10 +1370,6 @@ onBeforeUnmount(() => {
 
         &[data-zoom='fit'] {
             grid-template: auto / minmax(0, 1fr);
-
-            img {
-                max-height: calc(50dvh - 24px);
-            }
         }
     }
     .lb-panel {

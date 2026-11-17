@@ -160,8 +160,12 @@
             :can-edit="app?.canReview === true"
             :current-label="buildId ? 'New build' : undefined"
             :images="images"
+            :app-masks="{ masks: app?.masks ?? [], version: app?.masksVersion ?? 0 }"
+            :on-reload-masks="reloadMasks"
             @close="lightboxIndex = null"
             @saved="onToleranceSaved"
+            @masks-saved="onMasksSaved"
+            @app-masks-saved="onAppMasksSaved"
         />
 
         <AppTolerances v-if="showAppTolerances && app" :app="app" @close="showAppTolerances = false" @saved="onAppTolerancesSaved" />
@@ -174,7 +178,7 @@
  * (what new builds are compared against) and one build's screens. A thumbnail opens the lightbox,
  * where the screen's comparison tolerances can be read and changed.
  */
-import { dataFrom } from '@zyno-io/openapi-client-codegen';
+import { dataFrom, dataFromAsync } from '@zyno-io/openapi-client-codegen';
 import { handleError } from '@zyno-io/vue-foundation';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
@@ -185,9 +189,11 @@ import {
     BuildScreensApi,
     BuildsApi,
     type IAppGalleryResponse,
+    type IAppMasksResponse,
     type IAppShowResponse,
     type IBuildResponse,
     type IBuildScreenResponse,
+    type IScreenMasksResponse,
     ScreensApi
 } from '@/openapi-client-generated';
 import { accessDeniedMessage, signOut } from '@/shared/access-error';
@@ -259,6 +265,34 @@ function onToleranceSaved(screenId: string, tolerances: IToleranceOverrides) {
 function onAppTolerancesSaved(tolerances: IToleranceOverrides) {
     if (app.value) Object.assign(app.value, tolerances);
     showAppTolerances.value = false;
+}
+
+// ── Masks ──
+function onMasksSaved(screenId: string, masks: IScreenMasksResponse) {
+    const tile = tiles.value.find(t => t.screenId === screenId);
+    if (tile) tile.masks = masks;
+}
+
+function onAppMasksSaved(masks: IAppMasksResponse) {
+    if (app.value) Object.assign(app.value, { masks: masks.masks, masksVersion: masks.version });
+}
+
+/** Re-reads the masks after a save was refused as stale, without closing the lightbox. */
+async function reloadMasks() {
+    const forApp = appId.value;
+    const forBuild = buildId.value;
+    const [appResponse, screens] = await Promise.all([
+        dataFromAsync(AppsApi.getAppsShow({ path: { id: forApp } })),
+        forBuild
+            ? dataFromAsync(BuildScreensApi.getBuildScreensGetScreens({ path: { appId: forApp, id: forBuild } }))
+            : dataFromAsync(ScreensApi.getScreensIndex({ path: { appId: forApp } })).then(gallery => gallery.screens)
+    ]);
+    if (forApp !== appId.value || forBuild !== buildId.value) return;
+    app.value = appResponse;
+    for (const screen of screens) {
+        const tile = tiles.value.find(t => t.screenId === screen.screenId);
+        if (tile) tile.masks = screen.masks;
+    }
 }
 
 // ── Filtering ──
@@ -418,6 +452,7 @@ function buildTile(screen: IBuildScreenResponse, forBuildId: string): ITile {
         name: screen.name,
         status: !current ? REMOVED_STATUS : current.reviewStatus ? REVIEW_STATUS[current.reviewStatus] : SCREEN_STATUS[current.status ?? ''],
         tolerances: pickOverrides(screen.tolerances),
+        masks: screen.masks,
         current: currentImage,
         reference: referenceImage,
         diff: currentImage && referenceImage && !unchanged ? currentImage : null,
@@ -435,6 +470,7 @@ function appTile(screen: IAppGalleryResponse['screens'][number]): ITile {
         name: screen.name,
         status: screen.image.isBaseline ? undefined : { label: 'Not in baseline', tone: 'release' },
         tolerances: pickOverrides(screen.tolerances),
+        masks: screen.masks,
         current: image,
         thumb: image,
         changed: false,
