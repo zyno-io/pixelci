@@ -106,7 +106,10 @@ describe('PixelCiApi', () => {
             assert.deepStrictEqual(result, {
                 buildId: 'build-123',
                 status: 'draft',
-                shard: undefined
+                shard: undefined,
+                branchName: undefined,
+                commitHash: undefined,
+                defaultBranch: undefined
             });
 
             assert.equal(mockFetch.mock.callCount(), 1);
@@ -120,6 +123,19 @@ describe('PixelCiApi', () => {
             assert.equal(body.projectUrl, 'https://gitlab.com/test/project');
             assert.deepEqual(body.screens, { count: 1, hash: 'h' });
             assert.equal('shard' in body, false);
+        });
+
+        it('reports defaultBranch only when the server sends it (undefined = older server, null = no default branch)', async () => {
+            const respond = (body: object) => mockFetch.mock.mockImplementation(async () => ({ ok: true, json: async () => body }) as any);
+            respond({ id: 'b', status: 'draft', branchName: 'feat', commitHash: 'abc', defaultBranch: 'main' });
+            const named = await api.createBuild({ screens: { count: 1, hash: 'h' } });
+            assert.equal(named.defaultBranch, 'main');
+            assert.equal(named.branchName, 'feat');
+            assert.equal(named.commitHash, 'abc');
+            respond({ id: 'b', status: 'draft', defaultBranch: null });
+            assert.equal((await api.createBuild({ screens: { count: 1, hash: 'h' } })).defaultBranch, null);
+            respond({ id: 'b', status: 'draft' });
+            assert.equal((await api.createBuild({ screens: { count: 1, hash: 'h' } })).defaultBranch, undefined);
         });
 
         it('sends the same runId on every attempt of one run', async () => {
@@ -210,6 +226,37 @@ describe('PixelCiApi', () => {
             assert.equal(options!.method, 'POST');
             assert.equal((options!.headers as Record<string, string>)['Authorization'], 'Bearer glcbt-test-token');
             assert.deepEqual(JSON.parse(options!.body as string), { screens: { count: 2, hash: 'abc' } });
+        });
+    });
+
+    describe('processBuild base', () => {
+        const respondOk = () => mockFetch.mock.mockImplementation(async () => ({ ok: true, json: async () => ({ ok: true }) }) as any);
+
+        it('sends base when given', async () => {
+            respondOk();
+            const base = { commits: ['a'.repeat(40), 'b'.repeat(40)], source: 'merge-base' as const };
+            await api.processBuild('b1', { count: 1, hash: 'h' }, base);
+            const body = JSON.parse(mockFetch.mock.calls.at(-1)!.arguments[1]!.body as string);
+            assert.deepEqual(body, { screens: { count: 1, hash: 'h' }, base });
+        });
+
+        it('omits the base key entirely when undefined', async () => {
+            respondOk();
+            await api.processBuild('b1', { count: 1, hash: 'h' }, undefined);
+            const body = JSON.parse(mockFetch.mock.calls.at(-1)!.arguments[1]!.body as string);
+            assert.equal('base' in body, false);
+        });
+    });
+
+    describe('getBuildResult', () => {
+        it('returns referenceSource when present, undefined when null or absent', async () => {
+            const respond = (body: object) => mockFetch.mock.mockImplementation(async () => ({ ok: true, json: async () => body }) as any);
+            respond({ status: 'needs review', referenceSource: 'latest' });
+            assert.deepEqual(await api.getBuildResult('b'), { status: 'needs review', referenceSource: 'latest' });
+            respond({ status: 'needs review', referenceSource: null });
+            assert.deepEqual(await api.getBuildResult('b'), { status: 'needs review', referenceSource: undefined });
+            respond({ status: 'processing' });
+            assert.equal((await api.getBuildResult('b')).referenceSource, undefined);
         });
     });
 

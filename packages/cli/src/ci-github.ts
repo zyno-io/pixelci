@@ -74,3 +74,13 @@ export function reportGitHubResult(status: string, buildUrl: string): void {
         }
     }
 }
+
+export interface IGitHubBaseHints {
+    isPullRequest: boolean;
+    /** Path of the webhook event payload (`pull_request.base.sha` lives in it). */
+    eventPath?: string;
+}
+
+export function baseHints(env: NodeJS.ProcessEnv): IGitHubBaseHints {
+    return { isPullRequest: env.GITHUB_EVENT_NAME === 'pull_request', eventPath: env.GITHUB_EVENT_PATH || undefined };
+}

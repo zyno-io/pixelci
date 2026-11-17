@@ -2,6 +2,7 @@ import { assert, type ReceiveType } from '@zyno-io/ts-reflection';
 import { randomUUID } from 'crypto';
 import { openAsBlob } from 'fs';
 
+import type { IBase } from './base.js';
 import type { IScreenManifest } from './manifest.js';
 import type { IShard } from './options.js';
 
@@ -143,8 +144,23 @@ export class PixelCiApi {
         return `${this.serverUrl}/apps/${this.appId}/builds/${buildId}`;
     }
 
-    async createBuild(opts: { screens: IScreenManifest; shard?: IShard }): Promise<{ buildId: string; status: string; shard?: IShard }> {
-        const response = await this.request<{ id: string; status: string; shard?: { index: number; total: number } }>(
+    async createBuild(opts: { screens: IScreenManifest; shard?: IShard }): Promise<{
+        buildId: string;
+        status: string;
+        shard?: IShard;
+        branchName?: string;
+        commitHash?: string;
+        /** Name of the app's default branch, null when none is set; undefined when the server predates merge-base baselines. */
+        defaultBranch?: string | null;
+    }> {
+        const response = await this.request<{
+            id: string;
+            status: string;
+            shard?: { index: number; total: number };
+            branchName?: string;
+            commitHash?: string;
+            defaultBranch?: string | null;
+        }>(
             'POST',
             `apps/${this.appId}/builds`,
             () => ({ projectUrl: this.projectUrl, runId: this.runId, screens: opts.screens, ...(opts.shard && { shard: opts.shard }) }),
@@ -154,7 +170,10 @@ export class PixelCiApi {
         return {
             buildId: response.id,
             status: response.status,
-            shard: response.shard
+            shard: response.shard,
+            branchName: response.branchName,
+            commitHash: response.commitHash,
+            defaultBranch: response.defaultBranch
         };
     }
 
@@ -180,12 +199,27 @@ export class PixelCiApi {
         }
     }
 
-    async processBuild(buildId: string, screens: IScreenManifest): Promise<void> {
-        await this.request<{ ok: true }>('POST', `apps/${this.appId}/builds/${buildId}/process`, () => ({ screens }), JSON_TIMEOUT_MS);
+    async processBuild(buildId: string, screens: IScreenManifest, base?: IBase): Promise<void> {
+        await this.request<{ ok: true }>(
+            'POST',
+            `apps/${this.appId}/builds/${buildId}/process`,
+            () => ({ screens, ...(base && { base }) }),
+            JSON_TIMEOUT_MS
+        );
     }
 
     async getBuildStatus(buildId: string): Promise<string> {
-        const response = await this.request<{ status: string }>('GET', `apps/${this.appId}/builds/${buildId}/status`, undefined, JSON_TIMEOUT_MS);
-        return response.status;
+        return (await this.getBuildResult(buildId)).status;
+    }
+
+    /** Status plus, for final statuses on servers that report it, how the baseline was chosen. */
+    async getBuildResult(buildId: string): Promise<{ status: string; referenceSource?: string }> {
+        const response = await this.request<{ status: string; referenceSource?: string | null }>(
+            'GET',
+            `apps/${this.appId}/builds/${buildId}/status`,
+            undefined,
+            JSON_TIMEOUT_MS
+        );
+        return { status: response.status, referenceSource: response.referenceSource ?? undefined };
     }
 }

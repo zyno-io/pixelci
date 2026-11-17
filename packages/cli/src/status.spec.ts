@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { PASSING, outcomeFor } from './status.js';
+import { PASSING, outcomeFor, referenceWarning } from './status.js';
 
 describe('outcomeFor', () => {
     it('exits 0 only for the allowlist', () => {
@@ -18,5 +18,12 @@ describe('outcomeFor', () => {
 
     it('explains unknown statuses', () => {
         assert.equal(outcomeFor('weird').message, "Unexpected build status 'weird'; failing to be safe. Upgrade @zyno-io/pixelci-cli.");
+    });
+});
+
+describe('referenceWarning', () => {
+    it('warns only for the latest fallback', () => {
+        assert.match(referenceWarning('latest')!, /latest approved build/);
+        for (const s of ['ancestor', 'none', 'legacy', undefined]) assert.equal(referenceWarning(s), undefined);
     });
 });
