@@ -80,7 +80,7 @@
                     </div>
                 </div>
 
-                <aside class="lb-panel" aria-label="Screen details">
+                <div class="lb-panel" role="region" aria-label="Screen details">
                     <section class="lb-section">
                         <h3>Details</h3>
                         <dl class="lb-details">
@@ -355,7 +355,7 @@
                         <span><kbd>M</kbd> hide masks</span>
                         <template v-if="maskEditable">
                             <span aria-hidden="true">·</span>
-                            <span
+                            <span class="wrap"
                                 >on a mask: <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> move, <kbd>Alt</kbd> resize, <kbd>Shift</kbd> by 10,
                                 <kbd>Del</kbd> remove</span
                             >
@@ -363,7 +363,7 @@
                         <span aria-hidden="true">·</span>
                         <span><kbd>Esc</kbd> close</span>
                     </p>
-                </aside>
+                </div>
             </div>
         </div>
     </A11yModal>
@@ -1337,6 +1337,10 @@ onBeforeUnmount(() => {
 
     > span {
         white-space: nowrap;
+
+        &.wrap {
+            white-space: normal;
+        }
     }
     kbd {
         display: inline-block;

@@ -1,12 +1,47 @@
-import type { IApprovalMinRole, IAppGalleryResponse, IAppShowResponse, IBuildResponse, IBuildScreenResponse } from '../../../src/openapi-client-generated';
+import type {
+    IApprovalMinRole,
+    IAppGalleryResponse,
+    IAppShowResponse,
+    IBuildResponse,
+    IBuildScreenResponse,
+    IMaskRect,
+    IScreenMasksResponse
+} from '../../../src/openapi-client-generated';
 
 export const appId = '00000000-0000-0000-0000-000000000001';
 export const buildId = '00000000-0000-0000-0000-000000000002';
 const branchId = '00000000-0000-0000-0000-000000000003';
 const userId = '00000000-0000-0000-0000-000000000004';
 
+/** The region the mocked comparison reports as changed, in the mocked screenshots' 800x520 pixels. */
+export const CHANGED_REGION = { x: 52, y: 168, width: 696, height: 60 };
+const SCREENSHOT = { width: 800, height: 520 };
+
+export const noMasks = (): IScreenMasksResponse => ({ masks: [], inheritAppMasks: true, version: 0, updatedAt: null, updatedByName: null });
+
+/** Area of `rect` inside `within`, so the mocked comparison can discount masked pixels. */
+function overlap(rect: IMaskRect, within: { x: number; y: number; width: number; height: number }) {
+    const width = Math.min(rect.x + rect.width, within.x + within.width) - Math.max(rect.x, within.x);
+    const height = Math.min(rect.y + rect.height, within.y + within.height) - Math.max(rect.y, within.y);
+    return width > 0 && height > 0 ? width * height : 0;
+}
+
 export function createDesignApi(
-    options: { anonymous?: boolean; onboarding?: boolean; admin?: boolean; canReview?: boolean; approvalMinRole?: IApprovalMinRole } = {}
+    options: {
+        anonymous?: boolean;
+        onboarding?: boolean;
+        admin?: boolean;
+        canReview?: boolean;
+        approvalMinRole?: IApprovalMinRole;
+        /** Masks the app starts with. */
+        appMasks?: IMaskRect[];
+        /** Masks a screen starts with, by screen name, and whether it uses the app's. */
+        screenMasks?: Record<string, { masks: IMaskRect[]; inheritAppMasks?: boolean }>;
+        /** Masks stamped on the review screen's current build screens, by screen name. */
+        appliedMasks?: Record<string, IMaskRect[]>;
+        /** Every request the mocked API served, for assertions on what the UI sent. */
+        requests?: { path: string; method: string; body?: unknown }[];
+    } = {}
 ) {
     const app: IAppShowResponse = {
         id: appId,
@@ -22,6 +57,10 @@ export function createDesignApi(
         colorTolerance: null,
         shiftTolerance: null,
         diffPctTolerance: null,
+        masks: options.appMasks ?? [],
+        masksVersion: options.appMasks?.length ? 1 : 0,
+        masksUpdatedAt: null,
+        masksUpdatedById: null,
         instanceTolerances: { colorTolerance: 0.2, shiftTolerance: 1, diffPctTolerance: 0.01 }
     };
     const build: IBuildResponse = {
@@ -38,6 +77,16 @@ export function createDesignApi(
         name,
         screenId: `screen-${index}`,
         tolerances: { colorTolerance: null, shiftTolerance: null, diffPctTolerance: null },
+        masks: options.screenMasks?.[name]
+            ? {
+                  ...noMasks(),
+                  masks: options.screenMasks[name].masks,
+                  inheritAppMasks: options.screenMasks[name].inheritAppMasks ?? true,
+                  version: 1,
+                  updatedByName: 'Design Reviewer',
+                  updatedAt: '2026-10-05T00:00:00Z'
+              }
+            : noMasks(),
         currentBuildScreen: {
             id: appId,
             buildId,
@@ -48,7 +97,8 @@ export function createDesignApi(
             reviewStatus: null,
             reviewComment: null,
             reviewedById: null,
-            reviewedAt: null
+            reviewedAt: null,
+            appliedMasks: options.appliedMasks?.[name] ?? null
         },
         referenceBuildScreen:
             index === 0
@@ -62,7 +112,8 @@ export function createDesignApi(
                       reviewStatus: null,
                       reviewComment: null,
                       reviewedById: null,
-                      reviewedAt: null
+                      reviewedAt: null,
+                      appliedMasks: null
                   }
                 : undefined
     }));
@@ -74,6 +125,7 @@ export function createDesignApi(
             name,
             screenId: `screen-${index}`,
             tolerances: screens[index]?.tolerances ?? { colorTolerance: null, shiftTolerance: null, diffPctTolerance: null },
+            masks: screens[index]?.masks ?? noMasks(),
             image: { buildId, sourceBuildId: buildId, isBaseline: index !== 7 }
         }))
     };
@@ -81,6 +133,7 @@ export function createDesignApi(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (path: string, method = 'GET', body?: any) => {
         const json = (data: unknown, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(data) });
+        options.requests?.push({ path, method, body });
         if (path === '/api/session/onboarding-status')
             return json({ isOnboarded: !options.onboarding, setupEnabled: true, hasAdmin: !options.onboarding });
         if (path === '/api/session/me')
@@ -111,14 +164,49 @@ export function createDesignApi(
             }
             return json(body);
         }
-        // A fixed measured difference of 0.5%, so the verdict depends only on the allowance sent.
+        if (path === `/api/apps/${appId}/masks` && method === 'PUT' && body) {
+            if (body.baseVersion !== app.masksVersion) return json({ message: 'The masks were changed by someone else; reload and try again' }, 409);
+            app.masks = body.masks;
+            app.masksVersion += 1;
+            return json({ masks: app.masks, version: app.masksVersion, updatedAt: '2026-10-06T00:00:00Z', updatedByName: 'Design Reviewer' });
+        }
+        if (path.endsWith('/masks') && method === 'PUT' && body) {
+            if (options.canReview === false) return json({ message: 'Forbidden' }, 403);
+            const screenId = path.split('/').at(-2);
+            const current = screens.find(item => item.screenId === screenId);
+            if (!current) return json({ message: 'Not found' }, 404);
+            if (body.baseVersion !== current.masks.version)
+                return json({ message: 'The masks were changed by someone else; reload and try again' }, 409);
+            const saved: IScreenMasksResponse = {
+                masks: body.masks,
+                inheritAppMasks: body.inheritAppMasks,
+                version: current.masks.version + 1,
+                updatedAt: '2026-10-06T00:00:00Z',
+                updatedByName: 'Design Reviewer'
+            };
+            for (const list of [screens, gallery.screens]) {
+                const screen = list.find(item => item.screenId === screenId);
+                if (screen) screen.masks = saved;
+            }
+            return json(saved);
+        }
+        // A fixed measured difference of 0.5%, so the verdict depends only on the allowance sent, and on how much of
+        // the changed region the masks cover: that part is excluded, and so is its share of the total.
         if (path.endsWith('/compare') && method === 'POST' && body) {
+            if (!Array.isArray(body.masks)) return json({ message: 'masks must be an array' }, 400);
+            const masks: IMaskRect[] = body.masks;
+            const maskedPixels = masks.reduce((sum, mask) => sum + overlap(mask, { x: 0, y: 0, ...SCREENSHOT }), 0);
+            const coveredChange = masks.reduce((sum, mask) => sum + overlap(mask, CHANGED_REGION), 0);
+            const changedArea = CHANGED_REGION.width * CHANGED_REGION.height;
+            const diffPixels = Math.round(2080 * (1 - Math.min(1, coveredChange / changedArea)));
+            const diffPct = (diffPixels / (416000 - maskedPixels)) * 100;
             return json({
-                diffPct: 0.5,
-                diffPixels: 2080,
+                diffPct,
+                diffPixels,
                 totalPixels: 416000,
                 shiftTolerantPixels: body.shiftTolerance > 0 ? 312 : 0,
-                passes: body.diffPctTolerance >= 0.5,
+                maskedPixels,
+                passes: diffPct <= body.diffPctTolerance,
                 diffImage:
                     'data:image/svg+xml;utf8,' +
                     encodeURIComponent(
