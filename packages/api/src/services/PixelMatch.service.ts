@@ -3,6 +3,10 @@ import { memoize } from 'lodash';
 
 import { decodeRgba, encodePng, IRgbaImage } from './Image';
 import { IMaskRect, MASK_FILL, rasterizeMasks } from './Mask';
+
+/** Mask tint on the stored diff image: mid grey at 40%, matching the UI's `--mask-fill`. */
+const MASK_TINT_GREY = 128;
+const MASK_TINT_ALPHA = 0.4;
 import { isAntialiasedIgnoringMask } from './MaskedAntialias';
 
 const loadPixelMatch = memoize(async () => {
@@ -328,18 +332,19 @@ export class PixelMatchService {
         const comparedPixels = totalPixels - maskedPixels;
         const diffPct = comparedPixels > 0 ? (diffPixels / comparedPixels) * 100 : 0;
 
-        // a neutral hatch marks masked pixels in the diff image; red, yellow and magenta keep their meanings
+        // masked pixels get the translucent neutral tint (the UI's mask fill) composited over whatever the diff already
+        // has there, so red, yellow and magenta keep their meanings. Display only: the counts above already exclude them.
         if (mask) {
-            for (let y = 0, i = 0; y < height; y++) {
-                for (let x = 0; x < width; x++, i++) {
-                    if (!mask[i]) continue;
-                    const v = (x + y) % 8 < 4 ? 168 : 214;
-                    const o = i << 2;
-                    diffTarget.data[o] = v;
-                    diffTarget.data[o + 1] = v;
-                    diffTarget.data[o + 2] = v;
-                    diffTarget.data[o + 3] = 255;
+            for (let i = 0; i < mask.length; i++) {
+                if (!mask[i]) continue;
+                const o = i << 2;
+                const dstA = diffTarget.data[o + 3] / 255;
+                const outA = MASK_TINT_ALPHA + dstA * (1 - MASK_TINT_ALPHA);
+                for (let c = 0; c < 3; c++) {
+                    const blended = (MASK_TINT_GREY * MASK_TINT_ALPHA + diffTarget.data[o + c] * dstA * (1 - MASK_TINT_ALPHA)) / outA;
+                    diffTarget.data[o + c] = Math.round(blended);
                 }
+                diffTarget.data[o + 3] = Math.round(outA * 255);
             }
         }
 

@@ -71,7 +71,7 @@ Or the equivalent JSON (e.g. `.mcp.json`):
 | `get_build`        | A build with every screen's comparison status, review decision (approved/rejected), comment, and reviewer                                          |
 | `get_screen_image` | A screen's image as a PNG — the highlighted pixel diff (`kind=diff`) or the screenshot (`kind=new`) — so the assistant can actually see the change |
 
-Each screen in `get_build` (and in the REST build detail below) has an `appliedMasks` field: the regions that were ignored when it was compared, as `{ x, y, width, height, label }` in screenshot pixels from the top-left, or `null` for a build processed before [masks](/usage#masks) existed. A screen reported as unchanged can still differ inside them, so check `appliedMasks` before telling someone nothing changed. The diff image (`kind=diff`) shows masked pixels in a grey hatch. Masks are read-only here: they can only be changed in the PixelCI UI.
+Each screen in `get_build` (and in the REST build detail below) has an `appliedMasks` field: the regions that were ignored when it was compared, as `{ x, y, width, height, label }` in screenshot pixels from the top-left, or `null` for a build processed before [masks](/usage#masks) existed. A screen reported as unchanged can still differ inside them, so check `appliedMasks` before telling someone nothing changed. The diff image (`kind=diff`) tints masked pixels translucent grey. Masks are read-only here: they can only be changed in the PixelCI UI.
 
 Once connected, you can ask things like _"In PixelCI, which screens on the latest build of app X were rejected, and what were the comments?"_
 

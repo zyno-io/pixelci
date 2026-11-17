@@ -324,19 +324,30 @@ describe('PixelMatchService', () => {
             assert.equal(result.maskedPixels, 20);
         });
 
-        it('should draw the hatch only on masked pixels', async () => {
+        it('should tint the diff image only on masked pixels', async () => {
             const service = new PixelMatchService(createMockLogger());
-            const result = await service.getDiff(white, createPngWithRect(10, 10, 6, 6, 2, 2), 0.2, 0, [mask(1, 1, 3, 3)]);
+            const other = createPngWithRect(10, 10, 6, 6, 2, 2);
+            const plain = PNG.sync.read(Buffer.from(await (await service.getDiff(white, other, 0.2, 0)).getDiffPng()));
+            const result = await service.getDiff(white, other, 0.2, 0, [mask(1, 1, 3, 3)]);
             const parsed = PNG.sync.read(Buffer.from(await result.getDiffPng()));
-            const at = (x: number, y: number) => [...parsed.data.subarray((10 * y + x) << 2, ((10 * y + x) << 2) + 4)];
-            const isHatch = (px: number[]) => px[0] === px[1] && px[1] === px[2] && px[3] === 255 && (px[0] === 168 || px[0] === 214);
+            const at = (png: PNG, x: number, y: number) => [...png.data.subarray((10 * y + x) << 2, ((10 * y + x) << 2) + 4)];
             for (let y = 0; y < 10; y++) {
                 for (let x = 0; x < 10; x++) {
                     const masked = x >= 1 && x < 4 && y >= 1 && y < 4;
-                    assert.equal(isHatch(at(x, y)), masked, `pixel ${x},${y}`);
+                    if (!masked) {
+                        assert.deepEqual(at(parsed, x, y), at(plain, x, y), `pixel ${x},${y} is untouched`);
+                        continue;
+                    }
+                    // mid grey at 40% composited over whatever the untinted diff has there
+                    const [r, g, bl, alpha] = at(plain, x, y);
+                    const dstA = alpha / 255;
+                    const outA = 0.4 + dstA * 0.6;
+                    const ch = (v: number) => Math.round((128 * 0.4 + v * dstA * 0.6) / outA);
+                    assert.deepEqual(at(parsed, x, y), [ch(r), ch(g), ch(bl), Math.round(outA * 255)], `pixel ${x},${y} is tinted`);
+                    assert.ok(at(parsed, x, y)[3] >= 102, `pixel ${x},${y} is visible`);
                 }
             }
-            assert.deepEqual(at(6, 6), [255, 0, 0, 255]); // a counted change keeps its colour
+            assert.deepEqual(at(parsed, 6, 6), [255, 0, 0, 255]); // a counted change keeps its colour
         });
 
         it('should be invariant to content under a mask, at every shift radius', async () => {

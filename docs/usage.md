@@ -200,7 +200,7 @@ A mask is a rectangle on a screen whose pixels never affect the result. Use one 
 
 Masks can be set at two levels, and both apply:
 
-1. **App** — in the lightbox of any screen, click **Edit app masks**. Administrators can change these; everyone else sees them drawn dashed. They apply to every screen in the app, so keep them to things that really are on every screen, such as a header clock.
+1. **App** — in the lightbox of any screen, click **Edit app masks**. Administrators can change these; everyone else sees them read-only. They apply to every screen in the app, so keep them to things that really are on every screen, such as a header clock.
 2. **Screen** — open the screen from a gallery, or click **Tolerance** on its card in the screen comparison view, and use the **Masks** section. Anyone who can review the app can change these.
 
 A screen is compared with its own masks plus the app's. Untick **Use app masks** to leave the app's out for that screen.
@@ -211,7 +211,7 @@ In the **Masks** section:
 
 - Click **Draw mask**, then drag on the screenshot. **Add mask** (or **N**) puts a mask in view that you then move and resize.
 - Drag a mask to move it and drag its handles to resize it, or type its **X**, **Y**, **W** and **H** in the list. Add a label if you want a reminder of what it covers (up to 80 characters).
-- **Hide masks** (or **M**) hides the outlines while you look at the screenshot.
+- **Hide masks** (or **M**) hides the masks while you look at the screenshot.
 - Each screen can have 50 masks, and the app another 50.
 
 Masks are fully usable from the keyboard. Tab to a mask; the **arrow keys** move it by 1 pixel (hold **Shift** for 10), **Alt** with the arrows resizes it, **Delete** removes it, and **Escape** returns to the screenshot. **Escape** also cancels a draw in progress.
@@ -230,7 +230,7 @@ When you open a screen from a build, the preview on the lightbox panel runs the 
 
 Masks apply from the next build. A build that has already been processed keeps its result, so a screen you are reviewing still needs its Approve or Reject, and a build that needs review stays that way; the preview will say it would pass, and approving re-runs your CI as usual.
 
-Because masks can hide a real regression, each screen in a build records the masks it was compared with. On the review screen they're drawn as dashed outlines over both screenshots and the diff, and the screen carries a **Masked** tag. The diff image shows masked pixels in a grey hatch, so red and yellow keep their meaning. The lightbox warns when masks cover more than half of a screenshot. [LLM access](/llm-access) reports the same masks as `appliedMasks`.
+Because masks can hide a real regression, each screen in a build records the masks it was compared with. On the review screen they're drawn as a translucent grey fill over both screenshots, and the screen carries a **Masked** tag. The diff image tints masked pixels with the same grey, so red and yellow keep their meaning. The lightbox warns when masks cover more than half of a screenshot. [LLM access](/llm-access) reports the same masks as `appliedMasks`.
 
 A screen that comes out unchanged is shown using the earlier approved image rather than its own upload, so what you see can differ from what was uploaded inside a mask.
 

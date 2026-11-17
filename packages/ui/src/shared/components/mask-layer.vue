@@ -11,13 +11,6 @@
         focusable="false"
         data-testid="mask-layer"
     >
-        <defs>
-            <pattern :id="patternId" :width="hatch" :height="hatch" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-                <rect :width="hatch" :height="hatch" class="hatch-bg" />
-                <rect :width="hatch / 3" :height="hatch" class="hatch-line" />
-            </pattern>
-        </defs>
-
         <!-- Starts a draw anywhere on the screenshot; only present in draw mode so clicks otherwise pass through. -->
         <rect
             v-if="editable && drawing"
@@ -29,9 +22,8 @@
         />
 
         <g v-for="mask in context" :key="mask.id" class="mask is-context" data-testid="app-mask-rect">
+            <title>{{ mask.label ? `App mask: ${mask.label}` : 'App mask (edit it from Edit app masks)' }}</title>
             <rect class="mask-fill" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" />
-            <rect class="mask-edge-a" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" />
-            <rect class="mask-edge-b" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" />
         </g>
 
         <g
@@ -43,18 +35,13 @@
             :role="editable ? 'group' : undefined"
             :aria-label="editable ? describeMask(mask, index) : undefined"
             :data-mask-id="mask.id"
-            :data-testid="editable ? 'mask-rect' : 'mask-outline'"
+            :data-testid="editable ? 'mask-rect' : 'mask-area'"
             @pointerdown="startMove($event, mask)"
             @focus="emit('select', mask.id)"
             @keydown="onKeydown($event, mask, index)"
         >
-            <rect class="mask-fill" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" :fill="`url(#${patternId})`" />
-            <rect class="mask-edge-a" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" />
-            <rect class="mask-edge-b" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" />
+            <rect class="mask-fill" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" />
             <rect class="mask-focus" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" />
-            <text v-if="editable" class="mask-number" :x="mask.x + 4 / scale" :y="mask.y + 14 / scale" :font-size="12 / scale" aria-hidden="true">
-                {{ index + 1 }}
-            </text>
         </g>
 
         <rect
@@ -87,10 +74,11 @@
 <script lang="ts" setup>
 /**
  * Mask rectangles drawn over a screenshot, in the screenshot's own pixels (`viewBox` is its natural
- * size, so the layer follows Fit and the zoom levels). Read-only, it is an outline: no pointer
- * events, so the image underneath still takes clicks. Editable, masks can be drawn, moved and resized
- * with a pointer, and each one is focusable and moves, resizes and deletes from the keyboard.
- * `context` masks (the other set, e.g. the app's while editing a screen's) are drawn dashed and fixed.
+ * size, so the layer follows Fit and the zoom levels). Every mask is a solid translucent fill with no
+ * outline. Read-only, it has no pointer events, so the image underneath still takes clicks. Editable, masks can be drawn, moved and resized
+ * with a pointer, and each one is focusable and moves, resizes and deletes from the keyboard. Only the
+ * selected or keyboard-focused mask gets a 1px outline (also the focus indicator) and resize handles.
+ * `context` masks (the other set, e.g. the app's while editing a screen's) look the same but are fixed.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
@@ -152,9 +140,6 @@ const scale = ref(1);
 const coarse = ref(false);
 let resizeObserver: ResizeObserver | undefined;
 
-const patternId = `mask-hatch-${Math.random().toString(36).slice(2, 8)}`;
-
-const hatch = computed(() => 8 / scale.value);
 const handleSize = computed(() => (coarse.value ? 16 : 9) / scale.value);
 const selected = computed(() => props.masks.find(m => m.id === props.selectedId));
 
@@ -409,26 +394,14 @@ function onKeydown(e: KeyboardEvent, mask: IMaskRect, index: number) {
 </script>
 
 <style lang="scss">
-// Mask colours. Two tones on every outline (a light and a dark line) read on any screenshot; the hatch
-// is a faint ink stripe. Redeclared for dark mode like every other token.
+// One neutral tint for every mask, everywhere (the stored diff image blends toward 128 grey at 40%).
+// Redeclared for dark mode like every other token.
 :root {
-    --mask-edge-light: rgba(255, 255, 255, 0.95);
-    --mask-edge-dark: #1f2330;
-    --mask-hatch-bg: rgba(255, 255, 255, 0.28);
-    --mask-hatch-line: rgba(31, 35, 48, 0.3);
-    --mask-context-fill: rgba(31, 35, 48, 0.06);
-    --mask-number-ink: #15171c;
-    --mask-number-halo: rgba(255, 255, 255, 0.9);
+    --mask-fill: rgba(118, 122, 130, 0.4);
     --mask-handle-fill: #ffffff;
 }
 html.dark {
-    --mask-edge-light: rgba(255, 255, 255, 0.9);
-    --mask-edge-dark: #0c0d10;
-    --mask-hatch-bg: rgba(255, 255, 255, 0.2);
-    --mask-hatch-line: rgba(12, 13, 16, 0.42);
-    --mask-context-fill: rgba(236, 236, 240, 0.06);
-    --mask-number-ink: #ececf0;
-    --mask-number-halo: rgba(12, 13, 16, 0.85);
+    --mask-fill: rgba(150, 154, 164, 0.4);
     --mask-handle-fill: #ececf0;
 }
 </style>
@@ -443,70 +416,30 @@ html.dark {
     // read-only: clicks go to the image beneath; the editable layer re-enables them on the masks
     pointer-events: none;
 }
-.hatch-bg {
-    fill: var(--mask-hatch-bg);
+.mask-fill {
+    fill: var(--mask-fill);
+    stroke: none;
 }
-.hatch-line {
-    fill: var(--mask-hatch-line);
-}
-// Read-only (the review screen) is outline only: the screenshot underneath stays fully legible.
-.mask-layer:not(.editable) .mask-fill {
-    fill: none;
-}
-.mask-edge-a,
-.mask-edge-b,
+// The only outline: 1px, on the selected or keyboard-focused mask in the editor. It doubles as the focus indicator.
 .mask-focus,
 .mask-draft {
     fill: none;
     vector-effect: non-scaling-stroke;
 }
-.mask-edge-a {
-    stroke: var(--mask-edge-light);
-    stroke-width: 3px;
-}
-.mask-edge-b {
-    stroke: var(--mask-edge-dark);
-    stroke-width: 1.5px;
-    stroke-dasharray: 6 4;
-}
 .mask-focus {
     display: none;
     stroke: var(--focus);
-    stroke-width: 2.5px;
-}
-.is-context {
-    .mask-fill {
-        fill: var(--mask-context-fill);
-    }
-    .mask-edge-a {
-        stroke-width: 2px;
-        opacity: 0.7;
-    }
-    .mask-edge-b {
-        stroke-dasharray: 2 4;
-        opacity: 0.8;
-    }
+    stroke-width: 1px;
 }
 .mask-draft {
     stroke: var(--focus);
-    stroke-width: 2px;
-    stroke-dasharray: 5 3;
-    fill: var(--accent-soft);
-}
-.mask-number {
-    fill: var(--mask-number-ink);
-    font-family: var(--font-sans);
-    font-weight: 600;
-    paint-order: stroke;
-    stroke: var(--mask-number-halo);
-    stroke-width: 3px;
-    stroke-linejoin: round;
-    user-select: none;
+    stroke-width: 1px;
+    fill: var(--mask-fill);
 }
 .mask-handle {
     fill: var(--mask-handle-fill);
     stroke: var(--focus);
-    stroke-width: 1.5px;
+    stroke-width: 1px;
     vector-effect: non-scaling-stroke;
     pointer-events: all;
     touch-action: none;
@@ -518,6 +451,9 @@ html.dark {
         cursor: move;
         touch-action: none;
         outline: none;
+    }
+    .mask.is-context {
+        cursor: default;
     }
     .mask.selected .mask-focus,
     .mask:focus-visible .mask-focus {

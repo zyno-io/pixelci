@@ -108,7 +108,7 @@ test.describe('mask editor, pointer', () => {
         const comparesBefore = requests.filter(r => r.path.endsWith('/compare')).length;
         expect(comparesBefore).toBeGreaterThan(0);
 
-        const rectBox = (await page.getByTestId('mask-rect').locator('.mask-edge-a').boundingBox())!;
+        const rectBox = (await page.getByTestId('mask-rect').locator('.mask-fill').boundingBox())!;
         const startX = rectBox.x + rectBox.width / 2;
         const startY = rectBox.y + rectBox.height / 2;
         await page.mouse.move(startX, startY);
@@ -176,6 +176,10 @@ test.describe('mask editor, keyboard', () => {
         await expect(page.getByTestId('mask-rect')).toHaveCount(1);
         await expect(page.getByTestId('mask-rect')).toBeFocused();
         await expect(page.getByTestId('mask-rect')).toHaveAttribute('aria-label', /^Mask 1, x \d+, y \d+, \d+ × \d+ px$/);
+        // the focused mask shows its 1px outline; the fill never has a stroke
+        await expect(page.getByTestId('mask-rect').locator('.mask-focus')).toHaveCSS('display', 'block');
+        await expect(page.getByTestId('mask-rect').locator('.mask-focus')).toHaveCSS('stroke-width', '1px');
+        await expect(page.getByTestId('mask-rect').locator('.mask-fill')).toHaveCSS('stroke', 'none');
         const start = await values(page);
 
         await page.keyboard.press('ArrowRight');
@@ -209,6 +213,28 @@ test.describe('mask editor, keyboard', () => {
         await expect(page.getByTestId('mask-live')).toContainText('Removed mask 1');
         await expect(page.getByTestId('mask-empty')).toBeVisible();
         await expect(page.getByTestId('lightbox')).toBeVisible();
+    });
+
+    test('only the selected or focused mask has an outline; the others are fill only', async ({ page }) => {
+        await mockApi(page, {
+            screenMasks: { Dashboard: { masks: [rect(ID_A, 100, 300, 200, 100), rect(ID_B, 400, 300, 100, 100)] } }
+        });
+        await openLightbox(page);
+        const masks = page.getByTestId('mask-rect');
+        await expect(masks).toHaveCount(2);
+
+        await masks.nth(0).focus();
+        await expect(masks.nth(0).locator('.mask-focus')).toHaveCSS('display', 'block');
+        await expect(masks.nth(0).locator('.mask-focus')).not.toHaveCSS('stroke', 'none');
+        await expect(masks.nth(1).locator('.mask-focus')).toHaveCSS('display', 'none');
+        for (const i of [0, 1]) {
+            await expect(masks.nth(i).locator('.mask-fill')).toHaveCSS('stroke', 'none');
+            await expect(masks.nth(i).locator('.mask-fill')).toHaveCSS('stroke-dasharray', 'none');
+        }
+
+        await masks.nth(1).focus();
+        await expect(masks.nth(1).locator('.mask-focus')).toHaveCSS('display', 'block');
+        await expect(masks.nth(0).locator('.mask-focus')).toHaveCSS('display', 'none');
     });
 
     test('arrows on a mask do not step the lightbox, and Escape only leaves the mask', async ({ page }) => {
@@ -297,7 +323,7 @@ test.describe('mask editor, state', () => {
         await expect(page.getByText('Unsaved changes')).toBeVisible();
     });
 
-    test('the app masks are drawn dashed and can be opted out of, which the preview follows', async ({ page }) => {
+    test('the app masks look like the others, say so in the list, and can be opted out of, which the preview follows', async ({ page }) => {
         const requests: Requests = [];
         await mockApi(page, {
             requests,
@@ -309,6 +335,12 @@ test.describe('mask editor, state', () => {
         await expect(page.getByTestId('app-mask-rect')).toHaveCount(1);
         await expect(page.getByTestId('mask-rect')).toHaveCount(1);
         await expect(page.getByTestId('app-mask-count')).toContainText('1 mask');
+        await expect(page.getByTestId('app-mask-count')).toContainText('read-only');
+        await expect(page.getByTestId('app-mask-rect').locator('title')).toHaveCount(1);
+        // no outline of any kind: the fill alone, and no dash
+        const appFill = page.getByTestId('app-mask-rect').locator('.mask-fill');
+        await expect(appFill).toHaveCSS('stroke-dasharray', 'none');
+        await expect(appFill).toHaveCSS('stroke', 'none');
         await expect(page.getByTestId('tolerance-preview')).toContainText('Would pass');
         expect(lastCompare(requests).masks.map(m => m.id)).toEqual([ID_B, ID_A]);
 
@@ -342,10 +374,10 @@ test.describe('mask editor, state', () => {
             await page.getByTestId('lightbox-zoom').selectOption(zoom);
             const image = (await page.getByTestId('lightbox-canvas').locator('img').boundingBox())!;
             const layer = (await page.getByTestId('mask-layer').boundingBox())!;
-            const outline = (await page.getByTestId('mask-rect').locator('.mask-edge-a').boundingBox())!;
+            const outline = (await page.getByTestId('mask-rect').locator('.mask-fill').boundingBox())!;
             expect(Math.abs(layer.width - image.width)).toBeLessThan(1);
             expect(Math.abs(layer.height - image.height)).toBeLessThan(1);
-            // 200 of 800 px wide, so a quarter of the image however it is scaled (the outline stroke adds a few px)
+            // 200 of 800 px wide, so a quarter of the image however it is scaled
             expect(Math.abs(outline.width / image.width - 0.25)).toBeLessThan(0.02);
         }
     });
@@ -425,7 +457,7 @@ test.describe('without the review role', () => {
         await mockApi(page, { admin: false, canReview: false, screenMasks: { Dashboard: { masks: [rect(ID_A, 100, 300, 200, 100)] } } });
         await openLightbox(page);
 
-        await expect(page.getByTestId('mask-outline')).toHaveCount(1);
+        await expect(page.getByTestId('mask-area')).toHaveCount(1);
         await expect(page.getByTestId('mask-readonly')).toContainText('Only people who can review this app can change masks.');
         await expect(page.getByTestId('mask-draw')).toHaveCount(0);
         await expect(page.getByTestId('mask-add')).toHaveCount(0);
@@ -433,16 +465,16 @@ test.describe('without the review role', () => {
         await expect(page.getByTestId('app-masks-edit')).toHaveCount(0);
         await expect(page.getByTestId('mask-x')).toBeDisabled();
         await expect(page.getByTestId('mask-inherit')).toBeDisabled();
-        // the layer is an outline: nothing to focus, and the N key adds nothing
-        await expect(page.getByTestId('mask-outline')).not.toHaveAttribute('tabindex', /.*/);
+        // the layer is display only: nothing to focus, and the N key adds nothing
+        await expect(page.getByTestId('mask-area')).not.toHaveAttribute('tabindex', /.*/);
         await page.keyboard.press('n');
         await expect(page.getByTestId('mask-row')).toHaveCount(1);
-        await expect(page.getByTestId('mask-outline')).toHaveCount(1);
+        await expect(page.getByTestId('mask-area')).toHaveCount(1);
     });
 });
 
 test.describe('read-only displays', () => {
-    test('the review screen outlines what was ignored, and clicks still reach the screenshot', async ({ page }) => {
+    test('the review screen tints what was ignored, and clicks still reach the screenshot', async ({ page }) => {
         const applied = [rect(ID_A, 52, 168, 696, 60, 'Chart')];
         await mockApi(page, { appliedMasks: { Dashboard: applied } });
         await page.goto(`/apps/${appId}/builds/${buildId}`);
@@ -455,17 +487,17 @@ test.describe('read-only displays', () => {
         await expect(layers).toHaveCount(2);
         await expect(layers.first()).toHaveCSS('pointer-events', 'none');
         await expect(layers.first()).toHaveAttribute('aria-hidden', 'true');
-        await expect(layers.first().getByTestId('mask-outline')).toHaveCount(1);
+        await expect(layers.first().getByTestId('mask-area')).toHaveCount(1);
 
-        // Shift+click on the screenshot still toggles the diff, through the outline
+        // Shift+click on the screenshot still toggles the diff, through the tint
         const target = (await layers.last().boundingBox())!;
         await expect(page.getByTestId('diff-check')).not.toBeChecked();
         await page.keyboard.down('Shift');
         await page.mouse.click(target.x + target.width * 0.5, target.y + target.height * 0.5);
         await page.keyboard.up('Shift');
         await expect(page.getByTestId('diff-check')).toBeChecked();
-        // the outline is still there over the diff
-        await expect(screen.locator('.diff').getByTestId('applied-masks')).toHaveCount(1);
+        // the diff image carries its own tint, so it gets no second layer
+        await expect(screen.locator('.diff').getByTestId('applied-masks')).toHaveCount(0);
     });
 
     test('the gallery tags masked screens and the Custom filter counts them', async ({ page }) => {

@@ -263,7 +263,7 @@
                             <span>
                                 Use app masks
                                 <span class="lb-check-hint" data-testid="app-mask-count">
-                                    {{ appMasksNow.length ? `(${formatMaskCount(appMasksNow.length)}, shown dashed)` : '(the app has none)' }}
+                                    {{ appMasksNow.length ? `(${formatMaskCount(appMasksNow.length)}, read-only here)` : '(the app has none)' }}
                                 </span>
                             </span>
                         </label>
@@ -671,7 +671,7 @@ const activeMasks = computed<IMaskRect[]>({
         else maskDraft.value = { ...maskDraft.value, masks };
     }
 });
-/** The other set, drawn dashed and fixed for orientation. */
+/** The other set, drawn like the others but fixed, with a tooltip and the list hint saying they are the app's. */
 const contextMasks = computed(() => (maskTarget.value === 'app' ? maskDraft.value.masks : maskDraft.value.inherit ? appMasksNow.value : []));
 /** What a comparison of this screen would ignore. */
 const effectiveMasks = computed(() => [...(maskDraft.value.inherit ? appMasksNow.value : []), ...maskDraft.value.masks]);

@@ -255,13 +255,6 @@
                                                     <Loader v-else-if="!screen.diffImageSrc" class="loading" />
                                                     <div v-else class="img-frame">
                                                         <img :src="screen.diffImageSrc" :alt="`Visual diff: ${screen.name}`" @load="onImageLoad" />
-                                                        <MaskLayer
-                                                            v-if="appliedMasks(screen).length && sizeOf(screen.diffImageSrc)"
-                                                            :masks="appliedMasks(screen)"
-                                                            :width="sizeOf(screen.diffImageSrc)!.width"
-                                                            :height="sizeOf(screen.diffImageSrc)!.height"
-                                                            data-testid="applied-masks"
-                                                        />
                                                     </div>
                                                 </div>
                                             </template>
@@ -624,9 +617,9 @@ function onToleranceSaved(screenId: string, tolerances: IToleranceOverrides) {
 }
 
 // ── Masks ──
-// The masks this build was processed with, drawn as outlines over both screenshots (and the diff): what
+// The masks this build was processed with, drawn as a translucent grey fill over both screenshots: what
 // was ignored is always visible to the reviewer. The new build's set governs the comparison, so the
-// reference pane shows the same rectangles.
+// reference pane shows the same rectangles. The diff image carries the same tint itself, so it gets no layer.
 function appliedMasks(screen: IScreen): IMaskRect[] {
     return screen.currentBuildScreen?.appliedMasks ?? [];
 }
