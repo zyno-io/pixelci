@@ -15,6 +15,7 @@ import { BranchesController } from './controllers/Branches.controller';
 import { BuildsController } from './controllers/Builds.controller';
 import { BuildScreensController } from './controllers/BuildScreens.controller';
 import { ConnectedAppsController } from './controllers/ConnectedApps.controller';
+import { DecisionsController } from './controllers/Decisions.controller';
 import { ExternalReadController } from './controllers/ExternalRead.controller';
 import { McpController } from './controllers/Mcp.controller';
 import { OAuthController } from './controllers/OAuth.controller';
@@ -84,6 +85,7 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         BuildsController,
         BuildScreensController,
         ScreensController,
+        DecisionsController,
         VcsIntegrationsController,
         UsersController,
         ExternalReadController,

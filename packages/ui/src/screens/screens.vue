@@ -756,7 +756,7 @@ function estimateCard(screen: IScreen) {
 
 // ── Images ──
 const images = useScreenImages(() => appId);
-const buildIdOf = (s: NonNullable<IScreen['currentBuildScreen']>) => s.matchedBuildId ?? s.buildId;
+const buildIdOf = (s: { matchedBuildId: string | null; buildId: string }) => s.matchedBuildId ?? s.buildId;
 const currentSrc = (s: IScreen) => (s.currentBuildScreen ? images.get('image', buildIdOf(s.currentBuildScreen), s.screenId) : undefined);
 const referenceSrc = (s: IScreen) => (s.referenceBuildScreen ? images.get('image', buildIdOf(s.referenceBuildScreen), s.screenId) : undefined);
 const diffSrc = (s: IScreen) => (s.currentBuildScreen ? images.get('diff', buildIdOf(s.currentBuildScreen), s.screenId) : undefined);

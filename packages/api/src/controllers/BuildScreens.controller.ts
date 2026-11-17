@@ -27,6 +27,7 @@ import { BuildShardEntity } from '../entities/BuildShard.entity';
 import { ScreenEntity } from '../entities/Screen.entity';
 import { UserEntity } from '../entities/User.entity';
 import { AppAccessService } from '../services/AppAccess.service';
+import { IDecisionSummary, loadDecisionSummaries } from '../services/Decisions';
 import { IMaskRect, IScreenMasksResponse, loadUserNames, MAX_MASKS, toScreenMasksResponse, validateMasks } from '../services/Mask';
 import { PixelMatchService } from '../services/PixelMatch.service';
 import { referenceForBuild } from '../services/Reference';
@@ -51,51 +52,47 @@ export type IBuildScreenCompareResponse = {
     canvasTooLarge: boolean;
     diffImage: string;
 };
+type IBuildScreenRow = Pick<
+    BuildScreenEntity,
+    | 'id'
+    | 'buildId'
+    | 'matchedBuildId'
+    | 'approvalBuildId'
+    | 'screenId'
+    | 'status'
+    | 'reviewStatus'
+    | 'reviewComment'
+    | 'reviewedById'
+    | 'reviewedAt'
+    | 'appliedMasks'
+>;
+/** A review mark carried over from the branch's previous build: where it was made, by whom. */
+export type IReviewCarriedFrom = { buildId: string; commitHash: string; reviewedByName: string | null; reviewedAt: Date | null };
+export type IBuildScreenProvenance = IBuildScreenRow & {
+    decisionId: string | null;
+    /** The decision behind this row's outcome: a matched approval, a pre-marking rejection, or the decision made in this build. */
+    decision: IDecisionSummary | null;
+    reviewCarriedFrom: IReviewCarriedFrom | null;
+};
 export type IBuildScreenResponse = {
     screenId: string;
     name: string;
     tolerances: IToleranceOverrides;
     /** The screen's own masks (the app's are on the app). Edits apply from the next build. */
     masks: IScreenMasksResponse;
-    currentBuildScreen:
-        | Pick<
-              BuildScreenEntity,
-              | 'id'
-              | 'buildId'
-              | 'matchedBuildId'
-              | 'approvalBuildId'
-              | 'screenId'
-              | 'status'
-              | 'reviewStatus'
-              | 'reviewComment'
-              | 'reviewedById'
-              | 'reviewedAt'
-              | 'appliedMasks'
-          >
-        | undefined;
-    referenceBuildScreen:
-        | Pick<
-              BuildScreenEntity,
-              | 'id'
-              | 'buildId'
-              | 'matchedBuildId'
-              | 'approvalBuildId'
-              | 'screenId'
-              | 'status'
-              | 'reviewStatus'
-              | 'reviewComment'
-              | 'reviewedById'
-              | 'reviewedAt'
-              | 'appliedMasks'
-          >
-        | undefined;
+    currentBuildScreen: IBuildScreenProvenance | undefined;
+    referenceBuildScreen: IBuildScreenRow | undefined;
     /** Tombstone: this build removed the screen (it is in the reference build, but has no image here). */
-    removedBuildScreen?: Pick<BuildScreenEntity, 'id' | 'status' | 'reviewStatus' | 'reviewComment' | 'reviewedById' | 'reviewedAt'>;
+    removedBuildScreen?: Pick<BuildScreenEntity, 'id' | 'status' | 'reviewStatus' | 'reviewComment' | 'reviewedById' | 'reviewedAt'> & {
+        decisionId: string | null;
+        /** The decision behind this removal's outcome: the approval it matched or the one made in this build. */
+        decision: IDecisionSummary | null;
+    };
 };
 export type IBuildScreenReviewResponse = Pick<BuildScreenEntity, 'reviewStatus' | 'reviewComment' | 'reviewedById' | 'reviewedAt'>;
 export type IBuildScreenCreateResponse = Pick<BuildScreenEntity, 'id' | 'screenId' | 'status'> & Pick<ScreenEntity, 'name'>;
 
-function pickBuildScreen(bs: BuildScreenEntity | undefined): NonNullable<IBuildScreenResponse['currentBuildScreen']> | undefined {
+function pickBuildScreen(bs: BuildScreenEntity | undefined): IBuildScreenRow | undefined {
     if (!bs) return undefined;
     return {
         id: bs.id,
@@ -112,9 +109,14 @@ function pickBuildScreen(bs: BuildScreenEntity | undefined): NonNullable<IBuildS
     };
 }
 
-function pickRemovedBuildScreen(bs: BuildScreenEntity | undefined): IBuildScreenResponse['removedBuildScreen'] {
+function pickRemovedBuildScreen(
+    bs: BuildScreenEntity | undefined,
+    decisions: Map<string, IDecisionSummary>
+): IBuildScreenResponse['removedBuildScreen'] {
     if (!bs) return undefined;
     return {
+        decisionId: bs.decisionId,
+        decision: (bs.decisionId && decisions.get(bs.decisionId)) || null,
         id: bs.id,
         status: bs.status,
         reviewStatus: bs.reviewStatus,
@@ -166,11 +168,52 @@ export class BuildScreensController {
         const referenceBuildScreensById = keyBy(referenceBuildScreens, 'screenId');
         const screenIds = uniq([...currentBuildScreens, ...referenceBuildScreens].map(buildScreen => buildScreen.screenId));
 
+        // provenance: the decisions behind these rows, and the review each carried mark came from (batched)
+        const decisions = await loadDecisionSummaries(
+            appId,
+            currentBuildScreens.map(buildScreen => buildScreen.decisionId)
+        );
+        const carriedFromIds = uniq(currentBuildScreens.map(buildScreen => buildScreen.reviewCarriedFromId).filter((id): id is string => !!id));
+        const carriedRows = carriedFromIds.length
+            ? await BuildScreenEntity.query()
+                  .filter({ appId, id: { $in: carriedFromIds } })
+                  .find()
+            : [];
+        const carriedBuilds = keyBy(
+            carriedRows.length
+                ? await BuildEntity.query()
+                      .filter({ appId, id: { $in: uniq(carriedRows.map(row => row.buildId)) } })
+                      .select('id', 'commitHash')
+                      .find()
+                : [],
+            'id'
+        );
+        const carriedNames = await loadUserNames(carriedRows.map(row => row.reviewedById));
+        const carriedRowsById = keyBy(carriedRows, 'id');
+        const provenanceOf = (bs: BuildScreenEntity | undefined): IBuildScreenProvenance | undefined => {
+            const picked = pickBuildScreen(bs);
+            if (!bs || !picked) return undefined;
+            const origin = bs.reviewCarriedFromId ? carriedRowsById[bs.reviewCarriedFromId] : undefined;
+            return {
+                ...picked,
+                decisionId: bs.decisionId,
+                decision: (bs.decisionId && decisions.get(bs.decisionId)) || null,
+                reviewCarriedFrom: origin
+                    ? {
+                          buildId: origin.buildId,
+                          commitHash: carriedBuilds[origin.buildId]?.commitHash ?? '',
+                          reviewedByName: origin.reviewedById ? (carriedNames[origin.reviewedById] ?? null) : null,
+                          reviewedAt: origin.reviewedAt
+                      }
+                    : null
+            };
+        };
+
         const buildScreens = [...screenIds].map(screenId => ({
             screenId,
-            currentBuildScreen: pickBuildScreen(currentBuildScreensById[screenId]),
+            currentBuildScreen: provenanceOf(currentBuildScreensById[screenId]),
             referenceBuildScreen: pickBuildScreen(referenceBuildScreensById[screenId]),
-            removedBuildScreen: pickRemovedBuildScreen(removedBuildScreensById[screenId])
+            removedBuildScreen: pickRemovedBuildScreen(removedBuildScreensById[screenId], decisions)
         }));
 
         const screens = await ScreenEntity.query()
@@ -410,7 +453,17 @@ export class BuildScreensController {
     async getScreenDiff(appId: UuidString, id: UuidString, screenId: UuidString, user: UserEntity): AnyResponse {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
         const row = await this.findStoredImage(appId, id, screenId);
-        const url = await this.s3Svc.getSignedUrl(this.s3Svc.getPathForDiff(row.appId, row.buildId, row.screenId));
+        let diffBuildId = row.buildId;
+        // Builds processed before 0.8 could auto-approve a screen without storing a diff of its own: show the matched build's.
+        const build = await BuildEntity.query().filter({ id, appId }).select('id', 'referenceSource').findOne();
+        if (
+            (!build.referenceSource || build.referenceSource === 'legacy') &&
+            row.matchedBuildId &&
+            !(await this.s3Svc.exists(this.s3Svc.getPathForDiff(row.appId, row.buildId, row.screenId)))
+        ) {
+            diffBuildId = row.matchedBuildId;
+        }
+        const url = await this.s3Svc.getSignedUrl(this.s3Svc.getPathForDiff(row.appId, diffBuildId, row.screenId));
         return Redirect.toUrl(url);
     }
 

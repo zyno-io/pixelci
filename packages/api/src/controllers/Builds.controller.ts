@@ -27,7 +27,8 @@ import { ProcessBuildJob } from '../jobs/ProcessBuild.job';
 import { RERUN_DEFERRED_NOTICE, RERUN_RETRY_DELAY_MS, RerunCiJobJob } from '../jobs/RerunCiJob.job';
 import { IBuildResponse, toBuildResponse } from '../responses/build.response';
 import { AppAccessService } from '../services/AppAccess.service';
-import { IBase, validateBase } from '../services/Reference';
+import { IDecisionInput, recordDecisions } from '../services/Decisions';
+import { IBase, IBaseline, loadBaselines, referenceForBuild, validateBase } from '../services/Reference';
 import { screenManifestHash, uploadedScreenNames } from '../services/ScreenManifest';
 import { VcsService } from '../services/Vcs.service';
 
@@ -123,6 +124,8 @@ function addReadTokenHash(build: BuildEntity, hash: string) {
     const cap = build.shardTotal > 1 ? MAX_READ_TOKEN_HASHES + build.shardTotal * 2 : MAX_READ_TOKEN_HASHES;
     build.ciReadTokenHashes = [...current, hash].slice(-cap);
 }
+
+type ITxn = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 const BUILDS_DEFAULT_PAGE_SIZE = 50;
 const BUILDS_MAX_PAGE_SIZE = 200;
@@ -699,23 +702,53 @@ export class BuildsController {
 
             const changedScreens = buildScreens.filter(buildScreen => buildScreen.status === 'new' || buildScreen.status === 'needs review');
 
-            // Unreviewed changed screens are auto-approved on submit.
+            // The submitter takes responsibility for every changed screen: unreviewed ones are approved, and marks that were
+            // carried or pre-marked from a decision (no reviewer) are attributed to them.
             const now = new Date();
             for (const buildScreen of changedScreens) {
                 if (buildScreen.reviewStatus !== 'approved' && buildScreen.reviewStatus !== 'rejected') {
                     buildScreen.reviewStatus = 'approved';
                     buildScreen.reviewedById = user.id;
                     buildScreen.reviewedAt = now;
+                } else if (!buildScreen.reviewedById) {
+                    buildScreen.reviewedById = user.id;
+                    buildScreen.reviewedAt = now;
                 }
             }
 
+            const app = await txn.query(AppEntity).filter({ id: appId }).findOne();
+            const froms = await this.resolveFromImages(app, locked, changedScreens, txn);
+            const toOf = (row: BuildScreenEntity) => (row.isRemoved ? null : { buildId: row.buildId, hash: row.contentHash });
+            const inputOf = (row: BuildScreenEntity, kind: 'approved' | 'rejected'): IDecisionInput => ({
+                row,
+                kind,
+                from: froms.get(row.id) ?? null,
+                to: toOf(row),
+                decidedById: row.reviewedById ?? user.id,
+                comment: row.reviewComment
+            });
+            // An approval made against a guessed baseline (no merge base on a non-default branch) is only reused on its own branch.
+            const branchScoped = build.branchId !== app.defaultBranchId && build.referenceSource !== 'ancestor' && build.referenceSource !== 'none';
+
             if (changedScreens.some(buildScreen => buildScreen.reviewStatus === 'rejected')) {
-                // Any rejection fails the build: record the per-screen decisions but don't promote any
-                // screen to a baseline.
+                // Any rejection fails the build: record the rejections as decisions, but don't promote any screen to a baseline,
+                // and keep approvals made in this build as marks (they are not reusable approvals).
+                recordDecisions(
+                    txn,
+                    build,
+                    changedScreens.filter(row => row.reviewStatus === 'rejected' && !row.isRemoved).map(row => inputOf(row, 'rejected')),
+                    { branchScoped, now }
+                );
                 changedScreens.forEach(buildScreen => txn.add(buildScreen));
                 build.status = 'changes rejected';
                 rejected = true;
             } else {
+                recordDecisions(
+                    txn,
+                    build,
+                    changedScreens.map(row => inputOf(row, 'approved')),
+                    { branchScoped, now }
+                );
                 buildScreens.forEach(buildScreen => {
                     buildScreen.status = 'changes approved';
                     txn.add(buildScreen);
@@ -752,6 +785,47 @@ export class BuildsController {
             this.logger.error('Failed to rerun CI job', err);
             return { vcsUrl: false, vcsError: 'Failed to re-run the CI job; please re-run it from your CI provider.' };
         }
+    }
+
+    /**
+     * The baseline image (source build + hash) each changed row replaces, by row id. Builds processed by 0.8 recorded it on the row;
+     * a legacy build (no stored reference source) derives it from the reference it showed.
+     */
+    private async resolveFromImages(
+        app: AppEntity,
+        build: BuildEntity,
+        rows: BuildScreenEntity[],
+        txn: ITxn
+    ): Promise<Map<string, { buildId: string; hash: string | null }>> {
+        const froms = new Map<string, { buildId: string; hash: string | null }>();
+        if (!rows.length) return froms;
+
+        if (!build.referenceSource || build.referenceSource === 'legacy') {
+            const reference = await referenceForBuild(app, build);
+            const baselines = reference ? await loadBaselines(app.id, reference.id) : new Map<string, IBaseline>();
+            for (const row of rows) {
+                const baseline = baselines.get(row.screenId);
+                if (baseline) froms.set(row.id, { buildId: baseline.sourceBuildId, hash: baseline.hash });
+            }
+            return froms;
+        }
+
+        const sourceBuildIds = uniq(rows.map(row => row.baseImageBuildId).filter((id): id is string => !!id));
+        const sourceRows = sourceBuildIds.length
+            ? await txn
+                  .query(BuildScreenEntity)
+                  .filter({ appId: app.id, screenId: { $in: rows.map(row => row.screenId) }, buildId: { $in: sourceBuildIds }, isRemoved: false })
+                  .find()
+            : [];
+        const sourceRowsByKey = keyBy(sourceRows, row => `${row.buildId}:${row.screenId}`);
+        for (const row of rows) {
+            if (!row.baseImageBuildId) continue;
+            froms.set(row.id, {
+                buildId: row.baseImageBuildId,
+                hash: sourceRowsByKey[`${row.baseImageBuildId}:${row.screenId}`]?.contentHash ?? null
+            });
+        }
+        return froms;
     }
 
     /** Re-runs every CI job of a sharded build (one request per target; GitHub collapses a run's jobs to the run). */

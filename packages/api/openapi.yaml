@@ -934,6 +934,37 @@ paths:
                 - masks
                 - inheritAppMasks
                 - baseVersion
+  /api/apps/{appId}/decisions/{id}/revoke:
+    post:
+      operationId: postDecisionsRevoke
+      tags:
+        - decisions
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IDecisionSummary"
+      summary: "Revokes an approval (or a rejection): builds processed from now on no
+        longer match it. Builds already approved stay approved. Idempotent;
+        there is no un-revoke (the next build that makes the same change asks
+        again)."
+      parameters:
+        - name: appId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
   /api/admin/vcs-integrations:
     get:
       operationId: getVcsIntegrationsIndex
@@ -1997,11 +2028,66 @@ components:
         masks:
           $ref: "#/components/schemas/IScreenMasksResponse"
         currentBuildScreen:
-          $ref: "#/components/schemas/PickBuildScreenEntity"
+          $ref: "#/components/schemas/IBuildScreenProvenance"
         referenceBuildScreen:
-          $ref: "#/components/schemas/PickBuildScreenEntity"
+          $ref: "#/components/schemas/IBuildScreenRow"
         removedBuildScreen:
-          $ref: "#/components/schemas/PickBuildScreenEntity_2"
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+            status:
+              enum:
+                - new
+                - no changes
+                - needs review
+                - changes approved
+                - null
+              type:
+                - string
+                - "null"
+            reviewStatus:
+              enum:
+                - approved
+                - rejected
+                - null
+              type:
+                - string
+                - "null"
+            reviewComment:
+              type:
+                - string
+                - "null"
+            reviewedById:
+              type:
+                - string
+                - "null"
+              format: uuid
+              pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+            reviewedAt:
+              type:
+                - string
+                - "null"
+              format: date-time
+            decisionId:
+              type:
+                - string
+                - "null"
+            decision:
+              anyOf:
+                - $ref: "#/components/schemas/IDecisionSummary"
+                - type: "null"
+          required:
+            - id
+            - status
+            - reviewStatus
+            - reviewComment
+            - reviewedById
+            - reviewedAt
+            - decisionId
+            - decision
       required:
         - screenId
         - name
@@ -2052,7 +2138,171 @@ components:
         - version
         - updatedAt
         - updatedByName
-    PickBuildScreenEntity:
+    IBuildScreenProvenance:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        buildId:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        screenId:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        matchedBuildId:
+          type:
+            - string
+            - "null"
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        approvalBuildId:
+          type:
+            - string
+            - "null"
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        status:
+          enum:
+            - new
+            - no changes
+            - needs review
+            - changes approved
+            - null
+          type:
+            - string
+            - "null"
+        reviewStatus:
+          enum:
+            - approved
+            - rejected
+            - null
+          type:
+            - string
+            - "null"
+        reviewComment:
+          type:
+            - string
+            - "null"
+        reviewedById:
+          type:
+            - string
+            - "null"
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        reviewedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        appliedMasks:
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/IMaskRect"
+        decisionId:
+          type:
+            - string
+            - "null"
+        decision:
+          anyOf:
+            - $ref: "#/components/schemas/IDecisionSummary"
+            - type: "null"
+        reviewCarriedFrom:
+          anyOf:
+            - $ref: "#/components/schemas/IReviewCarriedFrom"
+            - type: "null"
+      required:
+        - id
+        - buildId
+        - screenId
+        - matchedBuildId
+        - approvalBuildId
+        - status
+        - reviewStatus
+        - reviewComment
+        - reviewedById
+        - reviewedAt
+        - appliedMasks
+        - decisionId
+        - decision
+        - reviewCarriedFrom
+    IDecisionSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          enum:
+            - approved
+            - rejected
+          type: string
+        buildId:
+          type: string
+        commitHash:
+          type: string
+        branchName:
+          type: string
+        decidedByName:
+          type:
+            - string
+            - "null"
+        decidedAt:
+          type: string
+          format: date-time
+        comment:
+          type:
+            - string
+            - "null"
+        revokedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        revokedByName:
+          type:
+            - string
+            - "null"
+        branchScoped:
+          type: boolean
+      required:
+        - id
+        - kind
+        - buildId
+        - commitHash
+        - branchName
+        - decidedByName
+        - decidedAt
+        - comment
+        - revokedAt
+        - revokedByName
+        - branchScoped
+    IReviewCarriedFrom:
+      type: object
+      properties:
+        buildId:
+          type: string
+        commitHash:
+          type: string
+        reviewedByName:
+          type:
+            - string
+            - "null"
+        reviewedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - buildId
+        - commitHash
+        - reviewedByName
+        - reviewedAt
+    IBuildScreenRow:
       type: object
       properties:
         id:
@@ -2130,53 +2380,6 @@ components:
         - reviewedById
         - reviewedAt
         - appliedMasks
-    PickBuildScreenEntity_2:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
-        status:
-          enum:
-            - new
-            - no changes
-            - needs review
-            - changes approved
-            - null
-          type:
-            - string
-            - "null"
-        reviewStatus:
-          enum:
-            - approved
-            - rejected
-            - null
-          type:
-            - string
-            - "null"
-        reviewComment:
-          type:
-            - string
-            - "null"
-        reviewedById:
-          type:
-            - string
-            - "null"
-          format: uuid
-          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
-        reviewedAt:
-          type:
-            - string
-            - "null"
-          format: date-time
-      required:
-        - id
-        - status
-        - reviewStatus
-        - reviewComment
-        - reviewedById
-        - reviewedAt
     IBuildScreenCompareResponse:
       type: object
       properties:
@@ -2624,6 +2827,10 @@ components:
             - string
             - "null"
           format: date-time
+        decision:
+          anyOf:
+            - $ref: "#/components/schemas/IExtDecision"
+            - type: "null"
         appliedMasks:
           type:
             - array
@@ -2639,7 +2846,32 @@ components:
         - reviewComment
         - reviewedByName
         - reviewedAt
+        - decision
         - appliedMasks
+    IExtDecision:
+      type: object
+      properties:
+        kind:
+          enum:
+            - approved
+            - rejected
+          type: string
+        buildId:
+          type: string
+        branchName:
+          type: string
+        decidedByName:
+          type:
+            - string
+            - "null"
+        revoked:
+          type: boolean
+      required:
+        - kind
+        - buildId
+        - branchName
+        - decidedByName
+        - revoked
     IExtMask:
       type: object
       properties:
