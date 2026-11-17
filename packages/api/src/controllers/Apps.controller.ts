@@ -4,8 +4,10 @@ import {
     http,
     HttpBadRequestError,
     HttpBody,
+    HttpConflictError,
     HttpNotFoundError,
     HttpQueries,
+    ScopedLogger,
     uuid,
     UuidString
 } from '@zyno-io/ts-server-foundation';
@@ -13,12 +15,14 @@ import {
 import { AdminAuthMiddleware, UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
 import { AppConfig } from '../config';
+import { Db } from '../database';
 import { AppEntity, IApprovalMinRole } from '../entities/App.entity';
 import { BranchEntity } from '../entities/Branch.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { AppAccessService } from '../services/AppAccess.service';
+import { IAppMasksResponse, IMaskRect, normalizeMasks, toAppMasksResponse, validateMasks } from '../services/Mask';
 import { ITolerances, instanceTolerances, IToleranceOverrides, validateToleranceOverrides } from '../services/Tolerance';
 import { IVcsProject, VcsService } from '../services/Vcs.service';
 
@@ -53,7 +57,9 @@ export class AppsController {
     constructor(
         private vcsService: VcsService,
         private appAccessSvc: AppAccessService,
-        private appConfig: AppConfig
+        private appConfig: AppConfig,
+        private db: Db,
+        private logger: ScopedLogger
     ) {}
 
     @http.GET()
@@ -138,6 +144,36 @@ export class AppsController {
         await app.save();
 
         return toAppIndexResponse(app, await BuildEntity.query().filter({ appId: app.id }).count());
+    }
+
+    /** Replaces the app's masks, which apply to every screen that doesn't opt out. Admin-only: they blank regions of every screen. */
+    @http.PUT('/:id/masks')
+    @http.middleware(AdminAuthMiddleware)
+    async updateMasks(id: UuidString, user: UserEntity, body: HttpBody<{ masks: IMaskRect[]; baseVersion: number }>): Promise<IAppMasksResponse> {
+        validateMasks(body.masks);
+        if (!Number.isInteger(body.baseVersion) || body.baseVersion < 0) throw new HttpBadRequestError('baseVersion must be a non-negative integer');
+
+        // Returned (not thrown) from the transaction, so a rejection doesn't surface as a failed commit.
+        const result = await this.db.transaction(async txn => {
+            const app = await txn.query(AppEntity).filter({ id, deletedAt: null }).forUpdate().findOneOrUndefined();
+            if (!app) return new HttpNotFoundError();
+            if (app.masksVersion !== body.baseVersion) {
+                return new HttpConflictError('The masks were changed by someone else; reload and try again');
+            }
+
+            const before = app.masks?.length ?? 0;
+            app.masks = normalizeMasks(body.masks);
+            app.masksVersion += 1;
+            app.masksUpdatedAt = new Date();
+            app.masksUpdatedById = user.id;
+            txn.add(app);
+
+            this.logger.info('App masks updated', { appId: id, userId: user.id, version: app.masksVersion, before, after: app.masks.length });
+            return app;
+        });
+        if (result instanceof Error) throw result;
+
+        return toAppMasksResponse(result, { [user.id]: user.name });
     }
 
     @http.DELETE('/:id')

@@ -26,6 +26,7 @@ import { BuildShardEntity } from '../entities/BuildShard.entity';
 import { ScreenEntity } from '../entities/Screen.entity';
 import { UserEntity } from '../entities/User.entity';
 import { AppAccessService } from '../services/AppAccess.service';
+import { IMaskRect, IScreenMasksResponse, loadUserNames, MAX_MASKS, toScreenMasksResponse, validateMasks } from '../services/Mask';
 import { PixelMatchService } from '../services/PixelMatch.service';
 import { isNotFound, S3Service } from '../services/S3.service';
 import { parseScreenName, validateScreenName, readPngHeader, repairLatin1Filename } from '../services/ScreenUpload';
@@ -41,6 +42,8 @@ export type IBuildScreenCompareResponse = {
     diffPixels: number;
     totalPixels: number;
     shiftTolerantPixels: number;
+    /** pixels under a mask: excluded from the comparison and from the denominator of diffPct */
+    maskedPixels: number;
     passes: boolean;
     diffImage: string;
 };
@@ -48,6 +51,8 @@ export type IBuildScreenResponse = {
     screenId: string;
     name: string;
     tolerances: IToleranceOverrides;
+    /** The screen's own masks (the app's are on the app). Edits apply from the next build. */
+    masks: IScreenMasksResponse;
     currentBuildScreen:
         | Pick<
               BuildScreenEntity,
@@ -61,6 +66,7 @@ export type IBuildScreenResponse = {
               | 'reviewComment'
               | 'reviewedById'
               | 'reviewedAt'
+              | 'appliedMasks'
           >
         | undefined;
     referenceBuildScreen:
@@ -76,6 +82,7 @@ export type IBuildScreenResponse = {
               | 'reviewComment'
               | 'reviewedById'
               | 'reviewedAt'
+              | 'appliedMasks'
           >
         | undefined;
     /** Tombstone: this build removed the screen (it is in the reference build, but has no image here). */
@@ -96,7 +103,8 @@ function pickBuildScreen(bs: BuildScreenEntity | undefined): NonNullable<IBuildS
         reviewStatus: bs.reviewStatus,
         reviewComment: bs.reviewComment,
         reviewedById: bs.reviewedById,
-        reviewedAt: bs.reviewedAt
+        reviewedAt: bs.reviewedAt,
+        appliedMasks: bs.appliedMasks
     };
 }
 
@@ -172,9 +180,21 @@ export class BuildScreensController {
 
         const screens = await ScreenEntity.query()
             .filter({ id: { $in: screenIds } })
-            .select('id', 'name', 'colorTolerance', 'shiftTolerance', 'diffPctTolerance')
+            .select(
+                'id',
+                'name',
+                'colorTolerance',
+                'shiftTolerance',
+                'diffPctTolerance',
+                'masks',
+                'inheritAppMasks',
+                'masksVersion',
+                'masksUpdatedAt',
+                'masksUpdatedById'
+            )
             .find();
         const screensById = keyBy(screens, 'id');
+        const maskNames = await loadUserNames(screens.map(screen => screen.masksUpdatedById));
 
         return buildScreens.map(buildScreen => ({
             ...buildScreen,
@@ -183,7 +203,17 @@ export class BuildScreensController {
                 colorTolerance: screensById[buildScreen.screenId]?.colorTolerance ?? null,
                 shiftTolerance: screensById[buildScreen.screenId]?.shiftTolerance ?? null,
                 diffPctTolerance: screensById[buildScreen.screenId]?.diffPctTolerance ?? null
-            }
+            },
+            masks: toScreenMasksResponse(
+                screensById[buildScreen.screenId] ?? {
+                    masks: null,
+                    inheritAppMasks: true,
+                    masksVersion: 0,
+                    masksUpdatedAt: null,
+                    masksUpdatedById: null
+                },
+                maskNames
+            )
         }));
     }
 
@@ -195,10 +225,12 @@ export class BuildScreensController {
         id: UuidString,
         screenId: UuidString,
         user: UserEntity,
-        body: HttpBody<ITolerances>
+        body: HttpBody<ITolerances & { masks: IMaskRect[] }>
     ): Promise<IBuildScreenCompareResponse> {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
         validateTolerances(body);
+        // the masks in effect: the app's and the screen's together, so up to twice the per-list cap
+        validateMasks(body.masks, MAX_MASKS * 2);
 
         const build = await BuildEntity.query()
             .filter({ id, appId, status: { $nin: ['draft', 'canceled'] } })
@@ -221,12 +253,13 @@ export class BuildScreensController {
         // reference with itself and report no difference at any tolerance.
         const [referenceImage, currentImage] = await Promise.all([this.getOwnScreenImage(appId, reference), this.getOwnScreenImage(appId, current)]);
 
-        const result = await this.pixelMatch.getDiffExclusive(referenceImage, currentImage, body.colorTolerance, body.shiftTolerance);
+        const result = await this.pixelMatch.getDiffExclusive(referenceImage, currentImage, body.colorTolerance, body.shiftTolerance, body.masks);
         return {
             diffPct: result.diffPct,
             diffPixels: result.diffPixels,
             totalPixels: result.totalPixels,
             shiftTolerantPixels: result.shiftTolerantPixels,
+            maskedPixels: result.maskedPixels,
             passes: result.diffPct <= body.diffPctTolerance,
             diffImage: 'data:image/png;base64,' + (await result.getDiffPng()).toString('base64')
         };

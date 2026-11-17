@@ -5,7 +5,13 @@ import { VcsTokenAuthMiddleware, vcsPrincipal } from '../accessories/AuthMiddlew
 import { ExternalReadService } from '../services/ExternalRead.service';
 import { S3Service } from '../services/S3.service';
 
-export type { IExtAppResponse, IExtBuildDetailResponse, IExtBuildResponse, IExtBuildScreenResponse } from '../services/ExternalRead.service';
+export type {
+    IExtAppResponse,
+    IExtBuildDetailResponse,
+    IExtBuildResponse,
+    IExtBuildScreenResponse,
+    IExtMask
+} from '../services/ExternalRead.service';
 import type { IExtAppResponse, IExtBuildDetailResponse, IExtBuildResponse } from '../services/ExternalRead.service';
 
 /**

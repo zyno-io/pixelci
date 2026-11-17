@@ -1,8 +1,9 @@
-import { http, HttpBody, HttpNotFoundError, UuidString } from '@zyno-io/ts-server-foundation';
+import { http, HttpBadRequestError, HttpBody, HttpConflictError, HttpNotFoundError, ScopedLogger, UuidString } from '@zyno-io/ts-server-foundation';
 import { keyBy } from 'lodash';
 
 import { UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
+import { Db } from '../database';
 import { AppEntity } from '../entities/App.entity';
 import { BranchEntity } from '../entities/Branch.entity';
 import { BuildEntity } from '../entities/Build.entity';
@@ -11,12 +12,14 @@ import { ScreenEntity } from '../entities/Screen.entity';
 import { UserEntity } from '../entities/User.entity';
 import { IBuildResponse, toBuildResponse } from '../responses/build.response';
 import { AppAccessService } from '../services/AppAccess.service';
+import { IMaskRect, IScreenMasksResponse, loadUserNames, normalizeMasks, toScreenMasksResponse, validateMasks } from '../services/Mask';
 import { IToleranceOverrides, validateToleranceOverrides } from '../services/Tolerance';
 
 export type IAppGalleryScreen = {
     screenId: string;
     name: string;
     tolerances: IToleranceOverrides;
+    masks: IScreenMasksResponse;
     image: { buildId: string; sourceBuildId: string; isBaseline: boolean };
 };
 export type IAppGalleryResponse = { baselineBuild: IBuildResponse | null; screens: IAppGalleryScreen[] };
@@ -30,7 +33,11 @@ const overridesOf = (screen: ScreenEntity): IToleranceOverrides => ({
 @ApiController('/api/apps/:appId/screens')
 @http.middleware(UserAuthMiddleware)
 export class ScreensController {
-    constructor(private appAccessSvc: AppAccessService) {}
+    constructor(
+        private appAccessSvc: AppAccessService,
+        private db: Db,
+        private logger: ScopedLogger
+    ) {}
 
     @http.GET()
     async index(appId: UuidString, user: UserEntity): Promise<IAppGalleryResponse> {
@@ -114,12 +121,15 @@ export class ScreensController {
             : [];
         const screensById = keyBy(screenEntities, 'id');
 
+        const maskNames = await loadUserNames(screenEntities.map(screen => screen.masksUpdatedById));
+
         const screens: IAppGalleryScreen[] = [...chosen.entries()]
             .filter(([screenId]) => screensById[screenId])
             .map(([screenId, { buildScreen, isBaseline }]) => ({
                 screenId,
                 name: screensById[screenId].name,
                 tolerances: overridesOf(screensById[screenId]),
+                masks: toScreenMasksResponse(screensById[screenId], maskNames),
                 image: {
                     buildId: buildScreen.matchedBuildId ?? buildScreen.buildId,
                     sourceBuildId: buildScreen.buildId,
@@ -157,5 +167,51 @@ export class ScreensController {
         await screen.save();
 
         return overridesOf(screen);
+    }
+
+    /** Replaces the screen's masks. Applies from the next build processed; existing builds keep what they were judged with. */
+    @http.PUT('/:screenId/masks')
+    async updateMasks(
+        appId: UuidString,
+        screenId: UuidString,
+        user: UserEntity,
+        body: HttpBody<{ masks: IMaskRect[]; inheritAppMasks: boolean; baseVersion: number }>
+    ): Promise<IScreenMasksResponse> {
+        // masks can turn a change into "no changes", so they need the same role as approving
+        await this.appAccessSvc.assertCanReviewAppId(user, appId);
+        validateMasks(body.masks);
+        if (typeof body.inheritAppMasks !== 'boolean') throw new HttpBadRequestError('inheritAppMasks must be a boolean');
+        if (!Number.isInteger(body.baseVersion) || body.baseVersion < 0) throw new HttpBadRequestError('baseVersion must be a non-negative integer');
+
+        // Returned (not thrown) from the transaction, so a rejection doesn't surface as a failed commit.
+        const result = await this.db.transaction(async txn => {
+            const screen = await txn.query(ScreenEntity).filter({ id: screenId, appId }).forUpdate().findOneOrUndefined();
+            if (!screen) return new HttpNotFoundError();
+            if (screen.masksVersion !== body.baseVersion) {
+                return new HttpConflictError('The masks were changed by someone else; reload and try again');
+            }
+
+            const before = screen.masks?.length ?? 0;
+            screen.masks = normalizeMasks(body.masks);
+            screen.inheritAppMasks = body.inheritAppMasks;
+            screen.masksVersion += 1;
+            screen.masksUpdatedAt = new Date();
+            screen.masksUpdatedById = user.id;
+            txn.add(screen);
+
+            this.logger.info('Screen masks updated', {
+                appId,
+                screenId,
+                userId: user.id,
+                version: screen.masksVersion,
+                before,
+                after: screen.masks.length,
+                inheritAppMasks: screen.inheritAppMasks
+            });
+            return screen;
+        });
+        if (result instanceof Error) throw result;
+
+        return toScreenMasksResponse(result, { [user.id]: user.name });
     }
 }

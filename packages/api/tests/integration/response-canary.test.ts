@@ -349,7 +349,7 @@ function buildCases(): Record<string, ICase> {
             build: c =>
                 c
                     .user(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${c.b2BuildId}/screens/${c.screenId}/compare`))
-                    .json({ colorTolerance: 0.2, shiftTolerance: 1, diffPctTolerance: 0.01 })
+                    .json({ colorTolerance: 0.2, shiftTolerance: 1, diffPctTolerance: 0.01, masks: [] })
         },
 
         // screens (gallery and per-screen tolerances)
@@ -360,6 +360,23 @@ function buildCases(): Record<string, ICase> {
                 c
                     .user(HttpRequest.PUT(`/api/apps/${APP_ID}/screens/${c.screenId}/tolerances`))
                     .json({ colorTolerance: 0.3, shiftTolerance: 2, diffPctTolerance: null })
+        },
+        'PUT /api/apps/:appId/screens/:screenId/masks': {
+            status: 200,
+            build: c =>
+                c.user(HttpRequest.PUT(`/api/apps/${APP_ID}/screens/${c.screenId}/masks`)).json({
+                    masks: [{ id: 'c4a4a4a4-0000-4000-8000-0000000000d1', x: 0, y: 0, width: 4, height: 4, label: 'canary' }],
+                    inheritAppMasks: true,
+                    baseVersion: 0
+                })
+        },
+        'PUT /api/apps/:id/masks': {
+            status: 200,
+            build: c =>
+                c.user(HttpRequest.PUT(`/api/apps/${APP_ID}/masks`)).json({
+                    masks: [{ id: 'c4a4a4a4-0000-4000-8000-0000000000d2', x: 0, y: 0, width: 2, height: 2, label: null }],
+                    baseVersion: 0
+                })
         },
 
         // /api/ext (VCS personal access token)
@@ -753,11 +770,24 @@ async function testNoMassAssignment(facade: Facade, ctx: ICtx) {
     console.log('\nTest: PUT /api/apps/:id ignores fields outside the update input');
     const before = await AppEntity.query().filter({ id: APP_ID }).findOne();
     const response = await facade.request(
-        ctx.user(HttpRequest.PUT(`/api/apps/${APP_ID}`)).json({ name: 'Canary App', vcsProjectId: 999, deletedAt: '2020-01-01', vcsId: GH_ID })
+        ctx.user(HttpRequest.PUT(`/api/apps/${APP_ID}`)).json({
+            name: 'Canary App',
+            vcsProjectId: 999,
+            deletedAt: '2020-01-01',
+            vcsId: GH_ID,
+            masksVersion: 99,
+            masks: [{ id: 'c4a4a4a4-0000-4000-8000-0000000000d3', x: 0, y: 0, width: 1, height: 1, label: null }]
+        })
     );
     scanBody('PUT /api/apps/:id (mass assignment)', response.bodyString, response.headers);
     const after = await AppEntity.query().filter({ id: APP_ID }).findOne();
-    if (Number(after.vcsProjectId) !== Number(before.vcsProjectId) || after.deletedAt !== null || after.vcsId !== before.vcsId) {
+    if (
+        Number(after.vcsProjectId) !== Number(before.vcsProjectId) ||
+        after.deletedAt !== null ||
+        after.vcsId !== before.vcsId ||
+        after.masksVersion !== before.masksVersion ||
+        JSON.stringify(after.masks) !== JSON.stringify(before.masks)
+    ) {
         throw new Error(
             `mass assignment: app fields were overwritten (status ${response.statusCode}): vcsProjectId=${after.vcsProjectId} deletedAt=${after.deletedAt} vcsId=${after.vcsId}`
         );

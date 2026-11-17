@@ -1,4 +1,7 @@
 import { HttpBadRequestError } from '@zyno-io/ts-server-foundation';
+import { keyBy, uniq } from 'lodash';
+
+import { UserEntity } from '../entities/User.entity';
 
 /** A rectangle, in pixels from the top-left of a screenshot, whose pixels never affect a comparison. */
 export interface IMaskRect {
@@ -21,10 +24,13 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
 
-/** Throws HttpBadRequestError unless `masks` is a valid list: at most 50, integer geometry within bounds, unique uuid ids, short labels. */
-export function validateMasks(masks: unknown): asserts masks is IMaskRect[] {
+/**
+ * Throws HttpBadRequestError unless `masks` is a valid list: at most `max` (50), integer geometry within bounds, unique uuid ids,
+ * short labels. The compare preview passes a higher `max`, as it carries the app's masks and the screen's together.
+ */
+export function validateMasks(masks: unknown, max = MAX_MASKS): asserts masks is IMaskRect[] {
     if (!Array.isArray(masks)) throw new HttpBadRequestError('masks must be an array');
-    if (masks.length > MAX_MASKS) throw new HttpBadRequestError(`at most ${MAX_MASKS} masks are allowed`);
+    if (masks.length > max) throw new HttpBadRequestError(`at most ${max} masks are allowed`);
 
     const ids = new Set<string>();
     for (const [i, mask] of masks.entries()) {
@@ -100,4 +106,53 @@ export function rasterizeMasks(masks: readonly IMaskRect[], width: number, heigh
         }
     }
     return bitmap ? { bitmap, maskedPixels } : null;
+}
+
+/** A screen's own masks, as the API returns them. */
+export interface IScreenMasksResponse {
+    masks: IMaskRect[];
+    inheritAppMasks: boolean;
+    version: number;
+    updatedAt: Date | null;
+    updatedByName: string | null;
+}
+
+/** An app's masks, as the API returns them. */
+export interface IAppMasksResponse {
+    masks: IMaskRect[];
+    version: number;
+    updatedAt: Date | null;
+    updatedByName: string | null;
+}
+
+type IMaskOwner = { masks: IMaskRect[] | null; masksVersion: number; masksUpdatedAt: Date | null; masksUpdatedById: string | null };
+
+export async function loadUserNames(ids: (string | null | undefined)[]): Promise<Record<string, string>> {
+    const userIds = uniq(ids.filter((id): id is string => !!id));
+    if (!userIds.length) return {};
+    const users = await UserEntity.query()
+        .filter({ id: { $in: userIds } })
+        .select('id', 'name')
+        .find();
+    const byId = keyBy(users, 'id');
+    return Object.fromEntries(userIds.map(id => [id, byId[id]?.name ?? '']).filter(([, name]) => name));
+}
+
+export function toScreenMasksResponse(screen: IMaskOwner & { inheritAppMasks: boolean }, names: Record<string, string>): IScreenMasksResponse {
+    return {
+        masks: screen.masks ?? [],
+        inheritAppMasks: screen.inheritAppMasks,
+        version: screen.masksVersion,
+        updatedAt: screen.masksUpdatedAt,
+        updatedByName: screen.masksUpdatedById ? (names[screen.masksUpdatedById] ?? null) : null
+    };
+}
+
+export function toAppMasksResponse(app: IMaskOwner, names: Record<string, string>): IAppMasksResponse {
+    return {
+        masks: app.masks ?? [],
+        version: app.masksVersion,
+        updatedAt: app.masksUpdatedAt,
+        updatedByName: app.masksUpdatedById ? (names[app.masksUpdatedById] ?? null) : null
+    };
 }

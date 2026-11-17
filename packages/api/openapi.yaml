@@ -224,6 +224,44 @@ paths:
             type: string
             format: uuid
             pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+  /api/apps/{id}/masks:
+    put:
+      operationId: putAppsUpdateMasks
+      tags:
+        - apps
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IAppMasksResponse"
+      summary: "Replaces the app's masks, which apply to every screen that doesn't opt
+        out. Admin-only: they blank regions of every screen."
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                masks:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/IMaskRect"
+                baseVersion:
+                  type: number
+              required:
+                - masks
+                - baseVersion
   /api/apps/vcs-projects/search:
     get:
       operationId: getAppsSearchVcsProjects
@@ -624,7 +662,23 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ITolerances"
+              type: object
+              properties:
+                colorTolerance:
+                  type: number
+                shiftTolerance:
+                  type: number
+                diffPctTolerance:
+                  type: number
+                masks:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/IMaskRect"
+              required:
+                - colorTolerance
+                - shiftTolerance
+                - diffPctTolerance
+                - masks
   /api/apps/{appId}/builds/{id}/screens/{screenId}/image:
     get:
       operationId: getBuildScreensGetScreenImage
@@ -830,6 +884,54 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/IToleranceOverrides"
+  /api/apps/{appId}/screens/{screenId}/masks:
+    put:
+      operationId: putScreensUpdateMasks
+      tags:
+        - screens
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IScreenMasksResponse"
+      summary: Replaces the screen's masks. Applies from the next build processed;
+        existing builds keep what they were judged with.
+      parameters:
+        - name: appId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        - name: screenId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                masks:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/IMaskRect"
+                inheritAppMasks:
+                  type: boolean
+                baseVersion:
+                  type: number
+              required:
+                - masks
+                - inheritAppMasks
+                - baseVersion
   /api/admin/vcs-integrations:
     get:
       operationId: getVcsIntegrationsIndex
@@ -1417,6 +1519,25 @@ components:
           type:
             - number
             - "null"
+        masks:
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/IMaskRect"
+        masksVersion:
+          type: number
+        masksUpdatedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        masksUpdatedById:
+          type:
+            - string
+            - "null"
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
         commitUrlBase:
           type:
             - string
@@ -1437,6 +1558,10 @@ components:
         - colorTolerance
         - shiftTolerance
         - diffPctTolerance
+        - masks
+        - masksVersion
+        - masksUpdatedAt
+        - masksUpdatedById
         - commitUrlBase
         - canReview
         - instanceTolerances
@@ -1446,6 +1571,30 @@ components:
         - write
         - maintain
       type: string
+    IMaskRect:
+      type: object
+      properties:
+        id:
+          type: string
+        x:
+          type: number
+        y:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+        label:
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - x
+        - y
+        - width
+        - height
+        - label
     ITolerances:
       type: object
       properties:
@@ -1505,6 +1654,29 @@ components:
           type:
             - number
             - "null"
+    IAppMasksResponse:
+      type: object
+      properties:
+        masks:
+          type: array
+          items:
+            $ref: "#/components/schemas/IMaskRect"
+        version:
+          type: number
+        updatedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        updatedByName:
+          type:
+            - string
+            - "null"
+      required:
+        - masks
+        - version
+        - updatedAt
+        - updatedByName
     IVcsProject:
       type: object
       properties:
@@ -1640,6 +1812,8 @@ components:
           type: string
         tolerances:
           $ref: "#/components/schemas/IToleranceOverrides"
+        masks:
+          $ref: "#/components/schemas/IScreenMasksResponse"
         currentBuildScreen:
           $ref: "#/components/schemas/PickBuildScreenEntity"
         referenceBuildScreen:
@@ -1650,6 +1824,7 @@ components:
         - screenId
         - name
         - tolerances
+        - masks
     IToleranceOverrides:
       type: object
       properties:
@@ -1669,6 +1844,32 @@ components:
         - colorTolerance
         - shiftTolerance
         - diffPctTolerance
+    IScreenMasksResponse:
+      type: object
+      properties:
+        masks:
+          type: array
+          items:
+            $ref: "#/components/schemas/IMaskRect"
+        inheritAppMasks:
+          type: boolean
+        version:
+          type: number
+        updatedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        updatedByName:
+          type:
+            - string
+            - "null"
+      required:
+        - masks
+        - inheritAppMasks
+        - version
+        - updatedAt
+        - updatedByName
     PickBuildScreenEntity:
       type: object
       properties:
@@ -1729,6 +1930,12 @@ components:
             - string
             - "null"
           format: date-time
+        appliedMasks:
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/IMaskRect"
       required:
         - id
         - buildId
@@ -1740,6 +1947,7 @@ components:
         - reviewComment
         - reviewedById
         - reviewedAt
+        - appliedMasks
     PickBuildScreenEntity_2:
       type: object
       properties:
@@ -1798,6 +2006,8 @@ components:
           type: number
         shiftTolerantPixels:
           type: number
+        maskedPixels:
+          type: number
         passes:
           type: boolean
         diffImage:
@@ -1807,6 +2017,7 @@ components:
         - diffPixels
         - totalPixels
         - shiftTolerantPixels
+        - maskedPixels
         - passes
         - diffImage
     IBuildScreenCreateResponse:
@@ -1891,6 +2102,8 @@ components:
           type: string
         tolerances:
           $ref: "#/components/schemas/IToleranceOverrides"
+        masks:
+          $ref: "#/components/schemas/IScreenMasksResponse"
         image:
           type: object
           properties:
@@ -1908,6 +2121,7 @@ components:
         - screenId
         - name
         - tolerances
+        - masks
         - image
     IVcsIntegrationListResponse:
       type: object
@@ -2225,6 +2439,12 @@ components:
             - string
             - "null"
           format: date-time
+        appliedMasks:
+          type:
+            - array
+            - "null"
+          items:
+            $ref: "#/components/schemas/IExtMask"
       required:
         - screenId
         - name
@@ -2234,6 +2454,28 @@ components:
         - reviewComment
         - reviewedByName
         - reviewedAt
+        - appliedMasks
+    IExtMask:
+      type: object
+      properties:
+        x:
+          type: number
+        y:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+        label:
+          type:
+            - string
+            - "null"
+      required:
+        - x
+        - y
+        - width
+        - height
+        - label
     IConnectedAppRequest:
       type: object
       properties:
