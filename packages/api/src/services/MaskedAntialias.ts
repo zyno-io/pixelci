@@ -130,15 +130,3 @@ export function isAntialiasedIgnoringMask(
 ): boolean {
     return antialiased(img1, x, y, width, height, a32, b32, mask) || antialiased(img2, x, y, width, height, b32, a32, mask);
 }
-
-/** Whether any masked pixel lies within `radius` (Chebyshev distance) of (x, y). */
-export function maskedWithin(mask: Uint8Array, x: number, y: number, width: number, height: number, radius: number): boolean {
-    const yMax = Math.min(height - 1, y + radius);
-    const xMax = Math.min(width - 1, x + radius);
-    for (let ny = Math.max(0, y - radius); ny <= yMax; ny++) {
-        for (let nx = Math.max(0, x - radius); nx <= xMax; nx++) {
-            if (mask[ny * width + nx]) return true;
-        }
-    }
-    return false;
-}

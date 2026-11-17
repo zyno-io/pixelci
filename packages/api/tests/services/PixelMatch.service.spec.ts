@@ -473,15 +473,100 @@ describe('PixelMatchService masks beside anti-aliasing (real pixelmatch)', () =>
         assert.equal(r2.diffPixels, r1.diffPixels);
     });
 
-    it('should still excuse genuine anti-aliasing away from any mask', async () => {
+    it('should not excuse beside a mask a pixel that pixelmatch with the fill counts', async () => {
         const service = new RealPixelMatchService(createMockLogger());
-        const base = randomBase(7);
-        for (let y = 0; y < H; y++) put(base, 4, y, [0, 0, 0]);
-        put(base, 5, 5, [90, 90, 90]);
-        put(base, 5, 7, [90, 90, 90]);
-        const { a, b } = withChange(base, 5, 6);
-        const plain = await service.getDiff(a, b, 0.2, 0);
-        const withFarMask = await service.getDiff(a, b, 0.2, 0, [maskRect(9, 9, 3, 3)]);
-        assert.equal(withFarMask.diffPixels, plain.diffPixels);
+        const N = 11;
+        const mk = () => {
+            const d = Buffer.alloc(N * N * 4);
+            for (let y = 0; y < N; y++) {
+                for (let x = 0; x < N; x++) {
+                    const v = x <= 4 && y >= 5 ? 0 : x >= 6 && y <= 5 ? 255 : 128;
+                    d.set([v, v, v, 255], (y * N + x) * 4);
+                }
+            }
+            return d;
+        };
+        const toP = (d: Buffer) => {
+            const png = new PNG({ width: N, height: N });
+            d.copy(png.data);
+            return PNG.sync.write(png);
+        };
+        const a = mk();
+        const b = mk();
+        b.set([0, 0, 0, 255], (5 * N + 5) * 4);
+        const r = await service.getDiff(toP(a), toP(b), 0.2, 0, [maskRect(4, 4, 2, 1)]);
+        assert.equal(r.diffPixels, 1);
+    });
+
+    // Real pixelmatch excuses the changed pixel P=(5,6): darker neighbours at x<=4 and brighter at x>=6, each with 3+ equal
+    // siblings in both images, and P changes between two mid-grays.
+    function aaScene() {
+        const base = Buffer.alloc(W * H * 4);
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                const v = x <= 4 ? 0 : x >= 6 ? 255 : 128;
+                put(base, x, y, [v, v, v]);
+            }
+        }
+        const a = Buffer.from(base);
+        const b = Buffer.from(base);
+        put(a, 5, 6, [100, 100, 100]);
+        put(b, 5, 6, [150, 150, 150]);
+        return { a: toPng(a), b: toPng(b) };
+    }
+
+    it('should still excuse genuine anti-aliasing: no mask, a distant mask, and a near mask that leaves it anti-aliasing', async () => {
+        const service = new RealPixelMatchService(createMockLogger());
+        const { a, b } = aaScene();
+        assert.equal((await service.getDiff(a, b, 0.2, 0)).diffPixels, 0, 'no mask');
+        assert.equal((await service.getDiff(a, b, 0.2, 0, [maskRect(9, 9, 3, 3)])).diffPixels, 0, 'mask more than 2px away');
+        // x=7 is 2px from P; with that column absent the dark side and the bright x=6 column still excuse it
+        assert.equal((await service.getDiff(a, b, 0.2, 0, [maskRect(7, 0, 1, 12)])).diffPixels, 0, 'mask within 2px, still anti-aliasing');
+    });
+
+    it('should agree with real pixelmatch on which pixels are anti-aliasing (drift guard for the port)', async () => {
+        const pixelmatch = (await import('pixelmatch')).default;
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { isAntialiasedIgnoringMask } = require('../../src/services/MaskedAntialias');
+        const S = 16;
+        let seed = 20240607;
+        const rnd = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+        const noMask = new Uint8Array(S * S);
+        let yellow = 0;
+        let red = 0;
+        for (let n = 0; n < 50; n++) {
+            const a = new Uint8Array(new ArrayBuffer(S * S * 4));
+            const b = new Uint8Array(new ArrayBuffer(S * S * 4));
+            const gx = rnd() * 60;
+            const gy = rnd() * 60;
+            const cut = 4 + Math.floor(rnd() * 8);
+            for (let y = 0; y < S; y++) {
+                for (let x = 0; x < S; x++) {
+                    // flat areas either side of a hard edge, a shallow gradient across them, and a little noise, so anti-aliasing occurs
+                    const base = (x < cut ? 40 : 210) + gx * (x / S) + gy * (y / S);
+                    const va = Math.max(0, Math.min(255, Math.round(base + Math.floor(rnd() * 3) * 2)));
+                    // b differs from a on about one pixel in six, by enough to exceed the colour threshold
+                    const vb = rnd() < 0.17 ? Math.max(0, Math.min(255, va + Math.round((rnd() - 0.5) * 160))) : va;
+                    a.set([va, va, va, 255], (y * S + x) * 4);
+                    b.set([vb, vb, vb, 255], (y * S + x) * 4);
+                }
+            }
+            const out = new Uint8Array(S * S * 4);
+            pixelmatch(a, b, out, S, S, { threshold: 0.2, includeAA: false });
+            const a32 = new Uint32Array(a.buffer, 0, S * S);
+            const b32 = new Uint32Array(b.buffer, 0, S * S);
+            for (let i = 0; i < S * S; i++) {
+                const o = i * 4;
+                const isYellow = out[o] === 255 && out[o + 1] === 255 && out[o + 2] === 0;
+                const isRed = out[o] === 255 && out[o + 1] === 0 && out[o + 2] === 0;
+                if (!isYellow && !isRed) continue;
+                if (isYellow) yellow++;
+                else red++;
+                const port = isAntialiasedIgnoringMask(a, b, a32, b32, i % S, Math.floor(i / S), S, S, noMask);
+                assert.equal(port, isYellow, `image ${n} pixel ${i}`);
+            }
+        }
+        assert.ok(yellow > 20, `anti-aliased pixels exercised: ${yellow}`);
+        assert.ok(red > 20, `counted pixels exercised: ${red}`);
     });
 });

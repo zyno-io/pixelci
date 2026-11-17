@@ -222,6 +222,7 @@ When you open a screen from a build, the preview on the lightbox panel runs the 
 
 - **Pixels, from the top-left.** A mask is a rectangle in whole pixels measured from the top-left corner of the screenshot, so it keeps the same position in every build.
 - **Masks never scale.** If a screenshot changes size (a full-page capture that gets longer, or a different device pixel ratio), the mask stays at the same pixel position. Anything past the edge of the compared area is ignored, and PixelCI tells you when a mask is partly or wholly outside the screenshot you are looking at.
+- **Pad for anti-aliasing.** A changed pixel right next to a mask is always counted, even if it would otherwise pass as anti-aliasing, so leave a pixel or two of padding around masks.
 - **Pad for shift tolerance.** Content that moves across a mask's edge can still show up as a thin sliver of difference, up to the [shift tolerance](#tolerances) wide, just outside it. Make masks at least that much larger than the content they hide.
 - **Layout that moves needs a different tool.** A fixed rectangle can't follow content that reflows. If it does, mask it where you take the screenshot instead: Playwright's `page.screenshot({ mask: [page.locator('.clock')] })` paints over the elements wherever they are, and PixelCI then sees identical pixels there.
 
