@@ -2010,6 +2010,8 @@ components:
           type: number
         passes:
           type: boolean
+        canvasTooLarge:
+          type: boolean
         diffImage:
           type: string
       required:
@@ -2019,6 +2021,7 @@ components:
         - shiftTolerantPixels
         - maskedPixels
         - passes
+        - canvasTooLarge
         - diffImage
     IBuildScreenCreateResponse:
       type: object

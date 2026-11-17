@@ -10,11 +10,13 @@ import type { IAppGalleryResponse } from '../../src/controllers/Screens.controll
 import type { IAppMasksResponse, IMaskRect, IScreenMasksResponse } from '../../src/services/Mask';
 
 import { CoreAppOptions } from '../../src/app';
+import { AppConfig } from '../../src/config';
 import { AppEntity } from '../../src/entities/App.entity';
 import { BranchEntity } from '../../src/entities/Branch.entity';
 import { BuildEntity } from '../../src/entities/Build.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { PixelMatchService } from '../../src/services/PixelMatch.service';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 
@@ -172,7 +174,7 @@ async function run() {
     }
 
     let jobSeq = 0;
-    async function runBuild(branch: string, screens: { name: string; file: string }[]) {
+    async function runBuild(branch: string, screens: { name: string; file?: string; data?: Buffer }[]) {
         jobSeq++;
         mockJob = { id: jobSeq, ref: branch, sha: String(jobSeq).padStart(40, '0') };
         const build = await call<{ id: string }>(ci(HttpRequest.POST(`/api/apps/${APP_ID}/builds`)));
@@ -181,7 +183,7 @@ async function run() {
             const r = await call<{ screenId: string }>(
                 ci(
                     HttpRequest.POST(`/api/apps/${APP_ID}/builds/${build.id}/screens`).multiPart([
-                        { name: 'image', file: readFileSync(`${__dirname}/fixtures/${screen.file}`), fileName: `${screen.name}.png` }
+                        { name: 'image', file: screen.data ?? readFileSync(`${__dirname}/fixtures/${screen.file}`), fileName: `${screen.name}.png` }
                     ])
                 )
             );
@@ -468,6 +470,32 @@ async function run() {
     ]);
     assertEq(xbControl.status, 'needs review', 'without the mask the other approval does not match');
 
+    // xb-control differs from the reference (base) and from xb-a's approved change. Checking that candidate must not clobber the
+    // stored diff: the review UI shows the reference as the left-hand image, so the stored diff must be against the reference.
+    const storedDiff = async (buildId: string, screenId: string) => {
+        const res = await facade.request(user(HttpRequest.GET(`/api/apps/${APP_ID}/builds/${buildId}/screens/${screenId}/diff`)));
+        assertEq(res.statusCode, 302, 'diff redirects to the stored image');
+        return Buffer.from(await (await fetch(String(res.getHeader('location')))).arrayBuffer());
+    };
+    const quiet = { info() {}, warn() {}, error() {}, debug() {} } as never;
+    const localDiff = async (leftFile: string, rightFile: string) => {
+        const svc = new PixelMatchService(quiet, facade.app.config as AppConfig);
+        const diff = await svc.getDiff(
+            readFileSync(`${__dirname}/fixtures/${leftFile}`),
+            readFileSync(`${__dirname}/fixtures/${rightFile}`),
+            0.2,
+            1,
+            []
+        );
+        return diff.getDiffPng();
+    };
+    const xbStored = await storedDiff(xbControl.id, f2);
+    const xbReferenceDiff = await localDiff('finder-2.png', 'finder-2-changed-2.png');
+    assertTrue(xbStored.equals(xbReferenceDiff), 'stored diff for the build screen is the diff against the reference build');
+    // and it is not the diff against xb-a's approved change (which is what a candidate comparison would have stored)
+    const xbCandidateDiff = await localDiff('finder-2-changed.png', 'finder-2-changed-2.png');
+    assertTrue(!xbStored.equals(xbCandidateDiff), 'stored diff is not xb-a candidate comparison output');
+
     await setScreenMasks(f2, [box2]);
     const xbB = await runBuild('xb-b', [
         { name: 'finder-1', file: 'finder-1.png' },
@@ -524,5 +552,51 @@ async function run() {
         'needs review',
         'the first feature build was never reprocessed'
     );
+
+    // --- processing: oversized comparison canvas
+    console.log('\nTest: a pair whose padded canvas exceeds the pixel cap counts as changed and still gets a diff stored');
+    const solid = (w: number, h: number, rgb: [number, number, number]) => {
+        const png = new PNG({ width: w, height: h });
+        for (let i = 0; i < w * h; i++) {
+            png.data[i * 4] = rgb[0];
+            png.data[i * 4 + 1] = rgb[1];
+            png.data[i * 4 + 2] = rgb[2];
+            png.data[i * 4 + 3] = 255;
+        }
+        return PNG.sync.write(png);
+    };
+    // each is 2.4 MP, within the cap below (and the finder fixtures); padded together they are 2400x2400 = 5.76 MP
+    const config = facade.app.config as unknown as { SCREEN_MAX_PIXELS: number };
+    const originalCap = config.SCREEN_MAX_PIXELS;
+    config.SCREEN_MAX_PIXELS = 3_000_000;
+    try {
+        const stable = [
+            { name: 'finder-1', file: 'finder-1.png' },
+            { name: 'finder-2', file: 'finder-2.png' }
+        ];
+        const bigBase = await runBuild('main', [...stable, { name: 'wide', data: solid(2400, 1000, [0, 0, 255]) }]);
+        await approve(bigBase.id, [bigBase.screenIds['wide']]);
+        const wideId = bigBase.screenIds['wide'];
+
+        const bigFeat = await runBuild('oversize', [...stable, { name: 'wide', data: solid(1000, 2400, [0, 255, 0]) }]);
+        assertEq(bigFeat.status, 'needs review', 'oversized pair is flagged, processing did not crash');
+        assertEq((await currentOf(bigFeat.id, wideId)).status, 'needs review', 'oversized screen needs review');
+        const diffPng = PNG.sync.read(await storedDiff(bigFeat.id, wideId));
+        assertEq([diffPng.width, diffPng.height], [1000, 2400], 'stored diff is the new screenshot, not the padded canvas');
+
+        const preview = await call<IBuildScreenCompareResponse>(
+            user(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${bigFeat.id}/screens/${wideId}/compare`)).json({
+                colorTolerance: 0.2,
+                shiftTolerance: 1,
+                diffPctTolerance: 0.01,
+                masks: []
+            })
+        );
+        assertEq([preview.canvasTooLarge, preview.passes, preview.diffPct], [true, false, 100], 'compare endpoint reports canvasTooLarge');
+    } finally {
+        config.SCREEN_MAX_PIXELS = originalCap;
+    }
+    console.log('  PASS');
+
     mockServer.close();
 }

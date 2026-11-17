@@ -71,9 +71,13 @@ function createMockLogger() {
     } as any;
 }
 
+function createConfig(maxPixels = 25_000_000) {
+    return { SCREEN_MAX_PIXELS: maxPixels } as any;
+}
+
 describe('PixelMatchService', () => {
     it('should report no differences for identical images', async () => {
-        const service = new PixelMatchService(createMockLogger());
+        const service = new PixelMatchService(createMockLogger(), createConfig());
 
         const img = createPng(4, 4, [255, 0, 0, 255]);
         const result = await service.getDiff(img, img);
@@ -84,7 +88,7 @@ describe('PixelMatchService', () => {
     });
 
     it('should detect differences between images', async () => {
-        const service = new PixelMatchService(createMockLogger());
+        const service = new PixelMatchService(createMockLogger(), createConfig());
 
         const red = createPng(4, 4, [255, 0, 0, 255]);
         const blue = createPng(4, 4, [0, 0, 255, 255]);
@@ -96,7 +100,7 @@ describe('PixelMatchService', () => {
     });
 
     it('should return a valid diff PNG', async () => {
-        const service = new PixelMatchService(createMockLogger());
+        const service = new PixelMatchService(createMockLogger(), createConfig());
 
         const red = createPng(4, 4, [255, 0, 0, 255]);
         const blue = createPng(4, 4, [0, 0, 255, 255]);
@@ -111,7 +115,7 @@ describe('PixelMatchService', () => {
     });
 
     it('should calculate correct diff percentage for partial differences', async () => {
-        const service = new PixelMatchService(createMockLogger());
+        const service = new PixelMatchService(createMockLogger(), createConfig());
 
         const img1 = new PNG({ width: 4, height: 4 });
         const img2 = new PNG({ width: 4, height: 4 });
@@ -148,7 +152,7 @@ describe('PixelMatchService', () => {
 
     it('should log diff metrics', async () => {
         const logger = createMockLogger();
-        const service = new PixelMatchService(logger);
+        const service = new PixelMatchService(logger, createConfig());
 
         const img = createPng(4, 4, [255, 0, 0, 255]);
         await service.getDiff(img, img);
@@ -163,7 +167,7 @@ describe('PixelMatchService', () => {
     });
 
     it('should handle images with different sizes by normalizing to max dimensions', async () => {
-        const service = new PixelMatchService(createMockLogger());
+        const service = new PixelMatchService(createMockLogger(), createConfig());
 
         const small = createPng(2, 2, [255, 0, 0, 255]);
         const large = createPng(4, 4, [255, 0, 0, 255]);
@@ -180,9 +184,51 @@ describe('PixelMatchService', () => {
         assert.equal(parsed.height, 4);
     });
 
+    it('should not build a canvas when the padded canvas exceeds the pixel cap', async () => {
+        const logger = createMockLogger();
+        // each image is within the 100 px cap, but the 12x4 / 4x12 pair pads to 12x12 = 144
+        const service = new PixelMatchService(logger, createConfig(100));
+        const wide = createPng(12, 4, [0, 0, 255, 255]);
+        const tall = createPng(4, 12, [0, 255, 0, 255]);
+
+        const allocSpy = mock.method(Buffer, 'alloc');
+        let result;
+        let diffPng: Buffer;
+        try {
+            result = await service.getDiff(wide, tall);
+            diffPng = await result.getDiffPng();
+        } finally {
+            allocSpy.mock.restore();
+        }
+
+        assert.equal(result.canvasTooLarge, true);
+        assert.equal(result.sizesDiffer, true);
+        assert.equal(result.diffPct, 100);
+        assert.equal(result.diffPixels, 144);
+        assert.equal(result.totalPixels, 144);
+        assert.equal(result.maskedPixels, 0);
+        assert.equal(result.shiftTolerantPixels, 0);
+        assert.ok(allocSpy.mock.calls.every(c => (c.arguments[0] as number) < 144 * 4));
+
+        const parsed = PNG.sync.read(Buffer.from(diffPng));
+        assert.equal(parsed.width, 4);
+        assert.equal(parsed.height, 12);
+        // green (0,255,0) washed 35% red
+        assert.equal(parsed.data[0], Math.round(255 * 0.35));
+        assert.equal(parsed.data[1], Math.round(255 * 0.65));
+        assert.equal(parsed.data[2], 0);
+        assert.equal(parsed.data[3], 255);
+    });
+
+    it('should still compare when the padded canvas is exactly at the cap', async () => {
+        const service = new PixelMatchService(createMockLogger(), createConfig(16));
+        const result = await service.getDiff(createPng(2, 2, [255, 0, 0, 255]), createPng(4, 4, [255, 0, 0, 255]));
+        assert.equal(result.canvasTooLarge, false);
+    });
+
     it('should report sizesDiffer in log when images have different sizes', async () => {
         const logger = createMockLogger();
-        const service = new PixelMatchService(logger);
+        const service = new PixelMatchService(logger, createConfig());
 
         const small = createPng(2, 2, [255, 0, 0, 255]);
         const large = createPng(4, 4, [255, 0, 0, 255]);
@@ -199,14 +245,14 @@ describe('PixelMatchService', () => {
         const shifted2 = createPngWithRect(12, 12, 5, 3, 4, 4);
 
         it('should count a 1px shift as a diff when tolerance is disabled', async () => {
-            const service = new PixelMatchService(createMockLogger());
+            const service = new PixelMatchService(createMockLogger(), createConfig());
             const result = await service.getDiff(base, shifted1, 0.2, 0);
             assert.equal(result.diffPixels, 8);
             assert.equal(result.shiftTolerantPixels, 0);
         });
 
         it('should forgive a 1px shift within tolerance and paint it yellow', async () => {
-            const service = new PixelMatchService(createMockLogger());
+            const service = new PixelMatchService(createMockLogger(), createConfig());
             const result = await service.getDiff(base, shifted1, 0.2, 1);
             assert.equal(result.diffPixels, 0);
             assert.equal(result.diffPct, 0);
@@ -218,14 +264,14 @@ describe('PixelMatchService', () => {
         });
 
         it('should still flag a shift larger than the tolerance', async () => {
-            const service = new PixelMatchService(createMockLogger());
+            const service = new PixelMatchService(createMockLogger(), createConfig());
             const result = await service.getDiff(base, shifted2, 0.2, 1);
             assert.ok(result.diffPixels > 0);
             assert.equal((await service.getDiff(base, shifted2, 0.2, 2)).diffPixels, 0);
         });
 
         it('should not forgive added or recoloured content', async () => {
-            const service = new PixelMatchService(createMockLogger());
+            const service = new PixelMatchService(createMockLogger(), createConfig());
             const blank = createPng(12, 12, [255, 255, 255, 255]);
             const added = await service.getDiff(blank, base, 0.2, 2);
             assert.equal(added.diffPixels, 16);
@@ -265,7 +311,7 @@ describe('PixelMatchService', () => {
         const white = createPng(10, 10, [255, 255, 255, 255]);
 
         it('should report no changed pixels for a change inside a mask', async () => {
-            const service = new PixelMatchService(createMockLogger());
+            const service = new PixelMatchService(createMockLogger(), createConfig());
             const changed = createPngWithRect(10, 10, 2, 2, 3, 3);
             const result = await service.getDiff(white, changed, 0.2, 0, [mask(1, 1, 5, 5)]);
             assert.equal(result.diffPixels, 0);
@@ -275,7 +321,7 @@ describe('PixelMatchService', () => {
         });
 
         it('should exclude masked pixels from the percentage', async () => {
-            const service = new PixelMatchService(createMockLogger());
+            const service = new PixelMatchService(createMockLogger(), createConfig());
             const changed = createPngWithRect(10, 10, 0, 5, 5, 2); // 10 changed pixels in rows 5-6
             const result = await service.getDiff(white, changed, 0.2, 0, [mask(0, 0, 10, 5)]);
             assert.equal(result.totalPixels, 100);
@@ -285,7 +331,7 @@ describe('PixelMatchService', () => {
         });
 
         it('should count overlapping masks once and clip them to the canvas', async () => {
-            const service = new PixelMatchService(createMockLogger());
+            const service = new PixelMatchService(createMockLogger(), createConfig());
             const result = await service.getDiff(white, white, 0.2, 0, [
                 mask(0, 0, 4, 4, 1),
                 mask(2, 2, 4, 4, 2),
@@ -296,7 +342,7 @@ describe('PixelMatchService', () => {
         });
 
         it('should report 0% when the whole screen is masked', async () => {
-            const service = new PixelMatchService(createMockLogger());
+            const service = new PixelMatchService(createMockLogger(), createConfig());
             const result = await service.getDiff(white, createPngWithRect(10, 10, 0, 0, 10, 10), 0.2, 1, [mask(0, 0, 10, 10)]);
             assert.equal(result.diffPixels, 0);
             assert.equal(result.diffPct, 0);
@@ -304,7 +350,7 @@ describe('PixelMatchService', () => {
         });
 
         it('should not let masked neighbours excuse an unmasked pixel', async () => {
-            const service = new PixelMatchService(createMockLogger());
+            const service = new PixelMatchService(createMockLogger(), createConfig());
             const a = createPngWithRect(10, 10, 5, 5, 1, 1);
             const b = createPngWithRect(10, 10, 6, 5, 1, 1);
             const unmasked = await service.getDiff(a, b, 0.2, 1);
@@ -316,7 +362,7 @@ describe('PixelMatchService', () => {
         });
 
         it('should let a mask cover the padding when image sizes differ', async () => {
-            const service = new PixelMatchService(createMockLogger());
+            const service = new PixelMatchService(createMockLogger(), createConfig());
             const taller = createPng(10, 12, [255, 255, 255, 255]);
             assert.equal((await service.getDiff(white, taller)).diffPixels, 20);
             const result = await service.getDiff(white, taller, 0.2, 0, [mask(0, 10, 10, 2)]);
@@ -325,7 +371,7 @@ describe('PixelMatchService', () => {
         });
 
         it('should tint the diff image only on masked pixels', async () => {
-            const service = new PixelMatchService(createMockLogger());
+            const service = new PixelMatchService(createMockLogger(), createConfig());
             const other = createPngWithRect(10, 10, 6, 6, 2, 2);
             const plain = PNG.sync.read(Buffer.from(await (await service.getDiff(white, other, 0.2, 0)).getDiffPng()));
             const result = await service.getDiff(white, other, 0.2, 0, [mask(0, 0, 5, 5)]);
@@ -358,7 +404,7 @@ describe('PixelMatchService', () => {
         });
 
         it('should be invariant to content under a mask, at every shift radius', async () => {
-            const service = new PixelMatchService(createMockLogger());
+            const service = new PixelMatchService(createMockLogger(), createConfig());
             const size = 40;
             let seed = 12345;
             const rand = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32) * 256;

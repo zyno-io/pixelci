@@ -136,7 +136,10 @@
                             <div class="notice-body">
                                 <template v-if="preview">
                                     <strong>{{ preview.passes ? 'Would pass' : 'Would be flagged' }}</strong>
-                                    <span class="lb-preview-line">
+                                    <span v-if="preview.canvasTooLarge" class="lb-preview-line" data-testid="preview-canvas-too-large">
+                                        These screenshots are too different in size to compare pixel by pixel, so every pixel counts as changed.
+                                    </span>
+                                    <span v-else class="lb-preview-line">
                                         {{ formatPct(preview.diffPct) }} of pixels differ ({{ preview.diffPixels.toLocaleString() }} px);
                                         {{ formatTolerance('diffPctTolerance', effective.diffPctTolerance) }} allowed.
                                     </span>
