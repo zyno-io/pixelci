@@ -89,13 +89,15 @@ The CLI then:
 
 ### 5. Screenshot Naming
 
-PNG files are named by their relative path from the screenshots directory. The `.png` extension is stripped, and the rest of the path becomes the screen name:
+PNG files are named by their relative path from the screenshots directory. The `.png` extension is stripped, and directories are joined with " - " (space, hyphen, space):
 
-| File path              | Screen name        |
-| ---------------------- | ------------------ |
-| `login.png`            | `login`            |
-| `checkout/step-1.png`  | `checkout/step-1`  |
-| `admin/users/list.png` | `admin/users/list` |
+| File path              | Screen name            |
+| ---------------------- | ---------------------- |
+| `login.png`            | `login`                |
+| `checkout/step-1.png`  | `checkout - step-1`    |
+| `admin/users/list.png` | `admin - users - list` |
+
+Screens are identified by name, so renaming or moving a file starts a new screen with no baseline.
 
 ### 6. Build Outcomes
 
