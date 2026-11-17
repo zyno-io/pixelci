@@ -230,7 +230,7 @@ export class BuildScreensController {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
         validateTolerances(body);
         // the masks in effect: the app's and the screen's together, so up to twice the per-list cap
-        validateMasks(body.masks, MAX_MASKS * 2);
+        validateMasks(body.masks, MAX_MASKS * 2, { allowDuplicateIds: true });
 
         const build = await BuildEntity.query()
             .filter({ id, appId, status: { $nin: ['draft', 'canceled'] } })

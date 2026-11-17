@@ -26,9 +26,10 @@ const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isSaf
 
 /**
  * Throws HttpBadRequestError unless `masks` is a valid list: at most `max` (50), integer geometry within bounds, unique uuid ids,
- * short labels. The compare preview passes a higher `max`, as it carries the app's masks and the screen's together.
+ * short labels. The compare preview passes a higher `max` and `allowDuplicateIds`, as it carries the app's masks and the screen's
+ * together and each list is saved (and so validated) on its own, so the two may legitimately share an id.
  */
-export function validateMasks(masks: unknown, max = MAX_MASKS): asserts masks is IMaskRect[] {
+export function validateMasks(masks: unknown, max = MAX_MASKS, opts: { allowDuplicateIds?: boolean } = {}): asserts masks is IMaskRect[] {
     if (!Array.isArray(masks)) throw new HttpBadRequestError('masks must be an array');
     if (masks.length > max) throw new HttpBadRequestError(`at most ${max} masks are allowed`);
 
@@ -39,8 +40,10 @@ export function validateMasks(masks: unknown, max = MAX_MASKS): asserts masks is
         const { id, x, y, width, height, label } = mask as Record<string, unknown>;
 
         if (typeof id !== 'string' || !UUID_RE.test(id)) throw new HttpBadRequestError(`${at}.id must be a uuid`);
-        if (ids.has(id.toLowerCase())) throw new HttpBadRequestError(`${at}.id is a duplicate`);
-        ids.add(id.toLowerCase());
+        if (!opts.allowDuplicateIds) {
+            if (ids.has(id.toLowerCase())) throw new HttpBadRequestError(`${at}.id is a duplicate`);
+            ids.add(id.toLowerCase());
+        }
 
         if (!isInt(x) || x < 0) throw new HttpBadRequestError(`${at}.x must be an integer >= 0`);
         if (!isInt(y) || y < 0) throw new HttpBadRequestError(`${at}.y must be an integer >= 0`);
@@ -86,7 +89,6 @@ export function rasterizeMasks(masks: readonly IMaskRect[], width: number, heigh
     if (!masks.length) return null;
 
     let bitmap: Uint8Array | undefined;
-    let maskedPixels = 0;
     for (const mask of masks) {
         const x0 = Math.max(0, mask.x);
         const y0 = Math.max(0, mask.y);
@@ -95,17 +97,13 @@ export function rasterizeMasks(masks: readonly IMaskRect[], width: number, heigh
         if (x1 <= x0 || y1 <= y0) continue;
 
         bitmap ??= new Uint8Array(width * height);
-        for (let y = y0; y < y1; y++) {
-            const row = y * width;
-            for (let x = x0; x < x1; x++) {
-                if (!bitmap[row + x]) {
-                    bitmap[row + x] = 1;
-                    maskedPixels++;
-                }
-            }
-        }
+        for (let y = y0; y < y1; y++) bitmap.fill(1, y * width + x0, y * width + x1);
     }
-    return bitmap ? { bitmap, maskedPixels } : null;
+    if (!bitmap) return null;
+
+    let maskedPixels = 0;
+    for (let i = 0; i < bitmap.length; i++) maskedPixels += bitmap[i];
+    return { bitmap, maskedPixels };
 }
 
 /** A screen's own masks, as the API returns them. */

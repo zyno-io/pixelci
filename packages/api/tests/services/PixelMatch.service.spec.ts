@@ -376,3 +376,112 @@ describe('PixelMatchService', () => {
         });
     });
 });
+
+describe('PixelMatchService masks beside anti-aliasing (real pixelmatch)', () => {
+    // The suite above swaps pixelmatch for a mock, which has no anti-aliasing test. Load a second, unpatched copy of the service.
+    const servicePath = require.resolve('../../src/services/PixelMatch.service');
+    const saved = require.cache[servicePath];
+    delete require.cache[servicePath];
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const RealPixelMatchService = require('../../src/services/PixelMatch.service').PixelMatchService;
+    if (saved) require.cache[servicePath] = saved;
+
+    const W = 12;
+    const H = 12;
+    const maskRect = (x: number, y: number, width: number, height: number) => ({
+        id: '00000000-0000-4000-8000-000000000001',
+        x,
+        y,
+        width,
+        height,
+        label: null
+    });
+
+    function toPng(data: Buffer): Buffer {
+        const png = new PNG({ width: W, height: H });
+        data.copy(png.data);
+        return PNG.sync.write(png);
+    }
+
+    function randomBase(seed: number): Buffer {
+        const base = Buffer.alloc(W * H * 4);
+        const rnd = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) % 200) + 30;
+        for (let i = 0; i < W * H; i++) base.set([rnd(), rnd(), rnd(), 255], i * 4);
+        return base;
+    }
+
+    const put = (data: Buffer, x: number, y: number, c: [number, number, number]) => data.set([...c, 255], (y * W + x) * 4);
+
+    function withChange(base: Buffer, x: number, y: number) {
+        const a = Buffer.from(base);
+        const b = Buffer.from(base);
+        put(a, x, y, [100, 100, 100]);
+        put(b, x, y, [200, 40, 40]);
+        return { a: toPng(a), b: toPng(b) };
+    }
+
+    it('should not let the mask fill excuse a real change in the pixel beside it', async () => {
+        const service = new RealPixelMatchService(createMockLogger());
+        // P=(5,6) has a darker neighbour (x=4 column) and a brighter one, and the mask starts at x=6
+        const base = randomBase(7);
+        for (let y = 0; y < H; y++) put(base, 4, y, [0, 0, 0]);
+        put(base, 5, 5, [90, 90, 90]);
+        put(base, 5, 7, [90, 90, 90]);
+        const { a, b } = withChange(base, 5, 6);
+
+        const unmasked = await service.getDiff(a, b, 0.2, 0);
+        assert.equal(unmasked.diffPixels, 1);
+        const masked = await service.getDiff(a, b, 0.2, 0, [maskRect(6, 0, 6, 12)]);
+        assert.equal(masked.diffPixels, 1);
+        assert.equal(masked.maskedPixels, 72);
+        // the shift pass sees it as any other changed pixel
+        assert.equal((await service.getDiff(a, b, 0.2, 1, [maskRect(6, 0, 6, 12)])).diffPixels, 1);
+    });
+
+    it('should not let the mask fill excuse a change two pixels away through an unmasked fill-coloured pixel', async () => {
+        const service = new RealPixelMatchService(createMockLogger());
+        // P=(4,6); Q=(5,6) equals the mask fill and gains siblings from the mask at x>=6
+        const base = randomBase(11);
+        for (let y = 0; y < H; y++) put(base, 3, y, [0, 0, 0]);
+        put(base, 4, 5, [90, 90, 90]);
+        put(base, 4, 7, [90, 90, 90]);
+        put(base, 5, 5, [110, 110, 110]);
+        put(base, 5, 7, [110, 110, 110]);
+        put(base, 5, 6, [128, 128, 128]);
+        const { a, b } = withChange(base, 4, 6);
+
+        const unmasked = await service.getDiff(a, b, 0.2, 0);
+        assert.equal(unmasked.diffPixels, 1);
+        for (const shift of [0, 1]) {
+            const masked = await service.getDiff(a, b, 0.2, shift, [maskRect(6, 0, 6, 12)]);
+            assert.equal(masked.diffPixels, 1, `shift ${shift}`);
+        }
+    });
+
+    it('should report the same result whatever is under the mask', async () => {
+        const service = new RealPixelMatchService(createMockLogger());
+        const base = randomBase(7);
+        for (let y = 0; y < H; y++) put(base, 4, y, [0, 0, 0]);
+        const { a, b } = withChange(base, 5, 6);
+        const other = Buffer.from(PNG.sync.read(a).data);
+        for (let y = 0; y < H; y++) for (let x = 6; x < W; x++) put(other, x, y, [128, 128, 128]);
+        const otherPng = toPng(other);
+
+        const m = [maskRect(6, 0, 6, 12)];
+        const r1 = await service.getDiff(a, b, 0.2, 0, m);
+        const r2 = await service.getDiff(otherPng, b, 0.2, 0, m);
+        assert.equal(r2.diffPixels, r1.diffPixels);
+    });
+
+    it('should still excuse genuine anti-aliasing away from any mask', async () => {
+        const service = new RealPixelMatchService(createMockLogger());
+        const base = randomBase(7);
+        for (let y = 0; y < H; y++) put(base, 4, y, [0, 0, 0]);
+        put(base, 5, 5, [90, 90, 90]);
+        put(base, 5, 7, [90, 90, 90]);
+        const { a, b } = withChange(base, 5, 6);
+        const plain = await service.getDiff(a, b, 0.2, 0);
+        const withFarMask = await service.getDiff(a, b, 0.2, 0, [maskRect(9, 9, 3, 3)]);
+        assert.equal(withFarMask.diffPixels, plain.diffPixels);
+    });
+});

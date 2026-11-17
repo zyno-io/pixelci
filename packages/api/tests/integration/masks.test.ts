@@ -113,7 +113,12 @@ function diffBox(nameA: string, nameB: string): IMaskRect {
 
 async function run() {
     await startMockGitLab();
-    const facade = TestingHelpers.createTestingFacade(CoreAppOptions, { enableDatabase: true, databasePrefix: 'pixelci_masktest' });
+    // real connections (no savepoint isolation), so the concurrent-save test exercises the row lock
+    const facade = TestingHelpers.createTestingFacade(CoreAppOptions, {
+        enableDatabase: true,
+        databasePrefix: 'pixelci_masktest',
+        useSavepoints: false
+    });
     await facade.start();
 
     await createPersistedEntity(UserEntity, {
@@ -357,7 +362,18 @@ async function run() {
         user(HttpRequest.POST(compareUrl)).json({ colorTolerance: 0.2, shiftTolerance: 1, diffPctTolerance: 1, masks: [{ ...box1, width: 0 }] }),
         400
     );
-    await call(user(HttpRequest.POST(compareUrl)).json({ colorTolerance: 0.2, shiftTolerance: 1, diffPctTolerance: 1, masks: [box1, box1] }), 400);
+    // compare carries the app's masks and the screen's together; each is saved on its own, so they may share an id
+    const sharedId = await cmp([box1, box1]);
+    assertEq(sharedId.maskedPixels, masked.maskedPixels, 'masks sharing an id are accepted by compare');
+    await call(
+        user(HttpRequest.POST(compareUrl)).json({
+            colorTolerance: 0.2,
+            shiftTolerance: 1,
+            diffPctTolerance: 1,
+            masks: Array.from({ length: 101 }, () => ({ ...box1, id: randomUUID() }))
+        }),
+        400
+    );
     console.log('  PASS');
 
     // --- processing: screen masks
@@ -460,6 +476,46 @@ async function run() {
     assertEq(xbB.status, 'changes approved', 'with the mask the other branch approval matches');
     const xbScreen = await currentOf(xbB.id, f2);
     assertEq([xbScreen.status, xbScreen.approvalBuildId], ['changes approved', xbA.id], 'the approval is inherited from xb-a');
+    console.log('  PASS');
+
+    // --- processing: previous approved build on the same branch
+    console.log('\nTest: a change differing only inside a mask matches the previous approved build on the same branch');
+    // finder-1 has never had a change approved on any branch, so only the same-branch path can match here
+    const box3 = diffBox('finder-1-changed.png', 'finder-1-changed-2.png');
+    await setScreenMasks(f2, []);
+    const prevScreens = (file: string) => [
+        { name: 'finder-1', file },
+        { name: 'finder-2', file: 'finder-2.png' }
+    ];
+    const prevA = await runBuild('prev-branch', prevScreens('finder-1-changed.png'));
+    assertEq(prevA.status, 'needs review', 'prev-a needs review');
+    await approve(prevA.id, [f1]);
+    assertEq((await BuildEntity.query().filter({ id: prevA.id }).findOne()).status, 'changes approved', 'prev-a is approved');
+
+    const prevControl = await runBuild('prev-branch', prevScreens('finder-1-changed-2.png'));
+    assertEq(prevControl.status, 'needs review', 'without the mask the change is not matched to the previous build');
+
+    await setScreenMasks(f1, [box3]);
+    const prevB = await runBuild('prev-branch', prevScreens('finder-1-changed-2.png'));
+    assertEq(prevB.status, 'changes approved', 'with the mask the previous approved build on the branch matches');
+    const prevScreen = await currentOf(prevB.id, f1);
+    assertEq([prevScreen.status, prevScreen.approvalBuildId], ['changes approved', prevA.id], 'the approval comes from prev-a');
+    assertEq(prevScreen.appliedMasks, [box3], 'appliedMasks recorded on the previous-build path');
+    await setScreenMasks(f1, []);
+    console.log('  PASS');
+
+    // --- concurrent saves
+    console.log('\nTest: two concurrent screen mask saves from the same version: one wins, one gets 409');
+    const raceBase = screenVersions[f2];
+    const race = (box: IMaskRect) =>
+        facade.request(user(HttpRequest.PUT(putUrl)).json({ masks: [box], inheritAppMasks: true, baseVersion: raceBase }));
+    const raceA: IMaskRect = { id: randomUUID(), x: 1, y: 1, width: 10, height: 10, label: 'a' };
+    const raceB: IMaskRect = { id: randomUUID(), x: 2, y: 2, width: 20, height: 20, label: 'b' };
+    const raceResults = await Promise.all([race(raceA), race(raceB)]);
+    assertEq(raceResults.map(r => r.statusCode).sort(), [200, 409], 'exactly one concurrent save succeeds and the other conflicts');
+    const winner = raceResults.findIndex(r => r.statusCode === 200) === 0 ? raceA : raceB;
+    const stored = (await listScreens(prevB.id)).find(s => s.screenId === f2)!.masks;
+    assertEq([stored.masks, stored.version], [[winner], raceBase + 1], 'only the winning save was applied, once');
     console.log('  PASS');
 
     // --- nothing above reprocessed an earlier build

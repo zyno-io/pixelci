@@ -3,6 +3,7 @@ import { memoize } from 'lodash';
 
 import { decodeRgba, encodePng, IRgbaImage } from './Image';
 import { IMaskRect, MASK_FILL, rasterizeMasks } from './Mask';
+import { isAntialiasedIgnoringMask, maskedWithin } from './MaskedAntialias';
 
 const loadPixelMatch = memoize(async () => {
     return (await import('pixelmatch')).default;
@@ -200,6 +201,40 @@ async function applyShiftTolerance(
     return forgiven;
 }
 
+const AA_RADIUS = 2;
+
+/**
+ * Re-runs pixelmatch's anti-aliasing test, with masked pixels absent, for every pixel pixelmatch judged different (red = counted,
+ * yellow = excused as anti-aliasing) within AA_RADIUS (Chebyshev distance) of a masked pixel. Repaints any whose verdict changes
+ * and returns the net change to the diff count. Same-coloured pixels are gray in the output and are left alone.
+ */
+function reclassifyNearMask(img1: Uint8Array, img2: Uint8Array, diff: Uint8Array, width: number, height: number, mask: Uint8Array): number {
+    const len = width * height;
+    const a32 = new Uint32Array(img1.buffer, img1.byteOffset, len);
+    const b32 = new Uint32Array(img2.buffer, img2.byteOffset, len);
+    let change = 0;
+
+    for (let y = 0, i = 0; y < height; y++) {
+        for (let x = 0; x < width; x++, i++) {
+            const o = i << 2;
+            if (diff[o] !== 255 || diff[o + 2] !== 0) continue;
+            const counted = diff[o + 1] === 0;
+            if (!counted && diff[o + 1] !== 255) continue;
+            if (!maskedWithin(mask, x, y, width, height, AA_RADIUS)) continue;
+
+            const aa = isAntialiasedIgnoringMask(img1, img2, a32, b32, x, y, width, height, mask);
+            if (counted && aa) {
+                diff[o + 1] = 255; // yellow
+                change--;
+            } else if (!counted && !aa) {
+                diff[o + 1] = 0; // red
+                change++;
+            }
+        }
+    }
+    return change;
+}
+
 export class PixelMatchService {
     constructor(private logger: ScopedLogger) {}
 
@@ -246,20 +281,22 @@ export class PixelMatchService {
             for (let i = 0; i < mask.length; i++) {
                 if (!mask[i]) continue;
                 const o = i << 2;
-                for (const data of [norm1.data, norm2.data]) {
-                    data[o] = MASK_FILL[0];
-                    data[o + 1] = MASK_FILL[1];
-                    data[o + 2] = MASK_FILL[2];
-                    data[o + 3] = MASK_FILL[3];
-                }
+                norm1.data[o] = norm2.data[o] = MASK_FILL[0];
+                norm1.data[o + 1] = norm2.data[o + 1] = MASK_FILL[1];
+                norm1.data[o + 2] = norm2.data[o + 2] = MASK_FILL[2];
+                norm1.data[o + 3] = norm2.data[o + 3] = MASK_FILL[3];
             }
         }
 
         const diffTarget: IRgbaImage = { width, height, data: Buffer.alloc(width * height * 4) };
-        const rawDiffPixels = pixelmatch(norm1.data, norm2.data, diffTarget.data, width, height, {
+        let rawDiffPixels = pixelmatch(norm1.data, norm2.data, diffTarget.data, width, height, {
             threshold: pixelMatchThreshold,
             includeAA: false
         });
+
+        // The uniform fill under a mask has many "siblings" and so skews pixelmatch's anti-aliasing test for pixels up to 2 px
+        // away (a neighbour, or a neighbour's sibling). Re-decide those with masked pixels treated as absent.
+        if (mask) rawDiffPixels += reclassifyNearMask(norm1.data, norm2.data, diffTarget.data, width, height, mask);
 
         const shiftRadius = Math.max(0, Math.floor(shiftTolerance));
         const shiftChecks = rawDiffPixels * ((2 * shiftRadius + 1) ** 2 - 1);
