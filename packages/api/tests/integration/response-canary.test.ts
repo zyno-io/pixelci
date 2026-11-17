@@ -20,13 +20,14 @@ import { OAuthAuthorizationEntity } from '../../src/entities/OAuthAuthorization.
 import { OAuthClientEntity } from '../../src/entities/OAuthClient.entity';
 import { OAuthGrantEntity } from '../../src/entities/OAuthGrant.entity';
 import { OAuthTokenEntity } from '../../src/entities/OAuthToken.entity';
+import { ScreenDecisionEntity } from '../../src/entities/ScreenDecision.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('response-canary');
 // OAuth is only available on an https issuer
 process.env.PUBLIC_URL = 'https://pixelci.test';
 
@@ -207,6 +208,8 @@ interface ICtx {
     buildId: string;
     b2BuildId: string;
     screenId: string;
+    /** set just before the revoke case runs (it exists only once the approve case has recorded one) */
+    decisionId: string;
     adminJwt: string;
     user: (r: RequestBuilder) => RequestBuilder;
     ci: (r: RequestBuilder, token?: string) => RequestBuilder;
@@ -338,6 +341,11 @@ function buildCases(): Record<string, ICase> {
         'POST /api/apps/:appId/builds/:id/approve': {
             status: 200,
             build: c => c.user(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${c.buildId}/approve`))
+        },
+        // the approve case above recorded decisions; revoking is idempotent, so a second call is fine too
+        'POST /api/apps/:appId/decisions/:id/revoke': {
+            status: 200,
+            build: c => c.user(HttpRequest.POST(`/api/apps/${APP_ID}/decisions/${c.decisionId}/revoke`))
         },
         'GET /api/apps/:appId/builds/:id/screens/:screenId/thumbnail': {
             status: 302,
@@ -524,6 +532,7 @@ async function run() {
         enableDatabase: true,
         databasePrefix: 'pixelci_canarytest'
     });
+    await ensureTestBucket();
     await facade.start();
 
     await seedBase();
@@ -541,6 +550,11 @@ async function run() {
 
     for (const [key, c] of Object.entries(cases)) {
         console.log(`\nCanary: ${key}`);
+        // b2 was processed before build 1 was approved, so its stored reference is "none"; point it at build 1, which is what compare previews against
+        if (key.endsWith('/compare')) {
+            await BuildEntity.query().filter({ id: ctx.b2BuildId }).patchMany({ referenceBuildId: ctx.buildId, referenceSource: 'ancestor' });
+        }
+        if (key.includes('/decisions/')) ctx.decisionId = (await ScreenDecisionEntity.query().filter({ appId: APP_ID }).findOne()).id;
         const response = await facade.request(c.build(ctx));
         const expected = Array.isArray(c.status) ? c.status : [c.status];
         if (!expected.includes(response.statusCode)) {
@@ -747,6 +761,7 @@ async function seedBuilds(facade: Facade): Promise<ICtx> {
     return {
         buildId: build.id,
         b2BuildId: b2.id,
+        decisionId: '',
         screenId: screen.screenId,
         adminJwt,
         user: r => r.header('authorization', `Bearer ${adminJwt}`),

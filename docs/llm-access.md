@@ -68,10 +68,15 @@ Or the equivalent JSON (e.g. `.mcp.json`):
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `list_apps`        | List visual-testing apps you can access                                                                                                            |
 | `list_builds`      | List recent builds for an app, with status and who approved each                                                                                   |
-| `get_build`        | A build with every screen's comparison status, review decision (approved/rejected), comment, and reviewer                                          |
+| `get_build`        | A build with every screen's comparison status, review decision (approved/rejected), comment, reviewer, and the decision behind its outcome         |
 | `get_screen_image` | A screen's image as a PNG — the highlighted pixel diff (`kind=diff`) or the screenshot (`kind=new`) — so the assistant can actually see the change |
 
 Each screen in `get_build` (and in the REST build detail below) has an `appliedMasks` field: the regions that were ignored when it was compared, as `{ x, y, width, height, label }` in screenshot pixels from the top-left, or `null` for a build processed before [masks](/usage#masks) existed. A screen reported as unchanged can still differ inside them, so check `appliedMasks` before telling someone nothing changed. The diff image (`kind=diff`) tints masked pixels translucent grey. Masks are read-only here: they can only be changed in the PixelCI UI.
+
+Each screen also has a `reviewedByName` and a `decision`:
+
+- `reviewedByName` is the person who reviewed the screen **in this build**. It is `null` for screens nobody reviewed there: ones approved automatically, and review marks carried over from the branch's previous build.
+- `decision` is `{ kind, buildId, branchName, decidedByName, revoked }`, or `null`. It is the approval or rejection behind the screen's outcome: an earlier approval of the same change that approved it automatically, a rejection that pre-marked it as rejected, or the decision made in this build. `buildId` and `branchName` say where it was made, `decidedByName` who made it, and `revoked` whether it has been revoked since (which does not change builds that already passed).
 
 Once connected, you can ask things like _"In PixelCI, which screens on the latest build of app X were rejected, and what were the comments?"_
 
@@ -79,11 +84,11 @@ Once connected, you can ask things like _"In PixelCI, which screens on the lates
 
 The same data is available under `/api/ext` for non-MCP automations, using personal-access-token auth only (OAuth tokens are issued for `/api/mcp` and are not accepted here) — send `Authorization: Bearer <token>` (and `X-PixelCI-Vcs-Id: <id>` when multiple providers are configured):
 
-| Endpoint                                                           | Description                                             |
-| ------------------------------------------------------------------ | ------------------------------------------------------- |
-| `GET /api/ext/apps`                                                | Accessible apps                                         |
-| `GET /api/ext/apps/:appId/builds`                                  | Recent builds (optional `branchId`, `limit`)            |
-| `GET /api/ext/apps/:appId/builds/:buildId`                         | Build detail with per-screen reviews and `appliedMasks` |
-| `GET /api/ext/apps/:appId/builds/:buildId/screens/:screenId/image` | Screen image (`?kind=diff` or `new`)                    |
+| Endpoint                                                           | Description                                                         |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `GET /api/ext/apps`                                                | Accessible apps                                                     |
+| `GET /api/ext/apps/:appId/builds`                                  | Recent builds (optional `branchId`, `limit`)                        |
+| `GET /api/ext/apps/:appId/builds/:buildId`                         | Build detail with per-screen reviews, `decision` and `appliedMasks` |
+| `GET /api/ext/apps/:appId/builds/:buildId/screens/:screenId/image` | Screen image (`?kind=diff` or `new`)                                |
 
 Reads are gated per app by VCS project access; a token can only see projects it can access in GitLab or GitHub (unless the operator has disabled [`ENFORCE_VCS_PROJECT_ACCESS`](/deployment#access-control)).

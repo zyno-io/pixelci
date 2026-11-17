@@ -27,8 +27,8 @@ Success: a reviewer reaches a confident approve/reject decision quickly, and the
 
 ## Positioning
 
-- **Cross-branch approval tracking.** A change approved on one branch is recognized on every other branch, so each change is reviewed once.
-- **Branch-aware baselines.** Each build is compared against the right reference: the previous approved build on its branch, then the latest approved build on the default branch.
+- **Cross-branch approval tracking.** A change approved on one branch is recognized wherever the same change turns up, on another branch or after the merge, so it is reviewed once. If the default branch changed that screen in the meantime, PixelCI asks again.
+- **Branch-aware baselines.** Each build is compared against the default branch where its branch forked, so later default-branch changes don't appear in the review.
 - **Self-hosted, source-available.** Screenshots and diffs stay on the team's own infrastructure.
 - **Closes the CI loop.** Approving a build restarts the failed CI job and sends the reviewer to the pipeline.
 

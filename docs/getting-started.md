@@ -6,7 +6,7 @@ PixelCI is a self-hosted visual regression testing platform. It compares screens
 
 1. **Upload Screenshots** — your CI pipeline uploads screenshots after each build
 2. **Automatic Comparison** — PixelCI compares them against approved baselines
-3. **Smart Analysis** — matches against previously approved changes across branches
+3. **Smart Analysis** — compares each branch with the default branch where it forked, and recognizes changes that were already approved on other branches
 4. **Review & Approve** — team members review changes in the web UI
 5. **Build Status** — CI passes if all changes are approved, fails if review is needed
 
@@ -67,6 +67,8 @@ visual-regression:
     image: ghcr.io/zyno-io/pixelci/cli:latest
     variables:
         PIXELCI_API_URL: https://pixelci.example.com
+        PIXELCI_APP_ID: <your-app-id>
+        GIT_DEPTH: 0 # full history: PixelCI compares your branch with the default branch where it forked
     script:
         - pixelci ./screenshots
 ```
@@ -74,12 +76,18 @@ visual-regression:
 On GitHub Actions, use the container step instead (with `permissions: id-token: write`):
 
 ```yaml
+- uses: actions/checkout@v4
+  with:
+      fetch-depth: 0 # keep persist-credentials (the default) so the CLI can deepen history if needed
+# ...build your app and generate screenshots...
 - uses: docker://ghcr.io/zyno-io/pixelci/cli:latest
   env:
       PIXELCI_API_URL: https://pixelci.example.com
       PIXELCI_APP_ID: <your-app-id>
       PIXELCI_IMAGES_PATH: ./screenshots
 ```
+
+Full history matters: PixelCI finds where your branch forked from the default branch with git, and without history it compares against the latest approved build and says so on the review page. See [How the Baseline Is Chosen](./usage.md#how-the-baseline-is-chosen).
 
 See the [GitLab Setup Guide](./gitlab-setup.md#part-2-ci-pipeline-integration) or [GitHub Setup Guide](./github-setup.md#part-2-github-actions-integration) for detailed CI configuration.
 

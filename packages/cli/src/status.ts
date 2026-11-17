@@ -21,3 +21,9 @@ export function outcomeFor(status: string): IOutcome {
             return { code: 1, message: `Unexpected build status '${status}'; failing to be safe. Upgrade @zyno-io/pixelci-cli.` };
     }
 }
+
+/** The reference is `latest` when no ancestor of the commit had an accepted default-branch build. */
+export function referenceWarning(referenceSource: string | undefined): string | undefined {
+    if (referenceSource !== 'latest') return undefined;
+    return 'No accepted default-branch build was found at or before where this branch forked; compared against the latest approved build instead. Unrelated changes from the default branch may show up as differences.';
+}

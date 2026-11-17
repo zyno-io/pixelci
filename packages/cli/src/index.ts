@@ -1,13 +1,15 @@
 import { existsSync } from 'fs';
 
 import { getApi } from './api.js';
+import { resolveBase, type IBase } from './base.js';
 import { reportGitHubResult } from './ci-github.js';
 import { getJobInfo } from './ci.js';
 import { AppError, handleError } from './error.js';
+import { createGitRunner } from './git.js';
 import { getImages, getScreenName } from './glob.js';
 import { assertUniqueNames, buildManifest } from './manifest.js';
 import { parseShard, parseTimeoutMs, shardWarning } from './options.js';
-import { outcomeFor } from './status.js';
+import { outcomeFor, referenceWarning } from './status.js';
 
 process.on('unhandledRejection', handleError);
 process.on('uncaughtException', handleError);
@@ -38,13 +40,14 @@ if (!jobInfo) throw new AppError('No job information found in CI');
 const api = getApi(jobInfo);
 
 console.log('\nCreating build...');
-const { buildId, status, shard: shardEcho } = await api.createBuild({ screens: manifest, shard });
+const { buildId, status, shard: shardEcho, branchName, commitHash, defaultBranch } = await api.createBuild({ screens: manifest, shard });
 
 if (shard && (shardEcho?.index !== shard.index || shardEcho?.total !== shard.total)) {
     throw new AppError("PIXELCI_SHARD is set, but this PixelCI server doesn't support sharded builds. Upgrade the server or unset PIXELCI_SHARD.");
 }
 
 let buildStatus = status;
+let referenceSource: string | undefined;
 
 if (buildStatus === 'draft') {
     console.log(`Build ${buildId} created.`);
@@ -55,8 +58,22 @@ if (buildStatus === 'draft') {
         console.log(`Screen "${name}" uploaded.`);
     }
 
+    // an older server doesn't report defaultBranch and may reject unknown body props, so only a server that does gets `base`
+    let base: IBase | undefined;
+    if (defaultBranch !== undefined && defaultBranch !== null) {
+        base = await resolveBase({
+            defaultBranch,
+            branchName: branchName ?? '',
+            commitHash: commitHash ?? '',
+            env: process.env,
+            git: createGitRunner(),
+            log: { warn: message => console.warn(`Warning: ${message}`) }
+        });
+        if (base) console.log(`\nBaseline: ${defaultBranch} @ ${base.commits[0].slice(0, 7)} (${base.source})`);
+    }
+
     console.log(`\nFinalizing build...`);
-    await api.processBuild(buildId, manifest);
+    await api.processBuild(buildId, manifest, base);
     buildStatus = 'processing';
 } else {
     console.log(`Another job uploaded this commit's screenshots; waiting for its result.`);
@@ -65,7 +82,7 @@ if (buildStatus === 'draft') {
 const expMs = Date.now() + timeoutMs;
 while (buildStatus === 'processing' && Date.now() < expMs) {
     console.log('\nChecking build status...');
-    buildStatus = await api.getBuildStatus(buildId);
+    ({ status: buildStatus, referenceSource } = await api.getBuildResult(buildId));
 
     if (buildStatus === 'processing') {
         console.log('Build is still processing.');
@@ -81,6 +98,9 @@ console.log(`\nBuild status: ${buildStatus}`);
 const buildUrl = api.getBuildUserUrl(buildId);
 console.log(`\nSee details at:\n${buildUrl}`);
 reportGitHubResult(buildStatus, buildUrl);
+
+const refWarning = referenceWarning(referenceSource);
+if (refWarning) console.warn(`\nWarning: ${refWarning}`);
 
 const outcome = outcomeFor(buildStatus);
 (outcome.code === 0 ? console.log : console.error)(`\n${outcome.message}`);

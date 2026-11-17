@@ -31,3 +31,18 @@ export const REVIEW_STATUS: Record<'approved' | 'rejected', IStatusTag> = {
     approved: { label: 'Approved', tone: 'success', icon: 'fa-check' },
     rejected: { label: 'Rejected', tone: 'danger', icon: 'fa-xmark' }
 };
+
+/** Where a build's reference came from. Only `ancestor` and `latest` get a header chip or notice; the rest stay silent. */
+export const REFERENCE_SOURCE_NOTE: Record<string, string> = {
+    ancestor: 'The approved default-branch build at the point where this build forked from the default branch.',
+    latest: 'The latest approved default-branch build. PixelCI could not find where this build forked.'
+};
+
+export const REFERENCE_FALLBACK_NOTICE =
+    "PixelCI couldn't find where this build's history meets the default branch, so it compared against the latest approved build there. " +
+    'Changes made on the default branch since may appear here. Fetch full history in CI to fix this.';
+export const REFERENCE_FALLBACK_DOCS_URL = 'https://docs.pixelci.dev/usage#how-the-baseline-is-chosen';
+
+export const REVOKE_CONFIRM_TITLE = 'Revoke this approval?';
+export const REVOKE_CONFIRM_MESSAGE = 'Future builds that make this change will ask again. Builds already approved stay approved.';
+export const REVOKE_CONFIRM_LABEL = 'Revoke approval';

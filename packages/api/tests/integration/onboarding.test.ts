@@ -10,12 +10,12 @@ import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { getSecretBox, SecretBox, setSecretBoxForTesting } from '../../src/services/secrets/SecretBox';
 import { openIntegrationConfig, sealIntegrationConfig } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
 const SETUP_TOKEN = 'test-setup-token-0123456789';
 process.env.SETUP_TOKEN = SETUP_TOKEN;
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('onboarding');
 
 configureTestDatabase();
 
@@ -43,6 +43,7 @@ async function run() {
         enableDatabase: true,
         databasePrefix: 'pixelci_onboard'
     });
+    await ensureTestBucket();
     await facade.start();
 
     // Phase 1: fresh install (no VCS integrations, no users)
@@ -305,6 +306,7 @@ async function testOnboardingGitHubOnFreshDb() {
         enableDatabase: true,
         databasePrefix: 'pixelci_onboardgh'
     });
+    await ensureTestBucket();
     await facade.start();
     const response = await facade.request(
         HttpRequest.POST('/api/session/onboarding/vcs-integration').json({
@@ -366,6 +368,7 @@ async function testOnboardingConcurrentRequests() {
         databasePrefix: 'pixelci_onboardrace',
         useSavepoints: false
     });
+    await ensureTestBucket();
     await facade.start();
     const responses = await Promise.all(
         Array.from({ length: 6 }, (_, i) =>
@@ -394,6 +397,7 @@ async function testOnboardingDisabledWithoutToken() {
             enableDatabase: true,
             databasePrefix: 'pixelci_onboardoff'
         });
+        await ensureTestBucket();
         await facade.start();
         const status = (await facade.request(HttpRequest.GET('/api/session/onboarding-status'))).json as { setupEnabled: boolean };
         if (status.setupEnabled !== false) throw new Error(`Expected setupEnabled=false for ${value}`);

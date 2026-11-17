@@ -23,10 +23,10 @@ import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { PruneOAuthJob } from '../../src/jobs/PruneOAuth.job';
 import { pkceS256 } from '../../src/services/oauth/OAuthCrypto';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('mcp-oauth');
 process.env.PUBLIC_URL = 'https://pixelci.test';
 process.env.OAUTH_DCR_MAX_PER_IP_PER_HOUR = '1000';
 process.env.OAUTH_DCR_MAX_PER_HOUR = '5000';
@@ -128,6 +128,7 @@ async function run() {
     await createMockGitLab();
 
     const facade = TestingHelpers.createTestingFacade(CoreAppOptions, { enableDatabase: true, databasePrefix: 'pixelci_oauthtest' });
+    await ensureTestBucket();
     await facade.start();
     await seedBase();
     await resetRateLimits();

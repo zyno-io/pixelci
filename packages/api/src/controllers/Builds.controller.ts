@@ -27,6 +27,8 @@ import { ProcessBuildJob } from '../jobs/ProcessBuild.job';
 import { RERUN_DEFERRED_NOTICE, RERUN_RETRY_DELAY_MS, RerunCiJobJob } from '../jobs/RerunCiJob.job';
 import { IBuildResponse, toBuildResponse } from '../responses/build.response';
 import { AppAccessService } from '../services/AppAccess.service';
+import { IDecisionInput, recordDecisions } from '../services/Decisions';
+import { IBase, IBaseline, loadBaselines, referenceForBuild, validateBase } from '../services/Reference';
 import { screenManifestHash, uploadedScreenNames } from '../services/ScreenManifest';
 import { VcsService } from '../services/Vcs.service';
 
@@ -38,7 +40,16 @@ interface IScreenManifest {
     count: number;
     hash: string;
 }
+export type IBuildReference = Pick<BuildEntity, 'id' | 'commitHash'> & { branchName: string };
+/** The build, plus the default-branch build it was compared with (null when it had none). */
+export type IBuildDetailResponse = IBuildResponse & { reference: IBuildReference | null };
+export type IBuildCreateResponse = IBuildResponse & {
+    /** Name of the app's default branch (null if none): the CLI uses its presence as the capability flag for `base`. */
+    defaultBranch: string | null;
+};
 type IBuildBasicResponse = Pick<BuildEntity, 'status'> & {
+    /** Final statuses only: how the reference build was found ('latest' means no merge base was available). */
+    referenceSource?: BuildEntity['referenceSource'];
     /** Sharded drafts only: how many shards have finished uploading. */
     shards?: { uploaded: number; total: number };
 };
@@ -114,6 +125,8 @@ function addReadTokenHash(build: BuildEntity, hash: string) {
     build.ciReadTokenHashes = [...current, hash].slice(-cap);
 }
 
+type ITxn = Parameters<Parameters<Db['transaction']>[0]>[0];
+
 const BUILDS_DEFAULT_PAGE_SIZE = 50;
 const BUILDS_MAX_PAGE_SIZE = 200;
 
@@ -163,7 +176,7 @@ export class BuildsController {
 
     @http.GET(':id')
     @http.middleware(UserAuthMiddleware)
-    async get(appId: UuidString, id: UuidString, user: UserEntity): Promise<IBuildResponse> {
+    async get(appId: UuidString, id: UuidString, user: UserEntity): Promise<IBuildDetailResponse> {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
 
         const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
@@ -171,7 +184,20 @@ export class BuildsController {
 
         const branch = await BranchEntity.query().filter({ id: build.branchId }).select('name').findOneOrUndefined();
 
-        return toBuildResponse(build, branch?.name ?? '');
+        // the stored reference (pre-0.8 builds: the backfilled one); null when the build had none
+        let reference: IBuildReference | null = null;
+        if (build.referenceBuildId) {
+            const ref = await BuildEntity.query()
+                .filter({ id: build.referenceBuildId, appId })
+                .select('id', 'commitHash', 'branchId')
+                .findOneOrUndefined();
+            if (ref) {
+                const refBranch = await BranchEntity.query().filter({ id: ref.branchId }).select('name').findOneOrUndefined();
+                reference = { id: ref.id, commitHash: ref.commitHash, branchName: refBranch?.name ?? '' };
+            }
+        }
+
+        return { ...toBuildResponse(build, branch?.name ?? ''), reference };
     }
 
     @http.GET(':id/status')
@@ -196,7 +222,8 @@ export class BuildsController {
         // The CLI doesn't know `canceled`; report it as a clean failure
         const reportedStatus: BuildEntity['status'] = build.status === 'canceled' ? 'failed' : build.status;
 
-        return { status: reportedStatus };
+        const isFinal = reportedStatus !== 'processing';
+        return { status: reportedStatus, ...(isFinal && build.referenceSource ? { referenceSource: build.referenceSource } : {}) };
     }
 
     @http.POST()
@@ -209,7 +236,7 @@ export class BuildsController {
             runId?: string;
             shard?: { index: number; total: number };
         }>
-    ): Promise<IBuildResponse> {
+    ): Promise<IBuildCreateResponse> {
         const authHeader = request.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             this.logger.warn('Build creation failed: missing or malformed Authorization header');
@@ -227,6 +254,10 @@ export class BuildsController {
         const ciJobData = await this.vcsSvc.validateCiToken(app, ciToken);
 
         const ciTokenHash = hashCiToken(ciToken);
+        // Lets the CLI know the server understands `base` (and which branch to measure the merge base against)
+        const defaultBranch = app.defaultBranchId
+            ? ((await BranchEntity.query().filter({ id: app.defaultBranchId }).select('name').findOneOrUndefined())?.name ?? null)
+            : null;
         const { branch: branchName, commitHash, commitSubject, commitAuthor, jobId: ciJobId } = ciJobData;
 
         // Creation is serialized per (app, branch) by an advisory lock, but retry the whole transaction on a deadlock anyway
@@ -257,7 +288,7 @@ export class BuildsController {
                           runId
                       );
                 if (result instanceof HttpError) throw result;
-                return result;
+                return { ...result, defaultBranch };
             } catch (err) {
                 if (attempt >= MAX_DEADLOCK_ATTEMPTS || !isDeadlockError(err)) throw err;
                 this.logger.warn(`Build creation deadlocked (attempt ${attempt}); retrying`);
@@ -561,10 +592,11 @@ export class BuildsController {
         request: HttpRequest,
         appId: UuidString,
         id: UuidString,
-        body?: HttpBody<{ screens?: { count: number; hash: string } }>
+        body?: HttpBody<{ screens?: { count: number; hash: string }; base?: IBase }>
     ): OkResponse {
         const callerHash = hashCiToken((request.headers.authorization ?? '').slice(7));
         const manifest = validateManifest(body?.screens);
+        const base = validateBase(body?.base);
 
         // Validation failures are returned from the transaction (not thrown inside it) so a rejected request doesn't roll back anything.
         const outcome = await this.db.transaction(async txn => {
@@ -580,6 +612,13 @@ export class BuildsController {
             if (build.status === 'canceled' || build.status === 'failed') return new HttpBadRequestError('Build is not in draft status');
             // Retry-safe: a repeated process call (lost response) succeeds without re-enqueueing
             if (build.status !== 'draft') return 'already' as const;
+
+            // Shards can arrive with different clone depths: keep the longest ancestry
+            if (base && base.commits.length > (build.baseCommits?.length ?? 0)) {
+                build.baseCommits = base.commits;
+                build.baseSource = base.source;
+                txn.add(build);
+            }
 
             if (shard) {
                 // An empty shard (no screens) is fine; the build as a whole must have some
@@ -663,23 +702,55 @@ export class BuildsController {
 
             const changedScreens = buildScreens.filter(buildScreen => buildScreen.status === 'new' || buildScreen.status === 'needs review');
 
-            // Unreviewed changed screens are auto-approved on submit.
+            // The submitter takes responsibility for every changed screen: unreviewed ones are approved, and marks that were
+            // carried or pre-marked from a decision (no reviewer) are attributed to them.
             const now = new Date();
             for (const buildScreen of changedScreens) {
                 if (buildScreen.reviewStatus !== 'approved' && buildScreen.reviewStatus !== 'rejected') {
                     buildScreen.reviewStatus = 'approved';
                     buildScreen.reviewedById = user.id;
                     buildScreen.reviewedAt = now;
+                } else if (!buildScreen.reviewedById) {
+                    buildScreen.reviewedById = user.id;
+                    buildScreen.reviewedAt = now;
                 }
             }
 
+            const app = await txn.query(AppEntity).filter({ id: appId }).findOne();
+            const froms = await this.resolveFromImages(app, locked, changedScreens, txn);
+            const toOf = (row: BuildScreenEntity) => (row.isRemoved ? null : { buildId: row.buildId, hash: row.contentHash });
+            // v0.7 carried the original reviewer onto later builds, so on a legacy build a reviewer may not have reviewed this one
+            const legacy = !build.referenceSource || build.referenceSource === 'legacy';
+            const inputOf = (row: BuildScreenEntity, kind: 'approved' | 'rejected'): IDecisionInput => ({
+                row,
+                kind,
+                from: froms.get(row.id) ?? null,
+                to: toOf(row),
+                decidedById: legacy ? user.id : (row.reviewedById ?? user.id),
+                comment: row.reviewComment
+            });
+            // An approval made against a guessed baseline (no merge base on a non-default branch) is only reused on its own branch.
+            const branchScoped = build.branchId !== app.defaultBranchId && build.referenceSource !== 'ancestor' && build.referenceSource !== 'none';
+
             if (changedScreens.some(buildScreen => buildScreen.reviewStatus === 'rejected')) {
-                // Any rejection fails the build: record the per-screen decisions but don't promote any
-                // screen to a baseline.
+                // Any rejection fails the build: record the rejections as decisions, but don't promote any screen to a baseline,
+                // and keep approvals made in this build as marks (they are not reusable approvals).
+                recordDecisions(
+                    txn,
+                    build,
+                    changedScreens.filter(row => row.reviewStatus === 'rejected' && !row.isRemoved).map(row => inputOf(row, 'rejected')),
+                    { branchScoped, now }
+                );
                 changedScreens.forEach(buildScreen => txn.add(buildScreen));
                 build.status = 'changes rejected';
                 rejected = true;
             } else {
+                recordDecisions(
+                    txn,
+                    build,
+                    changedScreens.map(row => inputOf(row, 'approved')),
+                    { branchScoped, now }
+                );
                 buildScreens.forEach(buildScreen => {
                     buildScreen.status = 'changes approved';
                     txn.add(buildScreen);
@@ -716,6 +787,47 @@ export class BuildsController {
             this.logger.error('Failed to rerun CI job', err);
             return { vcsUrl: false, vcsError: 'Failed to re-run the CI job; please re-run it from your CI provider.' };
         }
+    }
+
+    /**
+     * The baseline image (source build + hash) each changed row replaces, by row id. Builds processed by 0.8 recorded it on the row;
+     * a legacy build (no stored reference source) derives it from the reference it showed.
+     */
+    private async resolveFromImages(
+        app: AppEntity,
+        build: BuildEntity,
+        rows: BuildScreenEntity[],
+        txn: ITxn
+    ): Promise<Map<string, { buildId: string; hash: string | null }>> {
+        const froms = new Map<string, { buildId: string; hash: string | null }>();
+        if (!rows.length) return froms;
+
+        if (!build.referenceSource || build.referenceSource === 'legacy') {
+            const reference = await referenceForBuild(app, build);
+            const baselines = reference ? await loadBaselines(app.id, reference.id) : new Map<string, IBaseline>();
+            for (const row of rows) {
+                const baseline = baselines.get(row.screenId);
+                if (baseline) froms.set(row.id, { buildId: baseline.sourceBuildId, hash: baseline.hash });
+            }
+            return froms;
+        }
+
+        const sourceBuildIds = uniq(rows.map(row => row.baseImageBuildId).filter((id): id is string => !!id));
+        const sourceRows = sourceBuildIds.length
+            ? await txn
+                  .query(BuildScreenEntity)
+                  .filter({ appId: app.id, screenId: { $in: rows.map(row => row.screenId) }, buildId: { $in: sourceBuildIds }, isRemoved: false })
+                  .find()
+            : [];
+        const sourceRowsByKey = keyBy(sourceRows, row => `${row.buildId}:${row.screenId}`);
+        for (const row of rows) {
+            if (!row.baseImageBuildId) continue;
+            froms.set(row.id, {
+                buildId: row.baseImageBuildId,
+                hash: sourceRowsByKey[`${row.baseImageBuildId}:${row.screenId}`]?.contentHash ?? null
+            });
+        }
+        return froms;
     }
 
     /** Re-runs every CI job of a sharded build (one request per target; GitHub collapses a run's jobs to the run). */

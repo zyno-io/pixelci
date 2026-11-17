@@ -9,10 +9,10 @@ import { BranchEntity } from '../../src/entities/Branch.entity';
 import { BuildEntity } from '../../src/entities/Build.entity';
 import { IGitHubConfig, VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { sealIntegrationConfig } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('github-oidc');
 
 configureTestDatabase();
 
@@ -116,6 +116,7 @@ async function run() {
         enableDatabase: true,
         databasePrefix: 'pixelci_ghtest'
     });
+    await ensureTestBucket();
     await facade.start();
 
     await createPersistedEntity(VcsIntegrationEntity, {

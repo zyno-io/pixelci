@@ -1,69 +1,49 @@
 import { createEntity, uuid7 } from '@zyno-io/ts-server-foundation';
 
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
+import { ScreenDecisionEntity } from '../entities/ScreenDecision.entity';
+import { IBaseline } from './Reference';
 
 /**
- * Computes tombstone rows for screens that exist in the reference build but are missing from the current build.
- * A tombstone has no image (`isRemoved = true`, `storageStatus = null`). It is pre-approved when the same removal
- * is already approved on this branch (previous approved build) or explicitly approved on another branch since the
- * reference build; otherwise it needs review.
+ * Computes tombstone rows for screens that exist in the baseline but are missing from the current build.
+ * A tombstone has no image (`isRemoved = true`, `storageStatus = null`) and records the removed image in `baseImageBuildId`.
+ * It is pre-approved when an approved removal of that same image (`X -> absent`) is on record; otherwise it needs review.
  */
 export async function computeRemovals(opts: {
     appId: string;
     buildId: string;
     currentScreenIds: Iterable<string>;
-    /** Non-tombstone rows of the reference build. */
-    referenceRows: BuildScreenEntity[];
-    previousTombstonesById: Record<string, BuildScreenEntity | undefined>;
+    baselines: Map<string, IBaseline>;
+    findRemovalDecision: (screenId: string, baseline: IBaseline) => Promise<ScreenDecisionEntity | undefined>;
 }): Promise<BuildScreenEntity[]> {
     const present = new Set(opts.currentScreenIds);
     const tombstones: BuildScreenEntity[] = [];
 
-    for (const ref of opts.referenceRows) {
-        if (ref.isRemoved || present.has(ref.screenId)) continue;
+    for (const [screenId, baseline] of opts.baselines) {
+        if (present.has(screenId)) continue;
 
-        let status: BuildScreenEntity['status'] = 'needs review';
-        let approvalBuildId: string | null = null;
-
-        const previous = opts.previousTombstonesById[ref.screenId];
-        if (previous?.status === 'changes approved') {
-            status = 'changes approved';
-            approvalBuildId = previous.approvalBuildId ?? previous.buildId;
-        } else {
-            // an explicitly approved removal on another branch since the reference build
-            const lowerBound = ref.approvalBuildId ?? ref.buildId;
-            const approved = await BuildScreenEntity.query()
-                .filter({
-                    appId: opts.appId,
-                    screenId: ref.screenId,
-                    isRemoved: true,
-                    status: 'changes approved',
-                    approvalBuildId: null,
-                    id: { $gt: lowerBound }
-                })
-                .orderBy('id', 'asc')
-                .findOneOrUndefined();
-            if (approved) {
-                status = 'changes approved';
-                approvalBuildId = approved.buildId;
-            }
-        }
+        const decision = await opts.findRemovalDecision(screenId, baseline);
+        const approved = decision?.kind === 'approved';
 
         tombstones.push(
             createEntity(BuildScreenEntity, {
                 id: uuid7(),
                 appId: opts.appId,
                 buildId: opts.buildId,
-                screenId: ref.screenId,
+                screenId,
                 matchedBuildId: null,
-                approvalBuildId,
-                status,
+                approvalBuildId: approved ? decision.buildId : null,
+                status: approved ? 'changes approved' : 'needs review',
                 storageStatus: null,
                 reviewStatus: null,
                 reviewComment: null,
                 reviewedById: null,
                 reviewedAt: null,
-                isRemoved: true
+                isRemoved: true,
+                contentHash: null,
+                baseImageBuildId: baseline.sourceBuildId, // the removed image
+                decisionId: approved ? decision.id : null,
+                reviewCarriedFromId: null
             })
         );
     }

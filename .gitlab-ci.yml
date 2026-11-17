@@ -142,6 +142,7 @@ visual regression test:
   image: ${CI_REGISTRY_IMAGE}/cli:canary
   variables:
     PIXELCI_IMAGES_PATH: packages/ui/screenshots
+    GIT_DEPTH: '0' # full history: PixelCI compares the branch with the default branch where it forked
   script: pixelci
 
 visual regression test (deferred):
@@ -162,6 +163,7 @@ visual regression test (deferred):
   image: ${CI_REGISTRY_IMAGE}/cli:canary
   variables:
     PIXELCI_IMAGES_PATH: packages/ui/screenshots
+    GIT_DEPTH: '0' # full history: PixelCI compares the branch with the default branch where it forked
   script: pixelci
 
 .build-base:

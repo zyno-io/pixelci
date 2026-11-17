@@ -18,10 +18,10 @@ import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { PixelMatchService } from '../../src/services/PixelMatch.service';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_masktest';
+useIsolatedRedisPrefix('masks');
 
 configureTestDatabase();
 
@@ -121,6 +121,7 @@ async function run() {
         databasePrefix: 'pixelci_masktest',
         useSavepoints: false
     });
+    await ensureTestBucket();
     await facade.start();
 
     await createPersistedEntity(UserEntity, {
@@ -174,9 +175,12 @@ async function run() {
     }
 
     let jobSeq = 0;
+    // main builds, newest last: a build reports them (nearest first) as its base, like a CLI that found the merge base at main's tip
+    const mainChain: string[] = [];
     async function runBuild(branch: string, screens: { name: string; file?: string; data?: Buffer }[]) {
         jobSeq++;
         mockJob = { id: jobSeq, ref: branch, sha: String(jobSeq).padStart(40, '0') };
+        if (branch === 'main') mainChain.push(mockJob.sha);
         const build = await call<{ id: string }>(ci(HttpRequest.POST(`/api/apps/${APP_ID}/builds`)));
         const screenIds: Record<string, string> = {};
         for (const screen of screens) {
@@ -189,7 +193,11 @@ async function run() {
             );
             screenIds[screen.name] = r.screenId;
         }
-        await call(ci(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${build.id}/process`)));
+        await call(
+            ci(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${build.id}/process`)).json(
+                mainChain.length ? { base: { commits: [...mainChain].reverse().slice(0, 50), source: 'merge-base' } } : {}
+            )
+        );
         const deadline = Date.now() + 60_000;
         let status = 'processing';
         while (status === 'processing') {
@@ -427,7 +435,7 @@ async function run() {
     await setAppMasks([]);
     console.log('  PASS');
 
-    // --- processing: carried reviews
+    // --- processing: carried reviews (marks carry from the branch's previous build only, for the same change)
     console.log('\nTest: carried review decisions use the masked comparison');
     const carryA = await runBuild('carry-a', [
         { name: 'finder-1', file: 'finder-1.png' },
@@ -436,15 +444,22 @@ async function run() {
     assertEq(carryA.status, 'needs review', 'carry-a needs review');
     await review(carryA.id, f2, 'rejected', 'not this');
 
-    const carryB = await runBuild('carry-b', [
+    const carryB = await runBuild('carry-a', [
         { name: 'finder-1', file: 'finder-1.png' },
         { name: 'finder-2', file: 'finder-2-changed-2.png' }
     ]);
     assertEq(carryB.status, 'needs review', 'carry-b needs review');
     assertEq((await currentOf(carryB.id, f2)).reviewStatus, null, 'no decision is carried without a mask');
 
+    const carryD = await runBuild('carry-d', [
+        { name: 'finder-1', file: 'finder-1.png' },
+        { name: 'finder-2', file: 'finder-2-changed.png' }
+    ]);
+    assertEq(carryD.status, 'needs review', 'carry-d needs review');
+    await review(carryD.id, f2, 'rejected', 'not this');
+
     await setScreenMasks(f2, [box2]);
-    const carryC = await runBuild('carry-c', [
+    const carryC = await runBuild('carry-d', [
         { name: 'finder-1', file: 'finder-1.png' },
         { name: 'finder-2', file: 'finder-2-changed-2.png' }
     ]);

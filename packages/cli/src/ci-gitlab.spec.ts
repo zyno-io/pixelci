@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it, beforeEach, after } from 'node:test';
 
-import { getGitLabCiInfo } from './ci-gitlab.js';
+import { baseHints, getGitLabCiInfo } from './ci-gitlab.js';
 
 describe('getGitLabCiInfo', () => {
     const originalEnv = { ...process.env };
@@ -38,5 +38,16 @@ describe('getGitLabCiInfo', () => {
         delete process.env.CI_JOB_TOKEN;
 
         assert.equal(getGitLabCiInfo(), null);
+    });
+});
+
+describe('gitlab baseHints', () => {
+    it('only trusts the target sha for merged results and merge trains', () => {
+        const env = { CI_MERGE_REQUEST_TARGET_BRANCH_SHA: 't', CI_MERGE_REQUEST_DIFF_BASE_SHA: 'd' };
+        assert.equal(baseHints({ ...env, CI_MERGE_REQUEST_EVENT_TYPE: 'merged_result' }).mergeRequestTargetSha, 't');
+        assert.equal(baseHints({ ...env, CI_MERGE_REQUEST_EVENT_TYPE: 'merge_train' }).mergeRequestTargetSha, 't');
+        assert.equal(baseHints({ ...env, CI_MERGE_REQUEST_EVENT_TYPE: 'detached' }).mergeRequestTargetSha, undefined);
+        assert.equal(baseHints(env).mergeRequestDiffBaseSha, 'd');
+        assert.deepEqual(baseHints({}), { mergeRequestTargetSha: undefined, mergeRequestDiffBaseSha: undefined });
     });
 });

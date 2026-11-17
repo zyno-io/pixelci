@@ -16,7 +16,7 @@ features:
     - title: Intelligent Change Detection
       details: Pixel-perfect comparison with configurable thresholds. Only flags real visual changes, not noise.
     - title: Branch-Aware Comparisons
-      details: Automatically compares against the right baseline for each branch, with cross-branch approval tracking.
+      details: Compares each branch with the default branch where it forked, and recognizes changes already approved on other branches.
     - title: Self-Hosted
       details: Full control over your data and infrastructure. Deploy with Docker, Docker Compose, or Kubernetes.
 ---

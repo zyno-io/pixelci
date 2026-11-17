@@ -9,6 +9,7 @@ import { Db } from '../../src/database';
 import { AppEntity } from '../../src/entities/App.entity';
 import { BranchEntity } from '../../src/entities/Branch.entity';
 import { BuildEntity } from '../../src/entities/Build.entity';
+import { BuildScreenEntity } from '../../src/entities/BuildScreen.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { ProcessBuildJob } from '../../src/jobs/ProcessBuild.job';
@@ -16,10 +17,10 @@ import { ReapStuckBuildsJob } from '../../src/jobs/ReapStuckBuilds.job';
 import { claimBuildLease, Lease } from '../../src/services/BuildProcessingLease';
 import { S3Service } from '../../src/services/S3.service';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_jobstest';
+useIsolatedRedisPrefix('job-robustness');
 
 configureTestDatabase();
 
@@ -130,6 +131,8 @@ async function newBuildWithScreen(f: Facade) {
     const id = res.json.id as string;
     const up = await upload(f, id, token, 'screen-1');
     assert(up.statusCode === 200, `upload: ${up.statusCode} ${up.body}`);
+    // Behave like a pre-0.8 upload (no stored hash): byte-identical screens would otherwise skip the S3 reads these tests gate on.
+    await BuildScreenEntity.query().filter({ buildId: id }).patchMany({ contentHash: null });
     return { id, token };
 }
 
@@ -153,6 +156,7 @@ async function run() {
         databasePrefix: 'pixelci_jobstest',
         useSavepoints: false
     });
+    await ensureTestBucket();
     await facade.start();
 
     await createPersistedEntity(UserEntity, {

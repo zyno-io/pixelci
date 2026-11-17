@@ -4,10 +4,10 @@ import assert from 'assert';
 import { CoreAppOptions } from '../../src/app';
 import { UserEntity } from '../../src/entities/User.entity';
 import uniqueConstraintsMigration from '../../src/migrations/20261111_120000_unique_constraints';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('unique-constraints');
 
 configureTestDatabase();
 
@@ -63,6 +63,7 @@ async function run() {
         // The migration runs its own transaction with a table lock; savepoint mode would nest it
         useSavepoints: false
     });
+    await ensureTestBucket();
     await facade.start();
     const db = UserEntity.getDatabase();
     const x = (s: string) => db.rawExecute(s);

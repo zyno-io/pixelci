@@ -64,6 +64,10 @@ const BS_02B = '00000000-0000-0000-0000-00000000002b';
 const BS_02C = '00000000-0000-0000-0000-00000000002c';
 const BS_02D = '00000000-0000-0000-0000-00000000002d';
 
+// Decision D1: the Homepage change approved in build 005 (a fixed uuid7: Jan 18 2025, 09:30:00 UTC). Build 005's Homepage
+// row points at it, so the review screen shows "Approved by ..." with a Revoke button.
+const DECISION_D1 = '019478bf-71c0-7000-8000-0000000000d1';
+
 // Load real fixture images
 const FINDER_1 = fs.readFileSync(path.join(fixturesDir, 'finder-1.png'));
 const FINDER_1_CHANGED = fs.readFileSync(path.join(fixturesDir, 'finder-1-changed.png'));
@@ -106,6 +110,66 @@ async function resetReviews(conn) {
          WHERE "appId" = $1`,
         [APP_ID]
     );
+    await resetDecisions(conn);
+}
+
+// Restores the one seeded decision (un-revoked) and drops every other, so approvals made or revoked by a test don't leak.
+async function resetDecisions(conn) {
+    await conn.query(`DELETE FROM screen_decisions WHERE "appId" = $1 AND id <> $2`, [APP_ID, DECISION_D1]);
+    await conn.query(
+        `INSERT INTO screen_decisions (id, "appId", "screenId", kind, "fromImageBuildId", "fromHash", "toImageBuildId", "toHash", "buildId", "branchId",
+                                       "buildScreenId", "branchScoped", "decidedById", "decidedAt", comment, "revokedAt", "revokedById")
+         VALUES ($1, $2, $3, 'approved', $4, $5, $6, $7, $6, $8, $9, FALSE, $10, $11, NULL, NULL, NULL)
+         ON CONFLICT (id) DO UPDATE SET "revokedAt" = NULL, "revokedById" = NULL`,
+        [
+            DECISION_D1,
+            APP_ID,
+            SCREEN_HOMEPAGE_ID,
+            BUILD_003_ID,
+            sha256(FINDER_1),
+            BUILD_005_ID,
+            sha256(FINDER_1_CHANGED),
+            FEAT_BRANCH_ID,
+            BS_024,
+            ZERO_ID,
+            new Date('2025-01-18T09:30:00Z')
+        ]
+    );
+    await conn.query(
+        `UPDATE builds_screens SET "decisionId" = NULL, "reviewCarriedFromId" = NULL WHERE "appId" = $1 AND id <> $2 AND ("decisionId" IS NOT NULL OR "reviewCarriedFromId" IS NOT NULL)`,
+        [APP_ID, BS_024]
+    );
+    await conn.query(`UPDATE builds_screens SET "decisionId" = $2 WHERE id = $1`, [BS_024, DECISION_D1]);
+}
+
+// Builds 004-007 were processed by 0.8: each records the reference it was compared against, and the changed rows the
+// image they were compared with (build 003's Homepage). Hashes are of the PNG bytes each row's own upload holds.
+async function seedReferences(conn) {
+    const references = [
+        [BUILD_004_ID, BUILD_003_ID],
+        [BUILD_005_ID, BUILD_004_ID],
+        [BUILD_006_ID, BUILD_004_ID],
+        [BUILD_007_ID, BUILD_004_ID]
+    ];
+    for (const [id, referenceBuildId] of references) {
+        await conn.query(`UPDATE builds SET "referenceBuildId" = $2, "referenceSource" = 'ancestor' WHERE id = $1`, [id, referenceBuildId]);
+    }
+    for (const id of [BS_024, BS_02A]) {
+        await conn.query(`UPDATE builds_screens SET "baseImageBuildId" = $2 WHERE id = $1`, [id, BUILD_003_ID]);
+    }
+    const hashes = [
+        [BS_020, FINDER_1],
+        [BS_022, FINDER_2],
+        [BS_023, FINDER_2_CHANGED],
+        [BS_024, FINDER_1_CHANGED],
+        [BS_02A, FINDER_1_CHANGED],
+        [BS_02D, FINDER_2_CHANGED_2]
+    ];
+    for (const [id, png] of hashes) await conn.query(`UPDATE builds_screens SET "contentHash" = $2 WHERE id = $1`, [id, sha256(png)]);
+}
+
+function sha256(buf) {
+    return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
 // One mask on the Homepage screen, and the same one recorded as applied to Homepage in build 007 (the build the review
@@ -263,6 +327,7 @@ async function seedDatabase() {
 
     // Make re-seeding idempotent w.r.t. reviews: a persisted local DB may retain decisions
     // from a prior run, and ON CONFLICT DO NOTHING above won't overwrite them.
+    await seedReferences(conn);
     await resetReviews(conn);
     await seedMasks(conn);
 

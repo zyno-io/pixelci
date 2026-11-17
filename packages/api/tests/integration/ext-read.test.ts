@@ -11,10 +11,10 @@ import { ScreenEntity } from '../../src/entities/Screen.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { sealIntegrationConfig } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('ext-read');
 
 configureTestDatabase();
 
@@ -120,6 +120,7 @@ async function run() {
         enableDatabase: true,
         databasePrefix: 'pixelci_exttest'
     });
+    await ensureTestBucket();
     await facade.start();
 
     await createBaseEntities();

@@ -41,4 +41,12 @@ export class BuildEntity extends BaseEntity {
     processingStartedAt!: Date | null;
     /** How many times processing has been claimed. */
     processingAttempts: number & DatabaseField<{ type: 'integer' }> & HasDefault = 0;
+    /** First-parent ancestors of the merge base, nearest first (CLI >= 0.8). Null from older CLIs. */
+    baseCommits!: string[] | null;
+    /** How the CLI found the merge base: 'merge-base' | 'merge-request-target' | 'merge-request-diff-base' | 'pull-request-base' | 'first-parent' | 'override'. */
+    baseSource!: (string & DatabaseField<{ type: 'varchar(32)' }>) | null;
+    /** Default-branch build this build was compared against; written when processed. */
+    referenceBuildId!: UuidString | null;
+    /** 'ancestor' | 'latest' (fallback) | 'none' | 'legacy' (pre-0.8, backfilled); null = processed by a 0.7 pod / not processed. */
+    referenceSource!: (string & DatabaseField<{ type: 'varchar(16)' }>) | null;
 }

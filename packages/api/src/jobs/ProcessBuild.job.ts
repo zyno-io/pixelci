@@ -1,5 +1,6 @@
 import { ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { AnyResponse, BaseJob, WorkerJob } from '@zyno-io/ts-server-foundation';
+import { createHash } from 'crypto';
 import { keyBy } from 'lodash';
 
 import { AppConfig } from '../config';
@@ -8,9 +9,12 @@ import { AppEntity } from '../entities/App.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
 import { ScreenEntity } from '../entities/Screen.entity';
+import { ScreenDecisionEntity } from '../entities/ScreenDecision.entity';
 import { claimBuildLease, Lease, LeaseLostError } from '../services/BuildProcessingLease';
+import { absentEpoch, findDecision } from '../services/Decisions';
 import { IMaskRect, normalizeMasks, resolveMasks } from '../services/Mask';
 import { PixelMatchService } from '../services/PixelMatch.service';
+import { IBaseline, loadBaselines, resolveReference } from '../services/Reference';
 import { computeRemovals } from '../services/RemovedScreens';
 import { S3Service } from '../services/S3.service';
 import { ThumbnailService } from '../services/Thumbnail.service';
@@ -19,12 +23,17 @@ import { ITolerances, resolveTolerances } from '../services/Tolerance';
 /** Everything that decides whether two images of a screen match: tolerances, plus the masks in effect. */
 type IComparison = ITolerances & { masks: IMaskRect[] };
 
+/** Called with the downloaded bytes of each side of a comparison (to hash images that have no stored hash yet). */
+interface IImageHooks {
+    onLeft?: (data: Buffer) => void;
+    onRight?: (data: Buffer) => void;
+}
+
+const sha256 = (data: Buffer) => createHash('sha256').update(data).digest('hex');
+
 interface IProcessBuildJobData {
     buildId: string;
 }
-
-// todo: on reference branch, find all approved versions of a screen not on the reference branch _after_ the lastest approved version for "what's been approved since" comparison
-// we're probably going to have to track last changed build screen ID for each screen to know how to look forward
 
 @WorkerJob()
 export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
@@ -92,7 +101,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         logger.info('Generated thumbnails', { count: buildScreens.length - failed, failed });
     }
 
-    /** Returns the build screens that keep their own image (those that matched another build show that build's). */
+    /** Returns the build screens that keep their own image (everything except the rows that equal their baseline). */
     private async processScreens(buildId: string, lease: Lease): Promise<BuildScreenEntity[]> {
         const logger = this.logger.scoped(buildId);
 
@@ -127,233 +136,118 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         }
         logger.info('Using diff threshold', { diffThreshold: this.appConfig.DEFAULT_PIXEL_DIFF_PCT_THRESHOLD });
 
-        const isDefaultBranch = currentBuild.branchId === app.defaultBranchId;
-        const previousBuild = isDefaultBranch
-            ? undefined
-            : await BuildEntity.query()
-                  .filter({
-                      appId,
-                      branchId: currentBuild.branchId,
-                      status: 'changes approved',
-                      id: { $lt: currentBuild.id }
-                  })
-                  .orderBy('id', 'desc')
-                  .findOneOrUndefined();
-        const previousBuildScreens = previousBuild ? await BuildScreenEntity.query().filter({ appId, buildId: previousBuild.id }).find() : [];
-        const previousBuildScreensById = keyBy(
-            previousBuildScreens.filter(bs => !bs.isRemoved),
-            'screenId'
-        );
-        const previousTombstonesById = keyBy(
-            previousBuildScreens.filter(bs => bs.isRemoved),
-            'screenId'
-        );
+        // the merge-base (or latest accepted) default-branch build, and per screen the image it holds
+        const reference = await resolveReference(app, currentBuild);
+        const referenceBuild = reference.build;
+        const baselines = referenceBuild ? await loadBaselines(appId, referenceBuild.id) : new Map<string, IBaseline>();
+        // lazily computed hashes of pre-0.8 baseline uploads, written with the result (source row id -> sha256)
+        const hashPatches = new Map<string, string>();
 
-        const referenceBuild = app.defaultBranchId
-            ? await BuildEntity.query()
-                  .filter({ appId, branchId: app.defaultBranchId, status: 'changes approved', id: { $lt: currentBuild.id } })
-                  .orderBy('id', 'desc')
-                  .findOneOrUndefined()
-            : undefined;
-        const referenceBuildScreens = referenceBuild
-            ? await BuildScreenEntity.query().filter({ appId, buildId: referenceBuild.id, isRemoved: false }).find()
-            : [];
-        const referenceBuildScreensById = keyBy(referenceBuildScreens, 'screenId');
-
-        if (previousBuild) logger.info('Found previous build', { id: previousBuild.id });
-        else logger.info('No previous build found for branch');
-
-        if (referenceBuild) logger.info('Found reference build', { id: referenceBuild.id });
+        if (referenceBuild) logger.info('Found reference build', { id: referenceBuild.id, source: reference.source });
         else logger.info('No reference build found');
 
-        const screens = currentBuildScreens
-            .filter(bs => !bs.isRemoved)
-            .map(currentBuildScreen => ({
-                screenId: currentBuildScreen.screenId,
-                currentBuildScreen,
-                previousBuildScreen: previousBuildScreensById[currentBuildScreen.screenId] as BuildScreenEntity | undefined,
-                referenceBuildScreen: referenceBuildScreensById[currentBuildScreen.screenId] as BuildScreenEntity | undefined
-            }));
+        const uploads = currentBuildScreens.filter(bs => !bs.isRemoved);
+        // a spoiled comparison (storage trouble) counts as "doesn't match": the screen then needs review rather than failing the build
+        const safeMatch = async (leftBuildId: string, row: BuildScreenEntity) => {
+            try {
+                return await this.screensMatch(appId, leftBuildId, currentBuild.id, row.screenId, comparisonFor(row.screenId), {
+                    onRight: data => {
+                        if (!row.contentHash) row.contentHash = sha256(data);
+                    }
+                });
+            } catch (err) {
+                logger.warn('Failed to compare against a decision image; treating it as different', {
+                    screenId: row.screenId,
+                    buildId: leftBuildId,
+                    error: (err as Error).message
+                });
+                return false;
+            }
+        };
 
-        screenLoop: for (const screen of screens) {
+        for (const row of uploads) {
             if (lease.lost) throw new LeaseLostError();
-            // if the previous screen has approved changes, compare the current screen with the already approved changes.
-            // if the current build's screen matches, then it's automatically approved too.
-            if (screen.previousBuildScreen?.status === 'changes approved') {
-                logger.info('Screen in previous build with approved changes', { screenId: screen.screenId });
+            const baseline = baselines.get(row.screenId);
+            row.baseImageBuildId = baseline?.sourceBuildId ?? null;
 
-                // speculative: the review UI's left-hand image is the reference build, not the previous branch build, so this
-                // comparison must not store a diff (it would overwrite the one stored for the reference below)
-                const isMatch = await this.screensMatch(
-                    appId,
-                    screen.previousBuildScreen.matchedBuildId ?? screen.previousBuildScreen.buildId,
-                    currentBuild.id,
-                    screen.screenId,
-                    comparisonFor(screen.screenId)
-                );
-
+            let epoch: string;
+            if (baseline) {
+                // byte-identical to the baseline: nothing to download or compare
+                const identical = !!row.contentHash && row.contentHash === baseline.hash;
+                // the only comparison that stores a diff, at this row's own path against its baseline's image source (a reference
+                // row that matched another build keeps no upload of its own); every other comparison here is speculative (safeMatch)
+                const isMatch =
+                    identical ||
+                    (await this.performDiff(appId, baseline.sourceBuildId, currentBuild.id, row.screenId, comparisonFor(row.screenId), {
+                        // pre-0.8 uploads have no hash yet: fill them in from the bytes we are downloading anyway
+                        onLeft: data => {
+                            if (!baseline.hash) hashPatches.set(baseline.sourceRowId, sha256(data));
+                        },
+                        onRight: data => {
+                            if (!row.contentHash) row.contentHash = sha256(data);
+                        }
+                    }));
                 if (isMatch) {
-                    logger.info('Current build screen matches approved changes', { screenId: screen.screenId });
-                    screen.currentBuildScreen.matchedBuildId = screen.previousBuildScreen.matchedBuildId ?? screen.previousBuildScreen.buildId;
-                    screen.currentBuildScreen.approvalBuildId = screen.previousBuildScreen.approvalBuildId ?? screen.previousBuildScreen.buildId;
-                    screen.currentBuildScreen.status = 'changes approved';
+                    logger.info('Screen matches reference', { screenId: row.screenId });
+                    row.matchedBuildId = baseline.sourceBuildId;
+                    row.status = 'no changes';
                     continue;
                 }
-
-                logger.info('Current build screen does not match approved changes', { screenId: screen.screenId });
+                epoch = baseline.sourceRowId;
+            } else {
+                epoch = await absentEpoch(this.db, appId, row.screenId, app.defaultBranchId, referenceBuild?.id);
             }
 
-            // if we have a reference build screen, compare the current screen with the reference build screen
-            if (screen.referenceBuildScreen) {
-                // the only comparison that stores a diff (against the reference build's screen); every other comparison in this
-                // flow is speculative (screensMatch). Screens resolved via matchedBuildId still show the matched build's diff.
-                const isMatch = await this.performDiff(
-                    appId,
-                    screen.referenceBuildScreen.buildId,
-                    currentBuild.id,
-                    screen.screenId,
-                    comparisonFor(screen.screenId)
-                );
+            // a decision made earlier (on any branch) for exactly this change: this image replacing the baseline's
+            const decision = await findDecision({
+                appId,
+                screenId: row.screenId,
+                branchId: currentBuild.branchId,
+                from: baseline ? { buildId: baseline.sourceBuildId, hash: baseline.hash } : null,
+                to: { hash: row.contentHash },
+                epoch,
+                match: toImageBuildId => safeMatch(toImageBuildId, row)
+            });
 
-                if (isMatch) {
-                    logger.info('Current build screen matches reference', {
-                        screenId: screen.screenId,
-                        status: screen.currentBuildScreen.status
-                    });
-                    screen.currentBuildScreen.matchedBuildId = screen.referenceBuildScreen.matchedBuildId ?? screen.referenceBuildScreen.buildId;
-                    screen.currentBuildScreen.status = 'no changes';
-                    continue;
-                }
-
-                logger.info('Current build screen does not match reference', {
-                    screenId: screen.screenId,
-                    status: screen.currentBuildScreen.status
-                });
-            }
-
-            // look for any approved changes to this screen on another branch since the build that last changed it
-            // since the IDs are all uuid7, we know they're time-ordered, and therefore we temporally compare build IDs
-            // and screen IDs even though they don't represent the same thing
-            const approvalBuildIdForReferenceScreen = screen.referenceBuildScreen?.approvalBuildId ?? screen.referenceBuildScreen?.buildId;
-            const approvedBuildScreensSinceApprovedReferenceBuild = await BuildScreenEntity.query()
-                .filter({
-                    ...(approvalBuildIdForReferenceScreen && { id: { $gt: approvalBuildIdForReferenceScreen } }),
-                    appId,
-                    screenId: screen.screenId,
-                    isRemoved: false,
-                    status: 'changes approved',
-                    approvalBuildId: null // we want the explicitly approved changes, not the ones that inherited approval
-                })
-                .find();
-
-            for (const approvedBuildScreen of approvedBuildScreensSinceApprovedReferenceBuild) {
-                logger.info('Comparing against intermediate approved change for screen', {
-                    screenId: screen.screenId,
-                    buildId: approvedBuildScreen.buildId
-                });
-
-                // speculative candidate from another branch: must not store a diff over the one against the reference
-                const isMatch = await this.screensMatch(
-                    appId,
-                    approvedBuildScreen.matchedBuildId ?? approvedBuildScreen.buildId,
-                    currentBuild.id,
-                    screen.screenId,
-                    comparisonFor(screen.screenId)
-                );
-
-                if (isMatch) {
-                    logger.info('Current build screen matches previously approved changes', {
-                        screenId: screen.screenId
-                    });
-                    screen.currentBuildScreen.matchedBuildId = approvedBuildScreen.matchedBuildId ?? approvedBuildScreen.buildId;
-                    screen.currentBuildScreen.approvalBuildId = approvedBuildScreen.buildId;
-                    screen.currentBuildScreen.status = 'changes approved';
-                    continue screenLoop;
-                }
-            }
-
-            // if the screen is not in the reference build, mark it as new
-            if (!screen.referenceBuildScreen) {
-                logger.info('Screen not in reference build', { screenId: screen.screenId });
-                screen.currentBuildScreen.status = 'new';
+            if (decision?.kind === 'approved') {
+                logger.info('Screen matches an approved change', { screenId: row.screenId, decisionId: decision.id });
+                row.status = 'changes approved';
+                row.matchedBuildId = decision.toImageBuildId;
+                row.decisionId = decision.id;
+                row.approvalBuildId = decision.buildId;
                 continue;
             }
 
-            // no matches for this screen change, so mark it as needs review
-            logger.info('Current build screen needs review', {
-                screenId: screen.screenId,
-                status: screen.currentBuildScreen.status
-            });
-            screen.currentBuildScreen.status = 'needs review';
-        }
-
-        // carry forward prior per-screen review decisions: when a same-named screen was individually
-        // approved/rejected since this branch's last approval and the current image still matches it,
-        // re-apply that decision (and comment) so reviewers don't re-review unchanged screens build after build.
-        // NOTE: the lower bound is this branch's last approval, but candidates are matched app-wide (across
-        // branches) by screenId, since builds_screens has no branchId. Carry-forward fires only when the two
-        // images match within the screen's tolerances and masks (the same test as every other comparison here),
-        // so a cross-branch decision is inherited only when the screen is visually the same outside its masks.
-        const reviewWindowLowerBoundId = previousBuild?.id ?? referenceBuild?.id;
-
-        for (const screen of screens) {
-            if (screen.currentBuildScreen.status !== 'needs review' && screen.currentBuildScreen.status !== 'new') continue;
-
-            const priorReviewedScreens = await BuildScreenEntity.query()
-                .filter({
-                    appId,
-                    screenId: screen.screenId,
-                    isRemoved: false,
-                    reviewStatus: { $ne: null },
-                    buildId: { $ne: currentBuild.id },
-                    ...(reviewWindowLowerBoundId && { id: { $gt: reviewWindowLowerBoundId } })
-                })
-                .orderBy('id', 'desc')
-                .find();
-
-            for (const priorReviewedScreen of priorReviewedScreens) {
-                let isMatch: boolean;
-                try {
-                    isMatch = await this.screensMatch(
-                        appId,
-                        priorReviewedScreen.matchedBuildId ?? priorReviewedScreen.buildId,
-                        currentBuild.id,
-                        screen.screenId,
-                        comparisonFor(screen.screenId)
-                    );
-                } catch (err) {
-                    logger.info('Failed to compare against prior reviewed screen; skipping candidate', {
-                        screenId: screen.screenId,
-                        priorBuildId: priorReviewedScreen.buildId,
-                        error: (err as Error).message
-                    });
-                    continue;
-                }
-
-                if (!isMatch) continue;
-
-                logger.info('Carrying forward prior review decision for unchanged screen', {
-                    screenId: screen.screenId,
-                    reviewStatus: priorReviewedScreen.reviewStatus,
-                    fromBuildId: priorReviewedScreen.buildId
-                });
-                screen.currentBuildScreen.reviewStatus = priorReviewedScreen.reviewStatus;
-                screen.currentBuildScreen.reviewComment = priorReviewedScreen.reviewComment;
-                screen.currentBuildScreen.reviewedById = priorReviewedScreen.reviewedById;
-                screen.currentBuildScreen.reviewedAt = priorReviewedScreen.reviewedAt;
-                break;
+            row.status = baseline ? 'needs review' : 'new';
+            if (decision?.kind === 'rejected') {
+                // pre-marked; nobody reviewed it in this build, so there is no reviewer
+                logger.info('Screen matches a rejected change', { screenId: row.screenId, decisionId: decision.id });
+                row.reviewStatus = 'rejected';
+                row.reviewComment = decision.comment;
+                row.decisionId = decision.id;
             }
         }
 
-        // screens in the reference build that this build no longer has get a tombstone (needs review until approved)
+        await this.carryForwardReviews(currentBuild, uploads, safeMatch, logger);
+
+        // screens in the reference build that this build no longer has get a tombstone (needs review until the removal is approved)
         const tombstones = await computeRemovals({
             appId,
             buildId: currentBuild.id,
-            currentScreenIds: screens.map(screen => screen.screenId),
-            referenceRows: referenceBuildScreens,
-            previousTombstonesById
+            currentScreenIds: uploads.map(row => row.screenId),
+            baselines,
+            findRemovalDecision: (screenId, baseline) =>
+                findDecision({
+                    appId,
+                    screenId,
+                    branchId: currentBuild.branchId,
+                    from: { buildId: baseline.sourceBuildId, hash: baseline.hash },
+                    to: 'absent',
+                    epoch: baseline.sourceRowId,
+                    match: async () => false
+                })
         });
-        const statuses = [...screens.map(screen => screen.currentBuildScreen.status), ...tombstones.map(tombstone => tombstone.status)];
+        const statuses = [...uploads.map(row => row.status), ...tombstones.map(tombstone => tombstone.status)];
 
         // there no no changes if all screens are accounted for and have no changes
         if (statuses.every(status => status === 'no changes')) {
@@ -377,6 +271,8 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             // Write the result through the locked row only, and only while this attempt still owns the build.
             const locked = await lease.assertHeld(txn);
             locked.status = currentBuild.status;
+            locked.referenceBuildId = referenceBuild?.id ?? null;
+            locked.referenceSource = reference.source;
             locked.processingAttemptId = null;
             locked.processingHeartbeatAt = null;
             txn.add(locked);
@@ -386,27 +282,112 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             await txn.query(BuildScreenEntity).filter({ buildId: currentBuild.id, isRemoved: true }).deleteMany();
             txn.add(...tombstones);
             await txn.flush();
+            // Only rows that equal their baseline hold nothing of their own: auto-approved rows keep (and show) their upload.
+            // A future storage cleaner must never delete a matchedBuildId target, or the from/to image of a decision.
             await txn
                 .query(BuildScreenEntity)
-                .filter({ buildId: currentBuild.id, matchedBuildId: { $ne: null } })
+                .filter({ buildId: currentBuild.id, status: 'no changes', matchedBuildId: { $ne: null } })
                 .patchMany({
                     storageStatus: 'pendingDeletion'
                 });
+            for (const [rowId, hash] of hashPatches) {
+                await txn.query(BuildScreenEntity).filter({ id: rowId, contentHash: null }).patchMany({ contentHash: hash });
+            }
         });
 
-        return currentBuildScreens.filter(bs => !bs.matchedBuildId);
+        return uploads.filter(row => row.status !== 'no changes');
     }
 
-    private async loadAndDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, comparison: IComparison) {
+    /**
+     * Review marks made while the branch's previous build was under review carry onto this build, for the same change only:
+     * the same baseline image and an equal upload. They carry no reviewer (the submitter takes responsibility on approve)
+     * and point at the review they came from. Nothing carries between branches here: that is what decisions are for.
+     */
+    private async carryForwardReviews(
+        build: BuildEntity,
+        uploads: BuildScreenEntity[],
+        safeMatch: (leftBuildId: string, row: BuildScreenEntity) => Promise<boolean>,
+        logger: ScopedLogger
+    ) {
+        const candidates = uploads.filter(row => (row.status === 'new' || row.status === 'needs review') && !row.reviewStatus);
+        if (!candidates.length) return;
+
+        const prev = await BuildEntity.query()
+            .filter({
+                appId: build.appId,
+                branchId: build.branchId,
+                id: { $lt: build.id },
+                status: { $nin: ['draft', 'processing', 'canceled', 'failed'] }
+            })
+            .orderBy('id', 'desc')
+            .findOneOrUndefined();
+        // marks from before 0.8 never recorded which baseline they were made against
+        if (!prev || (prev.status !== 'needs review' && prev.status !== 'changes rejected')) return;
+        if (!prev.referenceSource || prev.referenceSource === 'legacy') return;
+
+        const marked = await BuildScreenEntity.query()
+            .filter({ appId: build.appId, buildId: prev.id, isRemoved: false, reviewStatus: { $ne: null } })
+            .find();
+        const markedByScreen = keyBy(marked, 'screenId');
+        const decisionIds = marked.map(p => p.decisionId).filter((id): id is string => !!id);
+        const revokedIds = new Set(
+            decisionIds.length
+                ? (
+                      await ScreenDecisionEntity.query()
+                          .filter({ appId: build.appId, id: { $in: decisionIds }, revokedAt: { $ne: null } })
+                          .select('id')
+                          .find()
+                  ).map(d => d.id)
+                : []
+        );
+
+        for (const row of candidates) {
+            const p = markedByScreen[row.screenId];
+            if (!p) continue;
+            // a mark that only came from a decision is not the reviewer's own: the decision re-applies it (or not, once revoked)
+            if (p.decisionId && !p.reviewedById) continue;
+            if (p.decisionId && revokedIds.has(p.decisionId)) continue;
+            if (p.baseImageBuildId !== row.baseImageBuildId) continue;
+            const sameImage = (!!row.contentHash && row.contentHash === p.contentHash) || (await safeMatch(p.buildId, row));
+            if (!sameImage) continue;
+
+            logger.info('Carrying forward review mark for the same change', {
+                screenId: row.screenId,
+                reviewStatus: p.reviewStatus,
+                fromBuildId: p.buildId
+            });
+            row.reviewStatus = p.reviewStatus;
+            row.reviewComment = p.reviewComment;
+            row.reviewCarriedFromId = p.reviewCarriedFromId ?? p.id;
+        }
+    }
+
+    private async loadAndDiff(
+        appId: string,
+        leftBuildId: string,
+        rightBuildId: string,
+        screenId: string,
+        comparison: IComparison,
+        hooks?: IImageHooks
+    ) {
         const leftScreenData = await this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, leftBuildId, screenId));
+        hooks?.onLeft?.(leftScreenData);
         const rightScreenData = await this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, rightBuildId, screenId));
+        hooks?.onRight?.(rightScreenData);
         return this.pixelMatch.getDiff(leftScreenData, rightScreenData, comparison.colorTolerance, comparison.shiftTolerance, comparison.masks);
     }
 
-    private async performDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, comparison: IComparison) {
+    private async performDiff(
+        appId: string,
+        leftBuildId: string,
+        rightBuildId: string,
+        screenId: string,
+        comparison: IComparison,
+        hooks?: IImageHooks
+    ) {
         this.logger.info('Performing diff', { leftBuildId, rightBuildId, screenId });
 
-        const { getDiffPng, diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId, comparison);
+        const { getDiffPng, diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId, comparison, hooks);
 
         if (diffPct > comparison.diffPctTolerance) {
             this.logger.info('Diff exceeds threshold. Storing diff.', { diffPct, diffThreshold: comparison.diffPctTolerance });
@@ -418,11 +399,18 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         return true;
     }
 
-    // the authoritative diff is the one against the reference build (see the screenLoop); everything else uses this.
+    // the authoritative diff is the one against the baseline (see processScreens); everything else uses this.
     // like performDiff, but only reports whether two screens match without storing a diff image,
-    // so it can be used for speculative comparisons without clobbering the stored reference diff
-    private async screensMatch(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, comparison: IComparison) {
-        const { diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId, comparison);
+    // so it can be used for speculative comparisons without clobbering the stored baseline diff
+    private async screensMatch(
+        appId: string,
+        leftBuildId: string,
+        rightBuildId: string,
+        screenId: string,
+        comparison: IComparison,
+        hooks?: IImageHooks
+    ) {
+        const { diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId, comparison, hooks);
         return diffPct <= comparison.diffPctTolerance;
     }
 }

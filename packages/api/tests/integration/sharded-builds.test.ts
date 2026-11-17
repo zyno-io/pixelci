@@ -15,10 +15,10 @@ import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { ProcessBuildJob } from '../../src/jobs/ProcessBuild.job';
 import { screenManifestHash } from '../../src/services/ScreenManifest';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('sharded-builds');
 
 configureTestDatabase();
 
@@ -172,6 +172,7 @@ async function run() {
         databasePrefix: 'pixelci_shardtest',
         useSavepoints: false
     });
+    await ensureTestBucket();
     await facade.start();
     // Capture enqueues instead of hitting the real queue
     (facade.get(WorkerService) as unknown as { queueJob: (c: unknown, d: { buildId: string }) => Promise<undefined> }).queueJob = async (c, d) => {

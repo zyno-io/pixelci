@@ -12,15 +12,15 @@ import { IUserVcsSession, UserEntity } from '../../src/entities/User.entity';
 import { IGitHubConfig, VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { RerunCiJobJob, RERUN_RETRY_DELAY_MS } from '../../src/jobs/RerunCiJob.job';
 import { AppAccessService } from '../../src/services/AppAccess.service';
-import { openVcsSession, sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
 import { createOAuthState, deriveStateKey, OAUTH_STATE_TTL_MS } from '../../src/services/OAuthState';
+import { openVcsSession, sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
 import { VcsGitHubService } from '../../src/services/VcsGitHub.service';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
 const SETUP_TOKEN = 'gh-api-setup-token-0123456789';
 process.env.SETUP_TOKEN = SETUP_TOKEN;
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('github-api');
 process.env.PUBLIC_URL = 'https://pixelci.test';
 
 configureTestDatabase();
@@ -479,6 +479,7 @@ async function run() {
     await startMock();
 
     const facade = TestingHelpers.createTestingFacade(CoreAppOptions, { enableDatabase: true, databasePrefix: 'pixelci_ghapi' });
+    await ensureTestBucket();
     await facade.start();
 
     // Enterprise-style integration: API at {url}/api/v3, OIDC issuer at {url}/_services/token (derived)

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { getGitHubCiInfo, reportGitHubResult } from './ci-github.js';
+import { baseHints, getGitHubCiInfo, reportGitHubResult } from './ci-github.js';
 
 describe('GitHub Actions CI', () => {
     const originalEnv = { ...process.env };
@@ -118,5 +118,15 @@ describe('GitHub Actions CI', () => {
         reportGitHubResult('no changes', 'https://x/y');
         assert.deepStrictEqual(logs, []);
         assert.match(readFileSync(summary, 'utf8'), /no changes/);
+    });
+});
+
+describe('github baseHints', () => {
+    it('detects pull_request events and the payload path', () => {
+        assert.deepEqual(baseHints({ GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: '/e.json' }), {
+            isPullRequest: true,
+            eventPath: '/e.json'
+        });
+        assert.deepEqual(baseHints({ GITHUB_EVENT_NAME: 'push' }), { isPullRequest: false, eventPath: undefined });
     });
 });

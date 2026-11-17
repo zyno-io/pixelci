@@ -21,10 +21,10 @@ import { ClientMetadataResolver } from '../../src/services/oauth/ClientMetadataR
 import { pkceS256 } from '../../src/services/oauth/OAuthCrypto';
 import { ClientMetadataFetchError, ISafeFetchResult } from '../../src/services/oauth/SafeHttpsFetch';
 import { sealIntegrationConfig } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('oauth-cimd');
 process.env.PUBLIC_URL = 'https://pixelci.test';
 process.env.ENFORCE_VCS_PROJECT_ACCESS = 'false';
 
@@ -99,6 +99,7 @@ async function run() {
         { ...CoreAppOptions, providers: [...providers, { provide: ClientMetadataFetcher, useValue: fetcher }] },
         { enableDatabase: true, databasePrefix: 'pixelci_cimdtest' }
     );
+    await ensureTestBucket();
     await facade.start();
     await createPersistedEntity(VcsIntegrationEntity, {
         id: VCS_ID,

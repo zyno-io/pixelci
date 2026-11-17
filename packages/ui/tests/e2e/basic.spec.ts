@@ -13,6 +13,11 @@ test.beforeEach(() => {
     execFileSync('node', [seedScript, '--reset-reviews'], { stdio: 'inherit' });
 });
 
+const JWT =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcHAiLCJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDAiLCJleHAiOjI1MjQ2MDc5OTksImlhdCI6MTc0NzYzMjc2Mn0.7FmHrOWWRWmH8i8floyAE-VvYu4Lya_9c-Qy68r8puI';
+// The seeded, approved feature build whose Homepage change is decision D1 (see seed-e2e.mjs).
+const APPROVED_BUILD_URL = '/apps/00000000-0000-0000-0000-000000000001/builds/00000000-0000-0000-0000-000000000005';
+
 colorSchemes.forEach(colorScheme => {
     test.describe(`${colorScheme} mode`, () => {
         test.use({ colorScheme });
@@ -141,6 +146,34 @@ colorSchemes.forEach(colorScheme => {
             await rejected.locator('.review-bar').waitFor();
             await page.waitForTimeout(600);
             await takeFullPageScreenshot(page, 'Screen List - Rejected Expanded');
+        });
+
+        // Build 005 made the Homepage change, so it shows who approved it and lets a reviewer take that back.
+        test('shows who approved a change and revokes it', async ({ page }) => {
+            await page.addInitScript(jwt => window.localStorage.setItem('pixelci:jwt', jwt), JWT);
+            await page.goto(APPROVED_BUILD_URL);
+            await page.waitForSelector('.screen');
+            await page.locator('[data-testid="filter-all"]').click();
+            await expect(page.locator('.screen .loading')).toHaveCount(0, { timeout: 10000 });
+
+            const homepage = page.locator('.screen').filter({ hasText: 'Homepage' });
+            await expect(homepage.getByTestId('provenance')).toContainText('Approved by E2E Test User');
+            await takeScreenshot(page, 'Screen List - Approved Build');
+
+            await homepage.getByTestId('revoke-approval').click();
+            await takeScreenshot(page, 'Screen List - Revoke Confirm');
+            await page.locator('[data-testid="submit-confirm"]').click();
+
+            await expect(homepage.getByTestId('provenance')).toContainText('Approval revoked by E2E Test User');
+            await expect(homepage.getByTestId('revoke-approval')).toHaveCount(0);
+
+            // The revoke is stored: a fresh load still shows it.
+            await page.reload();
+            await page.waitForSelector('.screen');
+            await page.locator('[data-testid="filter-all"]').click();
+            await expect(page.locator('.screen').filter({ hasText: 'Homepage' }).getByTestId('provenance')).toContainText(
+                'Approval revoked by E2E Test User'
+            );
         });
     });
 });

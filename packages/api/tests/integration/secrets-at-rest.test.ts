@@ -6,10 +6,10 @@ import { setIntegrationSecret } from '../../src/commands/SetIntegrationSecret.co
 import { UserEntity } from '../../src/entities/User.entity';
 import { encryptSecrets } from '../../src/migrations/20261111_150000_encrypt_secrets';
 import { getSecretBox, SecretBox, SecretUnreadableError, setSecretBoxForTesting } from '../../src/services/secrets/SecretBox';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('secrets-at-rest');
 
 configureTestDatabase();
 
@@ -41,6 +41,7 @@ async function run() {
         enableDatabase: true,
         databasePrefix: 'pixelci_secretstest'
     });
+    await ensureTestBucket();
     await facade.start();
     const db = UserEntity.getDatabase();
     const x = (s: string) => db.rawExecute(s);

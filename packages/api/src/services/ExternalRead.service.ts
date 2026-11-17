@@ -8,6 +8,7 @@ import { BuildScreenEntity } from '../entities/BuildScreen.entity';
 import { ScreenEntity } from '../entities/Screen.entity';
 import { UserEntity } from '../entities/User.entity';
 import { AppAccessService, IAppAccessPrincipal } from './AppAccess.service';
+import { IDecisionSummary, loadDecisionSummaries } from './Decisions';
 import { IMaskRect } from './Mask';
 import { S3Service } from './S3.service';
 
@@ -28,6 +29,8 @@ export type IExtBuildResponse = {
 /** A region ignored when a screen was compared: x/y from the top-left, in screenshot pixels. */
 export type IExtMask = Omit<IMaskRect, 'id'>;
 
+export type IExtDecision = { kind: 'approved' | 'rejected'; buildId: string; branchName: string; decidedByName: string | null; revoked: boolean };
+
 export type IExtBuildScreenResponse = {
     screenId: string;
     name: string;
@@ -37,6 +40,8 @@ export type IExtBuildScreenResponse = {
     reviewComment: string | null;
     reviewedByName: string | null;
     reviewedAt: Date | null;
+    /** The decision behind this screen's outcome (an approval it matched, a rejection that pre-marked it, or the one made in this build). */
+    decision: IExtDecision | null;
     /** Regions ignored when this screen was compared; null for builds processed before masks existed. */
     appliedMasks: IExtMask[] | null;
 };
@@ -95,6 +100,11 @@ export class ExternalReadService {
             .find();
         const screensById = keyBy(screens, 'id');
 
+        const decisions = await loadDecisionSummaries(
+            appId,
+            buildScreens.map(buildScreen => buildScreen.decisionId)
+        );
+
         const reviewerIds = uniq(buildScreens.map(buildScreen => buildScreen.reviewedById).filter((id): id is string => !!id));
         const reviewers = await UserEntity.query()
             .filter({ id: { $in: reviewerIds } })
@@ -112,11 +122,16 @@ export class ExternalReadService {
                 reviewComment: buildScreen.reviewComment,
                 reviewedByName: buildScreen.reviewedById ? (reviewersById[buildScreen.reviewedById]?.name ?? null) : null,
                 reviewedAt: buildScreen.reviewedAt,
+                decision: this.toExtDecision(buildScreen.decisionId ? decisions.get(buildScreen.decisionId) : undefined),
                 appliedMasks: buildScreen.appliedMasks?.map(({ x, y, width, height, label }) => ({ x, y, width, height, label })) ?? null
             }))
             .sort((a, b) => a.name.localeCompare(b.name));
 
         return { ...denormalizedBuild, screens: screenResponses };
+    }
+
+    private toExtDecision(d: IDecisionSummary | undefined): IExtDecision | null {
+        return d ? { kind: d.kind, buildId: d.buildId, branchName: d.branchName, decidedByName: d.decidedByName, revoked: !!d.revokedAt } : null;
     }
 
     /** Resolves the storage path of a screen's image after access and existence checks. */
@@ -137,10 +152,17 @@ export class ExternalReadService {
         const buildScreen = await BuildScreenEntity.query().filter({ appId, buildId, screenId, isRemoved: false }).findOneOrUndefined();
         if (!buildScreen) throw new HttpNotFoundError();
 
-        const storageBuildId = buildScreen.matchedBuildId ?? buildScreen.buildId;
-        return kind === 'diff'
-            ? this.s3Svc.getPathForDiff(appId, storageBuildId, screenId)
-            : this.s3Svc.getPathForScreen(appId, storageBuildId, screenId);
+        if (kind === 'diff') {
+            // the row's own diff (what processing compared); builds from before 0.8 may have auto-approved without storing one
+            const ownDiff = this.s3Svc.getPathForDiff(appId, buildScreen.buildId, screenId);
+            if ((!build.referenceSource || build.referenceSource === 'legacy') && buildScreen.matchedBuildId && !(await this.s3Svc.exists(ownDiff))) {
+                return this.s3Svc.getPathForDiff(appId, buildScreen.matchedBuildId, screenId);
+            }
+            return ownDiff;
+        }
+        // an unchanged screen holds nothing of its own: it shows the image it equals; every other row shows its own upload
+        const imageBuildId = buildScreen.status === 'no changes' ? (buildScreen.matchedBuildId ?? buildScreen.buildId) : buildScreen.buildId;
+        return this.s3Svc.getPathForScreen(appId, imageBuildId, screenId);
     }
 
     private async denormalizeBuilds(builds: BuildEntity[]): Promise<IExtBuildResponse[]> {

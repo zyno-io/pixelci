@@ -22,6 +22,9 @@ RUN yarn workspaces focus @zyno-io/pixelci-cli --production
 FROM node:26-alpine
 WORKDIR /app
 
+# the CLI reads git history to find where the branch forked from the default branch
+RUN apk add --no-cache git
+
 ENV NODE_ENV=production
 
 COPY --from=builder /app/packages/cli .

@@ -538,7 +538,10 @@ watch(visibleTiles, list => {
 function buildTile(screen: IBuildScreenResponse, forBuildId: string): ITile {
     const current = screen.currentBuildScreen;
     const reference = screen.referenceBuildScreen;
-    const currentImage = current ? { buildId: current.matchedBuildId ?? current.buildId } : null;
+    // A changed row's own upload and diff are what processing compared; only an unchanged row shows the image it matched.
+    const currentImage = current
+        ? { buildId: current.status === 'no changes' ? (current.matchedBuildId ?? current.buildId) : current.buildId }
+        : null;
     const referenceImage = reference ? { buildId: reference.matchedBuildId ?? reference.buildId } : null;
     const unchanged = current?.status === 'no changes';
 

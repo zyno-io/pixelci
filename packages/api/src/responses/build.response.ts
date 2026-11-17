@@ -1,6 +1,9 @@
 import { BuildEntity } from '../entities/Build.entity';
 
-export type IBuildResponse = Pick<BuildEntity, 'id' | 'branchId' | 'commitHash' | 'commitSubject' | 'commitAuthor' | 'createdAt' | 'status'> & {
+export type IBuildResponse = Pick<
+    BuildEntity,
+    'id' | 'branchId' | 'commitHash' | 'commitSubject' | 'commitAuthor' | 'createdAt' | 'status' | 'referenceBuildId' | 'referenceSource'
+> & {
     branchName: string;
     /** Echo of the shard the caller registered as (sharded builds only); lets the CLI detect a server that ignores `shard`. */
     shard?: { index: number; total: number };
@@ -21,6 +24,8 @@ export function toBuildResponse(
         commitAuthor: build.commitAuthor,
         createdAt: build.createdAt,
         status,
+        referenceBuildId: build.referenceBuildId ?? null,
+        referenceSource: build.referenceSource ?? null,
         branchName,
         ...(shard ? { shard: { index: shard.index, total: shard.total } } : {})
     };
