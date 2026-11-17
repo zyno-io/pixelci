@@ -140,6 +140,9 @@
                                 <span v-if="hasOverride(tile.tolerances)" class="tag" v-tooltip="toleranceSummary(tile)">
                                     <i class="fa fa-sliders" aria-hidden="true" /> Custom
                                 </span>
+                                <span v-if="tile.masks.masks.length" class="tag" v-tooltip="maskSummary(tile)" data-testid="tile-masked">
+                                    <i class="fa fa-table-cells-large" aria-hidden="true" /> Masked
+                                </span>
                                 <span v-if="tile.status" class="tag" :class="tile.status.tone">
                                     <i v-if="tile.status.icon" class="fa" :class="tile.status.icon" aria-hidden="true" />
                                     {{ tile.status.label }}
@@ -199,6 +202,7 @@ import {
 import { accessDeniedMessage, signOut } from '@/shared/access-error';
 import LoaderModal from '@/shared/components/loader-modal.vue';
 import ScreenLightbox, { type ILightboxScreen } from '@/shared/components/screen-lightbox.vue';
+import { formatMaskCount } from '@/shared/masks';
 import { BUILD_STATUS, REMOVED_STATUS, REVIEW_STATUS, SCREEN_STATUS } from '@/shared/status';
 import {
     formatTolerance,
@@ -268,6 +272,16 @@ function onAppTolerancesSaved(tolerances: IToleranceOverrides) {
 }
 
 // ── Masks ──
+// A screen is "custom" when it deviates from the app's defaults: its own tolerances, its own masks, or opting out of the app's.
+function isCustom(tile: ITile) {
+    return hasOverride(tile.tolerances) || tile.masks.masks.length > 0 || !tile.masks.inheritAppMasks;
+}
+
+function maskSummary(tile: ITile) {
+    const own = formatMaskCount(tile.masks.masks.length);
+    return tile.masks.inheritAppMasks ? own : `${own}; app masks not used`;
+}
+
 function onMasksSaved(screenId: string, masks: IScreenMasksResponse) {
     const tile = tiles.value.find(t => t.screenId === screenId);
     if (tile) tile.masks = masks;
@@ -303,7 +317,7 @@ const filterOptions = computed(() => {
     const all = { value: 'all' as const, label: `All (${tiles.value.length})`, testId: 'gallery-filter-all' };
     const custom = {
         value: 'custom' as const,
-        label: `Custom tolerance (${tiles.value.filter(t => hasOverride(t.tolerances)).length})`,
+        label: `Custom (${tiles.value.filter(isCustom).length})`,
         testId: 'gallery-filter-custom'
     };
     if (!buildId.value) return [all, custom];
@@ -323,7 +337,7 @@ const visibleTiles = computed(() => {
         if (term && !tile.name.toLowerCase().includes(term)) return false;
         if (filter.value === 'changed') return tile.changed;
         if (filter.value === 'unchanged') return !tile.changed;
-        if (filter.value === 'custom') return hasOverride(tile.tolerances);
+        if (filter.value === 'custom') return isCustom(tile);
         return true;
     });
 });
@@ -422,7 +436,9 @@ function observeTile(tile: ITile, el: HTMLElement | null) {
 }
 
 function tileLabel(tile: ITile) {
-    return [tile.name, tile.status?.label, hasOverride(tile.tolerances) ? 'custom tolerance' : ''].filter(Boolean).join(', ');
+    return [tile.name, tile.status?.label, hasOverride(tile.tolerances) ? 'custom tolerance' : '', tile.masks.masks.length ? 'masked' : '']
+        .filter(Boolean)
+        .join(', ');
 }
 
 // ── Lightbox ──
