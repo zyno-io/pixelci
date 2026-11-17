@@ -23,6 +23,7 @@ export function useScreenImages(appId: () => string) {
     const loading = new Set<string>();
     const objectUrls = new Set<string>();
     let disposed = false;
+    let pumpScheduled = false;
 
     const keyOf = (kind: ScreenImageKind, buildId: string, screenId: string) => `${kind}:${buildId}:${screenId}`;
 
@@ -63,7 +64,20 @@ export function useScreenImages(appId: () => string) {
                 if (!disposed) sources.set(key, false);
             }
         });
-        pump();
+        // Start on a microtask, not now: callers queue a whole batch least-urgent first, and starting the first
+        // few as they arrive would hand the free slots to the least urgent ones.
+        if (!pumpScheduled) {
+            pumpScheduled = true;
+            queueMicrotask(() => {
+                pumpScheduled = false;
+                pump();
+            });
+        }
+    }
+
+    /** Drops a request that hasn't started, e.g. for a card scrolled out of the rendered range. In-flight and loaded images stay. */
+    function release(kind: ScreenImageKind, buildId: string, screenId: string) {
+        queued.delete(keyOf(kind, buildId, screenId));
     }
 
     function get(kind: ScreenImageKind, buildId: string, screenId: string): ScreenImageSrc {
@@ -80,7 +94,7 @@ export function useScreenImages(appId: () => string) {
 
     onBeforeUnmount(dispose);
 
-    return { request, get };
+    return { request, release, get };
 }
 
 export type ScreenImages = ReturnType<typeof useScreenImages>;

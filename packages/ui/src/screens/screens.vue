@@ -86,13 +86,15 @@
             </div>
 
             <template v-else>
-                <div class="screen-list" :data-zoom="zoom">
+                <div ref="listEl" class="screen-list" :data-zoom="zoom" :style="{ height: `${listHeight}px` }">
                     <div
-                        v-for="(screen, index) in displayScreens"
+                        v-for="{ screen, index, y } in renderedCards"
                         :key="screen.screenId"
-                        :ref="el => setScreenRef(screen.screenId, el as HTMLElement | null)"
+                        :ref="el => bindCard(el as HTMLElement | null, screen.screenId)"
+                        :data-index="index"
                         class="screen"
                         :class="{ 'is-active': activeScreenId === screen.screenId }"
+                        :style="{ transform: `translateY(${y}px)` }"
                         tabindex="-1"
                         role="group"
                         :aria-labelledby="`screen-name-${screen.screenId}`"
@@ -158,7 +160,7 @@
                             </div>
                         </div>
 
-                        <div v-show="!isCollapsed(screen)" class="image-wrapper-outer" :class="{ single: isUnchanged(screen) }">
+                        <div v-if="!isCollapsed(screen)" class="image-wrapper-outer" :class="{ single: isUnchanged(screen) }">
                             <div v-if="!isUnchanged(screen)" class="labels">
                                 <span>Reference build <span class="qualifier baseline">approved baseline</span></span>
                                 <span>
@@ -177,7 +179,7 @@
                                     <div
                                         class="image-wrapper left"
                                         :class="{ 'diff-toggleable': hasDiff(screen) }"
-                                        @scroll="onPaneScroll"
+                                        @scroll="onPaneScroll($event, screen)"
                                         @click="onImageShiftClick($event, screen)"
                                     >
                                         <div class="pane-content">
@@ -187,21 +189,22 @@
                                                 >
                                                 <span v-else>No reference screenshot.</span>
                                             </div>
-                                            <div v-else-if="screen.referenceBuildScreen.imageSrc === false" class="placeholder">
+                                            <div v-else-if="referenceSrc(screen) === false" class="placeholder">
                                                 <span>This image couldn't be loaded.</span>
                                             </div>
-                                            <Loader v-else-if="!screen.referenceBuildScreen.imageSrc" class="loading" />
+                                            <Loader v-else-if="!referenceSrc(screen)" class="loading" />
                                             <div v-else class="img-frame">
                                                 <img
-                                                    :src="screen.referenceBuildScreen.imageSrc"
+                                                    :src="referenceSrc(screen) as string"
                                                     :alt="`Reference screenshot: ${screen.name}`"
-                                                    @load="onImageLoad"
+                                                    :style="naturalWidthStyle(referenceSrc(screen))"
+                                                    @load="onImageLoad($event, screen)"
                                                 />
                                                 <MaskLayer
-                                                    v-if="appliedMasks(screen).length && sizeOf(screen.referenceBuildScreen.imageSrc)"
+                                                    v-if="appliedMasks(screen).length && sizeOf(referenceSrc(screen))"
                                                     :masks="appliedMasks(screen)"
-                                                    :width="sizeOf(screen.referenceBuildScreen.imageSrc)!.width"
-                                                    :height="sizeOf(screen.referenceBuildScreen.imageSrc)!.height"
+                                                    :width="sizeOf(referenceSrc(screen))!.width"
+                                                    :height="sizeOf(referenceSrc(screen))!.height"
                                                     data-testid="applied-masks"
                                                 />
                                             </div>
@@ -218,7 +221,7 @@
                                     <div
                                         class="image-wrapper right"
                                         :class="{ 'diff-toggleable': hasDiff(screen) }"
-                                        @scroll="onPaneScroll"
+                                        @scroll="onPaneScroll($event, screen)"
                                         @click="onImageShiftClick($event, screen)"
                                     >
                                         <div class="pane-content">
@@ -228,33 +231,39 @@
 
                                             <template v-else>
                                                 <div class="image-wrapper-inner" :class="{ 'is-covered': diffShown && hasDiff(screen) }">
-                                                    <div v-if="screen.currentBuildScreen.imageSrc === false" class="placeholder">
+                                                    <div v-if="currentSrc(screen) === false" class="placeholder">
                                                         <span>This image couldn't be loaded.</span>
                                                     </div>
-                                                    <Loader v-else-if="!screen.currentBuildScreen.imageSrc" class="loading" />
+                                                    <Loader v-else-if="!currentSrc(screen)" class="loading" />
                                                     <div v-else class="img-frame">
                                                         <img
-                                                            :src="screen.currentBuildScreen.imageSrc"
+                                                            :src="currentSrc(screen) as string"
                                                             :alt="`New build screenshot: ${screen.name}`"
-                                                            @load="onImageLoad"
+                                                            :style="naturalWidthStyle(currentSrc(screen))"
+                                                            @load="onImageLoad($event, screen)"
                                                         />
                                                         <MaskLayer
-                                                            v-if="appliedMasks(screen).length && sizeOf(screen.currentBuildScreen.imageSrc)"
+                                                            v-if="appliedMasks(screen).length && sizeOf(currentSrc(screen))"
                                                             :masks="appliedMasks(screen)"
-                                                            :width="sizeOf(screen.currentBuildScreen.imageSrc)!.width"
-                                                            :height="sizeOf(screen.currentBuildScreen.imageSrc)!.height"
+                                                            :width="sizeOf(currentSrc(screen))!.width"
+                                                            :height="sizeOf(currentSrc(screen))!.height"
                                                             data-testid="applied-masks"
                                                         />
                                                     </div>
                                                 </div>
 
                                                 <div v-if="diffShown && hasDiff(screen)" class="image-wrapper-inner diff">
-                                                    <div v-if="screen.diffImageSrc === false" class="placeholder">
+                                                    <div v-if="diffSrc(screen) === false" class="placeholder">
                                                         <span>This image couldn't be loaded.</span>
                                                     </div>
-                                                    <Loader v-else-if="!screen.diffImageSrc" class="loading" />
+                                                    <Loader v-else-if="!diffSrc(screen)" class="loading" />
                                                     <div v-else class="img-frame">
-                                                        <img :src="screen.diffImageSrc" :alt="`Visual diff: ${screen.name}`" @load="onImageLoad" />
+                                                        <img
+                                                            :src="diffSrc(screen) as string"
+                                                            :alt="`Visual diff: ${screen.name}`"
+                                                            :style="naturalWidthStyle(diffSrc(screen))"
+                                                            @load="onImageLoad($event, screen)"
+                                                        />
                                                     </div>
                                                 </div>
                                             </template>
@@ -347,6 +356,7 @@
             v-model:index="lightboxIndex"
             :app-id="appId"
             :items="lightboxItems"
+            :images="images"
             :app-tolerances="appTolerances"
             :can-edit="userCanReview"
             current-label="New build"
@@ -363,11 +373,14 @@
 </template>
 
 <script lang="ts" setup>
+import { useWindowVirtualizer, type Range as VirtualRange } from '@tanstack/vue-virtual';
 import { dataFrom, dataFromAsync } from '@zyno-io/openapi-client-codegen';
 import { handleError, handleErrorAndAlert, presentOverlay, showAlert, showToast } from '@zyno-io/vue-foundation';
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { useDocumentTop } from '@/composables/useDocumentTop';
+import { type ScreenImageKind, useScreenImages } from '@/composables/useScreenImages';
 import {
     AppsApi,
     BuildScreensApi,
@@ -386,6 +399,7 @@ import ScreenLightbox, { type ILightboxScreen } from '@/shared/components/screen
 import { formatMaskCount, type IMaskRect } from '@/shared/masks';
 import { BUILD_STATUS, REMOVED_STATUS, REVIEW_STATUS, SCREEN_STATUS } from '@/shared/status';
 import { hasOverride, type IToleranceOverrides, type ITolerances, pickOverrides, resolveTolerances } from '@/shared/tolerances';
+import { measureExact, rangeWithPinned } from '@/shared/virtual';
 
 import ScreensSegmented from './screens-segmented.vue';
 import SubmitConfirm from './screens-submit-confirm.vue';
@@ -397,16 +411,9 @@ type Filter = 'review' | 'all';
 type Zoom = 'fit-width' | 'fit-height' | '25' | '50' | '100' | '200';
 
 interface IScreen extends IBuildScreenResponse {
-    diffImageSrc?: string | false;
     reviewCommentDraft?: string;
     reviewExpanded?: boolean;
     reviewSubmitting?: boolean;
-    currentBuildScreen?: IBuildScreenResponse['currentBuildScreen'] & {
-        imageSrc?: string | false;
-    };
-    referenceBuildScreen?: IBuildScreenResponse['referenceBuildScreen'] & {
-        imageSrc?: string | false;
-    };
 }
 
 const appId = String(route.params.id);
@@ -461,16 +468,19 @@ watch(zoom, v => {
         // storage unavailable; the choice just won't persist
     }
     // Panes change size and scroll range; pull each one back to its sibling's offset.
+    paneOffsets.clear();
     nextTick(() => {
         document.querySelectorAll<HTMLElement>('#screens .image-wrapper').forEach(syncPaneFromSibling);
     });
 });
 
 // ── Derived state ──
-const displayScreens = computed(() => {
-    if (filter.value === 'review') return screens.value?.filter(showsInReviewFilter) ?? [];
+const displayScreens = computed(() => screensFor(filter.value));
+
+function screensFor(f: Filter) {
+    if (f === 'review') return screens.value?.filter(showsInReviewFilter) ?? [];
     return screens.value ?? [];
-});
+}
 
 const filterOptions = computed(() => [
     { value: 'review' as const, label: `Needs review (${reviewFilterCount.value})`, testId: 'filter-review' },
@@ -683,19 +693,116 @@ const stickyStyle = computed(() => ({
     '--decision-bar-h': `${decisionBarHeight.value}px`
 }));
 
+// ── Virtual list ──
+// Only the cards near the viewport are rendered; the list is as tall as all of them so the page scrolls as before.
+const RENDER_ALL_UP_TO = 24; // small builds render every card, as before (the e2e full-page captures rely on it)
+const listEl = ref<HTMLElement>();
+const listTop = useDocumentTop(listEl);
+const topBarHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--header-h')) || 46;
+const stickyTop = computed(() => topBarHeight + pageHeaderHeight.value);
+const activeIndex = computed(() => displayScreens.value.findIndex(s => s.screenId === activeScreenId.value));
+
+const virtualizer = useWindowVirtualizer<HTMLElement>(
+    computed(() => {
+        // Captured per list: getItemKey's identity is what tells TanStack the keys changed when a filter swap keeps the count.
+        const list = displayScreens.value;
+        const pinned = activeIndex.value;
+        return {
+            count: list.length,
+            getItemKey: (i: number) => list[i].screenId,
+            estimateSize: (i: number) => estimateCard(list[i]),
+            measureElement: measureExact,
+            gap: 16,
+            overscan: 2,
+            scrollMargin: listTop.value,
+            scrollPaddingStart: stickyTop.value + 12,
+            scrollPaddingEnd: decisionBarHeight.value + 12,
+            // The active card stays rendered wherever it is, so focus and a half-typed comment survive scrolling away.
+            rangeExtractor: (range: VirtualRange) =>
+                range.count <= RENDER_ALL_UP_TO ? Array.from({ length: range.count }, (_, i) => i) : rangeWithPinned(range, [pinned])
+        };
+    })
+);
+
+// Keep the reader's place. A card whose top edge is above the visible band moves the page with its change,
+// so cards below stay put. The active card is the exception while any of it shows: its top stays and the
+// change shows below it (otherwise dragging its comment box's resize handle would run away).
+virtualizer.value.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+    const bandTop = (instance.scrollOffset ?? 0) + stickyTop.value;
+    return item.key === activeScreenId.value ? item.end <= bandTop : item.start < bandTop;
+};
+
+const listHeight = computed(() => virtualizer.value.getTotalSize());
+const renderedCards = computed(() => {
+    const list = displayScreens.value;
+    const margin = virtualizer.value.options.scrollMargin;
+    return virtualizer.value
+        .getVirtualItems()
+        .flatMap(item => (list[item.index] ? [{ screen: list[item.index], index: item.index, y: item.start - margin }] : []));
+});
+
+function bindCard(el: HTMLElement | null, screenId: string) {
+    setScreenRef(screenId, el);
+    virtualizer.value.measureElement(el);
+}
+
+// Rough heights for cards not rendered yet; exactness doesn't matter (rendered cards are measured).
+function estimateCard(screen: IScreen) {
+    const base = 58; // border, padding, name row
+    if (isCollapsed(screen)) return isUnchanged(screen) ? base : base + 53; // + comment summary row
+    const pane = Math.max(200, window.innerHeight - stickyTop.value - decisionBarHeight.value - 196); // --pane-max-h
+    return base + 29 + (isUnchanged(screen) ? 0 : 22) + pane + (canReview(screen) ? 65 : 0);
+}
+
+// ── Images ──
+const images = useScreenImages(() => appId);
+const buildIdOf = (s: NonNullable<IScreen['currentBuildScreen']>) => s.matchedBuildId ?? s.buildId;
+const currentSrc = (s: IScreen) => (s.currentBuildScreen ? images.get('image', buildIdOf(s.currentBuildScreen), s.screenId) : undefined);
+const referenceSrc = (s: IScreen) => (s.referenceBuildScreen ? images.get('image', buildIdOf(s.referenceBuildScreen), s.screenId) : undefined);
+const diffSrc = (s: IScreen) => (s.currentBuildScreen ? images.get('diff', buildIdOf(s.currentBuildScreen), s.screenId) : undefined);
+
+// Rendered, expanded cards' images, least urgent first (the queue serves newest first): every diff (prefetched for
+// the D flash), then per card reference + new screenshot ordered overscan, on screen bottom-up, active card.
+const wantedImages = computed(() => {
+    const wanted = new Map<string, [ScreenImageKind, string, string]>();
+    const add = (kind: ScreenImageKind, buildId: string, screenId: string) => wanted.set(`${kind}:${buildId}:${screenId}`, [kind, buildId, screenId]);
+    // renderedCards first: reading it is what brings the virtualizer's range up to date.
+    const rendered = renderedCards.value;
+    const { startIndex = 0, endIndex = -1 } = virtualizer.value.range ?? {};
+    const rank = (c: { screen: IScreen; index: number }) =>
+        c.screen.screenId === activeScreenId.value ? 2 : c.index >= startIndex && c.index <= endIndex ? 1 : 0;
+    const cards = rendered.filter(c => !isCollapsed(c.screen)).sort((a, b) => rank(a) - rank(b) || b.index - a.index);
+    for (const { screen } of cards) if (hasDiff(screen)) add('diff', buildIdOf(screen.currentBuildScreen!), screen.screenId);
+    for (const { screen } of cards) {
+        if (screen.referenceBuildScreen && !isUnchanged(screen)) add('image', buildIdOf(screen.referenceBuildScreen), screen.screenId);
+        if (screen.currentBuildScreen) add('image', buildIdOf(screen.currentBuildScreen), screen.screenId);
+    }
+    return wanted;
+});
+watch(
+    wantedImages,
+    (wanted, previous) => {
+        // The lightbox shares this cache and queues its own requests; don't drop anything while it's open.
+        if (previous && lightboxIndex.value === null) for (const [key, args] of previous) if (!wanted.has(key)) images.release(...args);
+        for (const args of wanted.values()) images.request(...args); // re-requesting reorders the queue to this priority
+    },
+    { immediate: true }
+);
+
 // ── Locked panning ──
 // Each comparison has two scroll panes (reference, new). Scrolling either moves the other to the same
 // offset in both axes. A programmatic scroll fires its own scroll event; we remember the (clamped)
 // offset we set so that echo is ignored instead of bouncing back to the pane the user is moving.
 const pendingSync = new WeakMap<HTMLElement, { top: number; left: number }>();
 
-function onPaneScroll(e: Event) {
+function onPaneScroll(e: Event, screen: IScreen) {
     const source = e.currentTarget as HTMLElement;
     const expected = pendingSync.get(source);
     if (expected) {
         pendingSync.delete(source);
         if (Math.abs(source.scrollTop - expected.top) < 1 && Math.abs(source.scrollLeft - expected.left) < 1) return;
     }
+    paneOffsets.set(screen.screenId, { top: source.scrollTop, left: source.scrollLeft });
 
     source
         .closest('.panes')
@@ -705,7 +812,7 @@ function onPaneScroll(e: Event) {
         });
 }
 
-function syncPane(pane: HTMLElement, source: HTMLElement) {
+function syncPane(pane: HTMLElement, source: { scrollTop: number; scrollLeft: number }) {
     const top = Math.min(source.scrollTop, Math.max(0, pane.scrollHeight - pane.clientHeight));
     const left = Math.min(source.scrollLeft, Math.max(0, pane.scrollWidth - pane.clientWidth));
     if (Math.abs(pane.scrollTop - top) < 1 && Math.abs(pane.scrollLeft - left) < 1) return;
@@ -723,12 +830,24 @@ function syncPaneFromSibling(pane: HTMLElement | null) {
         });
 }
 
+// Cards are rendered only while near the viewport, so what a re-rendered card needs is remembered here.
+const paneOffsets = new Map<string, { top: number; left: number }>();
+// From the sizes recorded on load, so a re-rendered card sizes % zooms before its image loads again.
+const naturalWidthStyle = (src: string | false | undefined) => {
+    const w = sizeOf(src)?.width;
+    return w ? { '--natural-width': `${w}px` } : undefined;
+};
+
 // Record the screenshot's intrinsic width (the percentage zooms scale it) and re-sync its pane.
-function onImageLoad(e: Event) {
+function onImageLoad(e: Event, screen: IScreen) {
     const img = e.target as HTMLImageElement;
-    img.style.setProperty('--natural-width', `${img.naturalWidth}px`);
+    img.style.setProperty('--natural-width', `${img.naturalWidth}px`); // now, so the scroll range read below is right
     imageSizes.set(img.currentSrc || img.src, { width: img.naturalWidth, height: img.naturalHeight });
-    syncPaneFromSibling(img.closest<HTMLElement>('.image-wrapper'));
+    const pane = img.closest<HTMLElement>('.image-wrapper');
+    const saved = paneOffsets.get(screen.screenId);
+    // A card scrolled back into view (or re-expanded) returns to where the reader panned it; each pane restores itself.
+    if (pane && saved && !pane.scrollTop && !pane.scrollLeft) syncPane(pane, { scrollTop: saved.top, scrollLeft: saved.left });
+    else syncPaneFromSibling(pane);
 }
 
 // ── Screen refs, active screen, navigation ──
@@ -768,15 +887,19 @@ function isScreenVisible(screen: IScreen, fully = false) {
     return visibleHeight(screen) >= Math.min(rect.height, Math.max(0, bottom - top)) / 2;
 }
 
-function activateScreen(screen: IScreen, scroll = true) {
-    activeScreenId.value = screen.screenId;
-    const el = screenRefs.get(screen.screenId);
-    if (!el) return;
-    el.focus({ preventScroll: true });
-    // Cards already fully in view stay put; anything else is brought to the top (below the sticky header).
-    if (scroll && !isScreenVisible(screen, true)) {
-        el.scrollIntoView({ behavior: prefersReducedMotion.matches ? 'auto' : 'smooth', block: 'start' });
+function revealScreen(screen: IScreen, scroll: 'always' | 'if-needed' | 'never') {
+    activeScreenId.value = screen.screenId; // pins it: rendered next tick even when far away
+    const index = displayScreens.value.indexOf(screen);
+    if (index >= 0 && (scroll === 'always' || (scroll === 'if-needed' && !isScreenVisible(screen, true)))) {
+        const v = virtualizer.value;
+        const target = v.getOffsetForIndex(index, 'start')?.[0] ?? window.scrollY;
+        // A long smooth scroll would race past hundreds of unmeasured cards; jump instead.
+        const smooth = !prefersReducedMotion.matches && Math.abs(target - window.scrollY) <= 2 * window.innerHeight;
+        v.scrollToIndex(index, { align: 'start', behavior: smooth ? 'smooth' : 'auto' });
     }
+    void nextTick(() => {
+        if (activeScreenId.value === screen.screenId) screenRefs.get(screen.screenId)?.focus({ preventScroll: true });
+    });
 }
 
 function moveActive(step: 1 | -1) {
@@ -785,7 +908,7 @@ function moveActive(step: 1 | -1) {
 
     const idx = list.findIndex(s => s.screenId === activeScreenId.value);
     const next = idx < 0 ? (step > 0 ? 0 : list.length - 1) : Math.min(list.length - 1, Math.max(0, idx + step));
-    activateScreen(list[next]);
+    revealScreen(list[next], 'if-needed');
 }
 
 // After a screen collapses on review, bring the next undecided screen's header to the top of the viewport,
@@ -804,15 +927,47 @@ async function scrollToNextScreen(current: IScreen, activeAtStart: string | unde
     const next = list.slice(idx + 1).find(isUndecided) ?? list.slice(0, idx).find(isUndecided);
     if (!next) {
         // Nothing left to decide: keep focus on this card rather than losing it with the removed review bar.
-        activateScreen(current, false);
+        revealScreen(current, 'never');
         return;
     }
 
-    activeScreenId.value = next.screenId;
-    const el = screenRefs.get(next.screenId);
-    el?.focus({ preventScroll: true });
-    el?.scrollIntoView({ behavior: prefersReducedMotion.matches ? 'auto' : 'smooth', block: 'start' });
+    remeasureRenderedCards();
+    revealScreen(next, 'always');
 }
+
+// The reviewed card just collapsed; record its height now so the target is worked out from it
+// (the ResizeObserver reports only after the next layout).
+function remeasureRenderedCards() {
+    const v = virtualizer.value;
+    for (const el of screenRefs.values()) if (el.isConnected) v.resizeItem(Number(el.dataset.index), el.getBoundingClientRect().height);
+}
+
+// Switching filters adds or removes cards above the reader. Keep the card they were reading (the active one if it
+// shows, else the one at the top of the band) where it was; if the new list drops it, the next card that remains.
+// Sync, so the anchor is read from the old list before the virtualizer takes the new one.
+watch(
+    filter,
+    (_, previousFilter) => {
+        const v = virtualizer.value;
+        const before = screensFor(previousFilter);
+        const active = before.find(s => s.screenId === activeScreenId.value);
+        const anchorItem =
+            active && isScreenVisible(active)
+                ? v.measurementsCache[before.indexOf(active)]
+                : v.getVirtualItemForOffset(window.scrollY + stickyTop.value);
+        if (!anchorItem) return;
+        const delta = anchorItem.start - window.scrollY;
+        const candidates = before.slice(anchorItem.index).map(s => s.screenId);
+
+        void nextTick(() => {
+            const indexById = new Map(displayScreens.value.map((s, i) => [s.screenId, i]));
+            const index = candidates.map(id => indexById.get(id)).find(i => i !== undefined) ?? -1;
+            const start = virtualizer.value.measurementsCache[index]?.start;
+            if (start !== undefined) window.scrollTo({ top: Math.max(0, start - delta), behavior: 'instant' });
+        });
+    },
+    { flush: 'sync' }
+);
 
 // If the filter hides the active screen, drop it so J/K start from the top of the new list.
 watch(filter, () => {
@@ -888,7 +1043,7 @@ function reviewActive(reviewStatus: 'approved' | 'rejected') {
                 (best, s) => (visibleHeight(s) > (best ? visibleHeight(best) : 0) ? s : best),
                 undefined
             );
-        if (topmost) activateScreen(topmost, false);
+        if (topmost) revealScreen(topmost, 'never');
         return;
     }
     submitReview(screen, reviewStatus);
@@ -939,16 +1094,7 @@ onMounted(() => {
     load();
 });
 
-// Screenshots load as blobs; their object URLs live until revoked.
-const objectUrls = new Set<string>();
 let disposed = false;
-
-function createObjectUrl(blob: Blob) {
-    if (disposed) return false;
-    const url = URL.createObjectURL(blob);
-    objectUrls.add(url);
-    return url;
-}
 
 onBeforeUnmount(() => {
     disposed = true;
@@ -956,8 +1102,6 @@ onBeforeUnmount(() => {
     window.removeEventListener('keyup', onKeyup);
     window.removeEventListener('blur', releaseDiffFlash);
     resizeObserver.disconnect();
-    objectUrls.forEach(url => URL.revokeObjectURL(url));
-    objectUrls.clear();
 });
 
 async function load() {
@@ -988,7 +1132,6 @@ async function load() {
 
         filter.value = loadedScreens.some(needsReview) ? 'review' : 'all';
         document.title = [app.value?.name, build.value.branchName, shortHash.value, 'PixelCI'].filter(Boolean).join(' · ');
-        loadImages();
     } catch (err) {
         handleError(err);
         accessDenied.value = accessDeniedMessage(err);
@@ -996,63 +1139,6 @@ async function load() {
         document.title = 'Build unavailable · PixelCI';
     } finally {
         isLoading.value = false;
-    }
-}
-
-async function loadImages() {
-    if (!screens.value) return;
-
-    for (const screen of screens.value) {
-        if (screen.currentBuildScreen) {
-            getScreenImage(screen.currentBuildScreen).then(imageSrc => {
-                screen.currentBuildScreen!.imageSrc = imageSrc;
-            });
-        }
-
-        // Unchanged screens only ever show the new screenshot.
-        if (screen.referenceBuildScreen && !isUnchanged(screen)) {
-            getScreenImage(screen.referenceBuildScreen).then(imageSrc => {
-                screen.referenceBuildScreen!.imageSrc = imageSrc;
-            });
-        }
-
-        getScreenDiff(screen).then(diffImageSrc => {
-            screen.diffImageSrc = diffImageSrc;
-        });
-    }
-}
-
-async function getScreenImage(screen: NonNullable<IScreen['currentBuildScreen']>) {
-    try {
-        const response = await BuildScreensApi.getBuildScreensGetScreenImage({
-            path: {
-                appId,
-                id: screen.matchedBuildId ?? screen.buildId,
-                screenId: screen.screenId
-            }
-        });
-        return createObjectUrl(response.data as Blob);
-    } catch (err) {
-        handleError(err);
-        return false;
-    }
-}
-
-async function getScreenDiff(screen: IBuildScreenResponse) {
-    if (!screen.currentBuildScreen || !screen.referenceBuildScreen || screen.currentBuildScreen.status === 'no changes') return false;
-
-    try {
-        const response = await BuildScreensApi.getBuildScreensGetScreenDiff({
-            path: {
-                appId,
-                id: screen.currentBuildScreen.matchedBuildId ?? screen.currentBuildScreen.buildId,
-                screenId: screen.screenId
-            }
-        });
-        return createObjectUrl(response.data as Blob);
-    } catch (err) {
-        handleError(err);
-        return false;
     }
 }
 
@@ -1227,13 +1313,16 @@ async function submitBuild() {
     }
 
     // ── Cards ──
+    // Cards are positioned by the virtualizer (translateY), so the list is a sized box rather than a flow.
     .screen-list {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
+        position: relative;
+        overflow-anchor: none;
     }
     .screen {
-        position: relative;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
         display: flex;
         flex-direction: column;
         gap: 14px;
