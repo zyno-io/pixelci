@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.7.0
 
 - Masks: draw rectangles over the parts of a screen that change on every run (a clock, an ad, a live chart) and PixelCI
   ignores them. The pixels under a mask never make a screen differ, and they are left out of the percentage, so **Changed
