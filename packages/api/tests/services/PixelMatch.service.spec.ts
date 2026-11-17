@@ -252,4 +252,127 @@ describe('PixelMatchService', () => {
             assert.equal(recoloured.diffPixels, 16);
         });
     });
+
+    describe('masks', () => {
+        const mask = (x: number, y: number, width: number, height: number, n = 1) => ({
+            id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+            x,
+            y,
+            width,
+            height,
+            label: null
+        });
+        const white = createPng(10, 10, [255, 255, 255, 255]);
+
+        it('should report no changed pixels for a change inside a mask', async () => {
+            const service = new PixelMatchService(createMockLogger());
+            const changed = createPngWithRect(10, 10, 2, 2, 3, 3);
+            const result = await service.getDiff(white, changed, 0.2, 0, [mask(1, 1, 5, 5)]);
+            assert.equal(result.diffPixels, 0);
+            assert.equal(result.diffPct, 0);
+            assert.equal(result.maskedPixels, 25);
+            assert.equal((await service.getDiff(white, changed, 0.2, 0)).diffPixels, 9);
+        });
+
+        it('should exclude masked pixels from the percentage', async () => {
+            const service = new PixelMatchService(createMockLogger());
+            const changed = createPngWithRect(10, 10, 0, 5, 5, 2); // 10 changed pixels in rows 5-6
+            const result = await service.getDiff(white, changed, 0.2, 0, [mask(0, 0, 10, 5)]);
+            assert.equal(result.totalPixels, 100);
+            assert.equal(result.maskedPixels, 50);
+            assert.equal(result.diffPixels, 10);
+            assert.equal(result.diffPct, 20);
+        });
+
+        it('should count overlapping masks once and clip them to the canvas', async () => {
+            const service = new PixelMatchService(createMockLogger());
+            const result = await service.getDiff(white, white, 0.2, 0, [
+                mask(0, 0, 4, 4, 1),
+                mask(2, 2, 4, 4, 2),
+                mask(8, 8, 50, 50, 3),
+                mask(20, 20, 5, 5, 4)
+            ]);
+            assert.equal(result.maskedPixels, 16 + 16 - 4 + 4);
+        });
+
+        it('should report 0% when the whole screen is masked', async () => {
+            const service = new PixelMatchService(createMockLogger());
+            const result = await service.getDiff(white, createPngWithRect(10, 10, 0, 0, 10, 10), 0.2, 1, [mask(0, 0, 10, 10)]);
+            assert.equal(result.diffPixels, 0);
+            assert.equal(result.diffPct, 0);
+            assert.equal(result.maskedPixels, 100);
+        });
+
+        it('should not let masked neighbours excuse an unmasked pixel', async () => {
+            const service = new PixelMatchService(createMockLogger());
+            const a = createPngWithRect(10, 10, 5, 5, 1, 1);
+            const b = createPngWithRect(10, 10, 6, 5, 1, 1);
+            const unmasked = await service.getDiff(a, b, 0.2, 1);
+            assert.equal(unmasked.diffPixels, 0);
+            assert.equal(unmasked.shiftTolerantPixels, 2);
+
+            const masked = await service.getDiff(a, b, 0.2, 1, [mask(6, 5, 1, 1)]);
+            assert.equal(masked.diffPixels, 1);
+        });
+
+        it('should let a mask cover the padding when image sizes differ', async () => {
+            const service = new PixelMatchService(createMockLogger());
+            const taller = createPng(10, 12, [255, 255, 255, 255]);
+            assert.equal((await service.getDiff(white, taller)).diffPixels, 20);
+            const result = await service.getDiff(white, taller, 0.2, 0, [mask(0, 10, 10, 2)]);
+            assert.equal(result.diffPixels, 0);
+            assert.equal(result.maskedPixels, 20);
+        });
+
+        it('should draw the hatch only on masked pixels', async () => {
+            const service = new PixelMatchService(createMockLogger());
+            const result = await service.getDiff(white, createPngWithRect(10, 10, 6, 6, 2, 2), 0.2, 0, [mask(1, 1, 3, 3)]);
+            const parsed = PNG.sync.read(Buffer.from(await result.getDiffPng()));
+            const at = (x: number, y: number) => [...parsed.data.subarray((10 * y + x) << 2, ((10 * y + x) << 2) + 4)];
+            const isHatch = (px: number[]) => px[0] === px[1] && px[1] === px[2] && px[3] === 255 && (px[0] === 168 || px[0] === 214);
+            for (let y = 0; y < 10; y++) {
+                for (let x = 0; x < 10; x++) {
+                    const masked = x >= 1 && x < 4 && y >= 1 && y < 4;
+                    assert.equal(isHatch(at(x, y)), masked, `pixel ${x},${y}`);
+                }
+            }
+            assert.deepEqual(at(6, 6), [255, 0, 0, 255]); // a counted change keeps its colour
+        });
+
+        it('should be invariant to content under a mask, at every shift radius', async () => {
+            const service = new PixelMatchService(createMockLogger());
+            const size = 40;
+            let seed = 12345;
+            const rand = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32) * 256;
+
+            // content that shifts next to the mask, plus a change that doesn't; the mask covers x 20..27, y 8..31
+            const build = (shiftX: number, noise: boolean) => {
+                const png = PNG.sync.read(createPng(size, size, [255, 255, 255, 255]));
+                for (let y = 10; y < 18; y++) for (let x = 12 + shiftX; x < 20 + shiftX; x++) png.data.set([0, 0, 0, 255], (size * y + x) << 2);
+                for (let y = 30; y < 34; y++) for (let x = 2; x < 6; x++) png.data.set([200, 30, 30, 255], (size * y + x) << 2);
+                if (noise) {
+                    for (let y = 8; y < 32; y++) {
+                        for (let x = 20; x < 28; x++) png.data.set([rand(), rand(), rand(), 255], (size * y + x) << 2);
+                    }
+                }
+                return PNG.sync.write(png);
+            };
+            const masks = [mask(20, 8, 8, 24)];
+
+            for (let radius = 1; radius <= 5; radius++) {
+                const results = [];
+                for (let trial = 0; trial < 3; trial++) {
+                    const r = await service.getDiff(build(0, trial > 0), build(radius, trial > 0), 0.2, radius, masks);
+                    results.push({ diffPixels: r.diffPixels, diffPct: r.diffPct, shiftTolerantPixels: r.shiftTolerantPixels });
+                }
+                assert.deepEqual(results[1], results[0], `radius ${radius}`);
+                assert.deepEqual(results[2], results[0], `radius ${radius}`);
+
+                // ...and the two sides may differ under the mask without changing the result
+                const left = await service.getDiff(build(0, true), build(radius, false), 0.2, radius, masks);
+                assert.equal(left.diffPixels, results[0].diffPixels, `radius ${radius}`);
+                assert.equal(left.diffPct, results[0].diffPct, `radius ${radius}`);
+            }
+        });
+    });
 });

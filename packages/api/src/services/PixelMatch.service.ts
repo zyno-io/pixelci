@@ -2,6 +2,7 @@ import { ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { memoize } from 'lodash';
 
 import { decodeRgba, encodePng, IRgbaImage } from './Image';
+import { IMaskRect, MASK_FILL, rasterizeMasks } from './Mask';
 
 const loadPixelMatch = memoize(async () => {
     return (await import('pixelmatch')).default;
@@ -13,6 +14,8 @@ export interface IPixelMatchDiffResult {
     diffPct: number;
     /** pixels that differed in place but were explained by a small positional shift (not counted in diffPixels) */
     shiftTolerantPixels: number;
+    /** pixels under a mask: excluded from the comparison and from the denominator of diffPct */
+    maskedPixels: number;
     getDiffPng: () => Promise<Buffer>;
 }
 
@@ -92,7 +95,8 @@ function hasNearbyMatch(
     width: number,
     height: number,
     radius: number,
-    maxDelta: number
+    maxDelta: number,
+    mask: Uint8Array | null
 ) {
     const i = y * width + x;
     const rgba = src32[i];
@@ -120,6 +124,7 @@ function hasNearbyMatch(
         for (let nx = xMin; nx <= xMax; nx++) {
             const j = ny * width + nx;
             if (j === i) continue;
+            if (mask && mask[j]) continue; // masked content can't excuse an unmasked pixel
             if (other32[j] === rgba) return true;
             if (!opaque || other[j * 4 + 3] !== 255) continue;
 
@@ -162,7 +167,8 @@ async function applyShiftTolerance(
     width: number,
     height: number,
     radius: number,
-    threshold: number
+    threshold: number,
+    mask: Uint8Array | null
 ) {
     const len = width * height;
     const a32 = new Uint32Array(img1.buffer, img1.byteOffset, len);
@@ -177,8 +183,8 @@ async function applyShiftTolerance(
             if (diff[idx] !== 255 || diff[idx + 1] !== 0 || diff[idx + 2] !== 0) continue;
 
             if (
-                hasNearbyMatch(img1, a32, img2, b32, x, y, width, height, radius, threshold) &&
-                hasNearbyMatch(img2, b32, img1, a32, x, y, width, height, radius, threshold)
+                hasNearbyMatch(img1, a32, img2, b32, x, y, width, height, radius, threshold, mask) &&
+                hasNearbyMatch(img2, b32, img1, a32, x, y, width, height, radius, threshold, mask)
             ) {
                 diff[idx + 1] = 255;
                 forgiven++;
@@ -210,7 +216,13 @@ export class PixelMatchService {
         return run;
     }
 
-    async getDiff(img1Buf: Buffer, img2Buf: Buffer, pixelMatchThreshold = 0.2, shiftTolerance = 0): Promise<IPixelMatchDiffResult> {
+    async getDiff(
+        img1Buf: Buffer,
+        img2Buf: Buffer,
+        pixelMatchThreshold = 0.2,
+        shiftTolerance = 0,
+        masks: readonly IMaskRect[] = []
+    ): Promise<IPixelMatchDiffResult> {
         const pixelmatch = await loadPixelMatch();
 
         const diffStart = performance.now();
@@ -225,6 +237,24 @@ export class PixelMatchService {
         const norm1 = sizesDiffer ? normalizeToCanvas(img1, width, height) : img1;
         const norm2 = sizesDiffer ? normalizeToCanvas(img2, width, height) : img2;
 
+        // Masked pixels are painted identically into both images, so pixelmatch (and its anti-aliasing checks next to a
+        // mask edge) sees no difference there, and nothing under a mask can influence a result.
+        const raster = rasterizeMasks(masks, width, height);
+        const mask = raster?.bitmap ?? null;
+        const maskedPixels = raster?.maskedPixels ?? 0;
+        if (mask) {
+            for (let i = 0; i < mask.length; i++) {
+                if (!mask[i]) continue;
+                const o = i << 2;
+                for (const data of [norm1.data, norm2.data]) {
+                    data[o] = MASK_FILL[0];
+                    data[o + 1] = MASK_FILL[1];
+                    data[o + 2] = MASK_FILL[2];
+                    data[o + 3] = MASK_FILL[3];
+                }
+            }
+        }
+
         const diffTarget: IRgbaImage = { width, height, data: Buffer.alloc(width * height * 4) };
         const rawDiffPixels = pixelmatch(norm1.data, norm2.data, diffTarget.data, width, height, {
             threshold: pixelMatchThreshold,
@@ -238,23 +268,40 @@ export class PixelMatchService {
         }
         const shiftTolerantPixels =
             shiftRadius > 0 && rawDiffPixels > 0 && shiftChecks <= MAX_SHIFT_CHECKS
-                ? await applyShiftTolerance(norm1.data, norm2.data, diffTarget.data, width, height, shiftRadius, pixelMatchThreshold)
+                ? await applyShiftTolerance(norm1.data, norm2.data, diffTarget.data, width, height, shiftRadius, pixelMatchThreshold, mask)
                 : 0;
         const diffPixels = rawDiffPixels - shiftTolerantPixels;
 
         const totalPixels = width * height;
-        const diffPct = (diffPixels / totalPixels) * 100;
+        const comparedPixels = totalPixels - maskedPixels;
+        const diffPct = comparedPixels > 0 ? (diffPixels / comparedPixels) * 100 : 0;
+
+        // a neutral hatch marks masked pixels in the diff image; red, yellow and magenta keep their meanings
+        if (mask) {
+            for (let y = 0, i = 0; y < height; y++) {
+                for (let x = 0; x < width; x++, i++) {
+                    if (!mask[i]) continue;
+                    const v = (x + y) % 8 < 4 ? 168 : 214;
+                    const o = i << 2;
+                    diffTarget.data[o] = v;
+                    diffTarget.data[o + 1] = v;
+                    diffTarget.data[o + 2] = v;
+                    diffTarget.data[o + 3] = 255;
+                }
+            }
+        }
 
         const diffEnd = performance.now();
         const diffTime = diffEnd - diffStart;
 
-        this.logger.info('Diff completed', { sizesDiffer, diffTime, totalPixels, diffPixels, diffPct, shiftTolerantPixels });
+        this.logger.info('Diff completed', { sizesDiffer, diffTime, totalPixels, diffPixels, diffPct, shiftTolerantPixels, maskedPixels });
 
         return {
             totalPixels,
             diffPixels,
             diffPct,
             shiftTolerantPixels,
+            maskedPixels,
             getDiffPng: () => encodePng(diffTarget)
         };
     }
