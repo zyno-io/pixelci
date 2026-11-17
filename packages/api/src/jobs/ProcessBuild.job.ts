@@ -1,5 +1,6 @@
 import { ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { AnyResponse, BaseJob, WorkerJob } from '@zyno-io/ts-server-foundation';
+import { createHash } from 'crypto';
 import { keyBy } from 'lodash';
 
 import { AppConfig } from '../config';
@@ -11,6 +12,7 @@ import { ScreenEntity } from '../entities/Screen.entity';
 import { claimBuildLease, Lease, LeaseLostError } from '../services/BuildProcessingLease';
 import { IMaskRect, normalizeMasks, resolveMasks } from '../services/Mask';
 import { PixelMatchService } from '../services/PixelMatch.service';
+import { IBaseline, loadBaselines, resolveReference } from '../services/Reference';
 import { computeRemovals } from '../services/RemovedScreens';
 import { S3Service } from '../services/S3.service';
 import { ThumbnailService } from '../services/Thumbnail.service';
@@ -18,6 +20,14 @@ import { ITolerances, resolveTolerances } from '../services/Tolerance';
 
 /** Everything that decides whether two images of a screen match: tolerances, plus the masks in effect. */
 type IComparison = ITolerances & { masks: IMaskRect[] };
+
+/** Called with the downloaded bytes of each side of a comparison (to hash images that have no stored hash yet). */
+interface IImageHooks {
+    onLeft?: (data: Buffer) => void;
+    onRight?: (data: Buffer) => void;
+}
+
+const sha256 = (data: Buffer) => createHash('sha256').update(data).digest('hex');
 
 interface IProcessBuildJobData {
     buildId: string;
@@ -149,21 +159,18 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             'screenId'
         );
 
-        const referenceBuild = app.defaultBranchId
-            ? await BuildEntity.query()
-                  .filter({ appId, branchId: app.defaultBranchId, status: 'changes approved', id: { $lt: currentBuild.id } })
-                  .orderBy('id', 'desc')
-                  .findOneOrUndefined()
-            : undefined;
-        const referenceBuildScreens = referenceBuild
-            ? await BuildScreenEntity.query().filter({ appId, buildId: referenceBuild.id, isRemoved: false }).find()
-            : [];
-        const referenceBuildScreensById = keyBy(referenceBuildScreens, 'screenId');
+        // the merge-base (or latest accepted) default-branch build, and per screen the image it holds
+        const reference = await resolveReference(app, currentBuild);
+        const referenceBuild = reference.build;
+        const baselines = referenceBuild ? await loadBaselines(appId, referenceBuild.id) : new Map<string, IBaseline>();
+        const referenceBuildScreens = [...baselines.values()].map(b => b.refRow);
+        // lazily computed hashes of pre-0.8 baseline uploads, written with the result (source row id -> sha256)
+        const hashPatches = new Map<string, string>();
 
         if (previousBuild) logger.info('Found previous build', { id: previousBuild.id });
         else logger.info('No previous build found for branch');
 
-        if (referenceBuild) logger.info('Found reference build', { id: referenceBuild.id });
+        if (referenceBuild) logger.info('Found reference build', { id: referenceBuild.id, source: reference.source });
         else logger.info('No reference build found');
 
         const screens = currentBuildScreens
@@ -172,11 +179,13 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                 screenId: currentBuildScreen.screenId,
                 currentBuildScreen,
                 previousBuildScreen: previousBuildScreensById[currentBuildScreen.screenId] as BuildScreenEntity | undefined,
-                referenceBuildScreen: referenceBuildScreensById[currentBuildScreen.screenId] as BuildScreenEntity | undefined
+                referenceBuildScreen: baselines.get(currentBuildScreen.screenId)?.refRow,
+                baseline: baselines.get(currentBuildScreen.screenId)
             }));
 
         screenLoop: for (const screen of screens) {
             if (lease.lost) throw new LeaseLostError();
+            screen.currentBuildScreen.baseImageBuildId = screen.baseline?.sourceBuildId ?? null;
             // if the previous screen has approved changes, compare the current screen with the already approved changes.
             // if the current build's screen matches, then it's automatically approved too.
             if (screen.previousBuildScreen?.status === 'changes approved') {
@@ -204,24 +213,32 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             }
 
             // if we have a reference build screen, compare the current screen with the reference build screen
-            if (screen.referenceBuildScreen) {
+            if (screen.referenceBuildScreen && screen.baseline) {
+                const baseline = screen.baseline;
+                // byte-identical to the baseline: nothing to download or compare
+                const identical = !!screen.currentBuildScreen.contentHash && screen.currentBuildScreen.contentHash === baseline.hash;
+
                 // the only comparison that stores a diff (against the reference build's screen); every other comparison in this
                 // flow is speculative (screensMatch). Screens resolved via matchedBuildId still show the matched build's diff.
-                const isMatch = await this.performDiff(
-                    appId,
-                    // the image source: a reference row that matched another build keeps no upload of its own (it can be cleaned up)
-                    screen.referenceBuildScreen.matchedBuildId ?? screen.referenceBuildScreen.buildId,
-                    currentBuild.id,
-                    screen.screenId,
-                    comparisonFor(screen.screenId)
-                );
+                // The left side is the baseline's image source: a reference row that matched another build keeps no upload of its own.
+                const isMatch =
+                    identical ||
+                    (await this.performDiff(appId, baseline.sourceBuildId, currentBuild.id, screen.screenId, comparisonFor(screen.screenId), {
+                        // pre-0.8 uploads have no hash yet: fill them in from the bytes we are downloading anyway
+                        onLeft: data => {
+                            if (!baseline.hash) hashPatches.set(baseline.sourceRowId, sha256(data));
+                        },
+                        onRight: data => {
+                            if (!screen.currentBuildScreen.contentHash) screen.currentBuildScreen.contentHash = sha256(data);
+                        }
+                    }));
 
                 if (isMatch) {
                     logger.info('Current build screen matches reference', {
                         screenId: screen.screenId,
                         status: screen.currentBuildScreen.status
                     });
-                    screen.currentBuildScreen.matchedBuildId = screen.referenceBuildScreen.matchedBuildId ?? screen.referenceBuildScreen.buildId;
+                    screen.currentBuildScreen.matchedBuildId = baseline.sourceBuildId;
                     screen.currentBuildScreen.status = 'no changes';
                     continue;
                 }
@@ -378,6 +395,8 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             // Write the result through the locked row only, and only while this attempt still owns the build.
             const locked = await lease.assertHeld(txn);
             locked.status = currentBuild.status;
+            locked.referenceBuildId = referenceBuild?.id ?? null;
+            locked.referenceSource = reference.source;
             locked.processingAttemptId = null;
             locked.processingHeartbeatAt = null;
             txn.add(locked);
@@ -393,21 +412,40 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                 .patchMany({
                     storageStatus: 'pendingDeletion'
                 });
+            for (const [rowId, hash] of hashPatches) {
+                await txn.query(BuildScreenEntity).filter({ id: rowId, contentHash: null }).patchMany({ contentHash: hash });
+            }
         });
 
         return currentBuildScreens.filter(bs => !bs.matchedBuildId);
     }
 
-    private async loadAndDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, comparison: IComparison) {
+    private async loadAndDiff(
+        appId: string,
+        leftBuildId: string,
+        rightBuildId: string,
+        screenId: string,
+        comparison: IComparison,
+        hooks?: IImageHooks
+    ) {
         const leftScreenData = await this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, leftBuildId, screenId));
+        hooks?.onLeft?.(leftScreenData);
         const rightScreenData = await this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, rightBuildId, screenId));
+        hooks?.onRight?.(rightScreenData);
         return this.pixelMatch.getDiff(leftScreenData, rightScreenData, comparison.colorTolerance, comparison.shiftTolerance, comparison.masks);
     }
 
-    private async performDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, comparison: IComparison) {
+    private async performDiff(
+        appId: string,
+        leftBuildId: string,
+        rightBuildId: string,
+        screenId: string,
+        comparison: IComparison,
+        hooks?: IImageHooks
+    ) {
         this.logger.info('Performing diff', { leftBuildId, rightBuildId, screenId });
 
-        const { getDiffPng, diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId, comparison);
+        const { getDiffPng, diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId, comparison, hooks);
 
         if (diffPct > comparison.diffPctTolerance) {
             this.logger.info('Diff exceeds threshold. Storing diff.', { diffPct, diffThreshold: comparison.diffPctTolerance });

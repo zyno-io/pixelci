@@ -1,6 +1,7 @@
 import { assert, type ReceiveType } from '@zyno-io/ts-reflection';
 import { HttpRequest, RequestBuilder } from '@zyno-io/ts-server-foundation';
 import { createPersistedEntity, JWT, sleepSecs, TestingFacade, TestingHelpers, uuid7 } from '@zyno-io/ts-server-foundation';
+import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 
@@ -201,15 +202,134 @@ async function run() {
 
     for (const [index, scenario] of Object.entries(TestScenarios)) {
         console.log(`\nRunning scenario ${Number(index) + 1} of ${TestScenarios.length}...`);
-        await runScenario(facade, index, scenario);
+        await runScenario(facade, String(Number(index) + 1), scenario);
         console.log(`Scenario ${Number(index) + 1} completed.`);
     }
 
     await testCleanupRegression(facade);
+    await testBaseSelection(facade);
     await testApprovalRights(facade);
     await testMalformedIds(facade);
     await testBuildsPagination(facade);
     await testImageRoutesRequireStoredRow(facade);
+}
+
+/** First-parent chain (nearest first) of main after the numbered scenarios: what a branch cut from main's tip reports as its base. */
+const MAIN_CHAIN = [17, 16, 15, 14, 11, 10, 6, 1];
+
+/**
+ * The reference is the accepted default-branch build at the merge base, not the latest one:
+ * a branch cut before main moved on is still compared with where it forked (staleBase), and ancestry beats
+ * recency when the nearest base commits have no build (ancestryOverRecency). Without a base, the latest accepted build is used.
+ */
+async function testBaseSelection(facade: TestingFacade) {
+    console.log('\nTest: references follow the merge base, not the latest main build');
+    const checkReference = async (buildId: string, expectedId: string | null, expectedSource: string, label: string) => {
+        const b = await BuildEntity.query().filter({ id: buildId }).findOne();
+        if (b.referenceBuildId !== expectedId || b.referenceSource !== expectedSource) {
+            throw new Error(`${label}: expected reference ${expectedId} (${expectedSource}), got ${b.referenceBuildId} (${b.referenceSource})`);
+        }
+    };
+
+    // main moves on: m0 adds two screens (A), then m1 changes both (stale-s to B, anc-s to C)
+    const m0 = await runScenario(facade, '2001', {
+        branch: 'main',
+        commit: 'm0',
+        base: MAIN_CHAIN,
+        screens: [
+            { name: 'finder-2', file: 'finder-2-changed.png', expectedStatus: 'no changes' },
+            { name: 'stale-s', file: 'finder-1.png', expectedStatus: 'new' },
+            { name: 'anc-s', file: 'finder-1.png', expectedStatus: 'new' }
+        ],
+        expectedStatus: 'needs review',
+        expectedRemoved: [],
+        shouldApprove: true
+    });
+    const m1 = await runScenario(facade, '2002', {
+        branch: 'main',
+        commit: 'm1',
+        base: ['m0', ...MAIN_CHAIN],
+        screens: [
+            { name: 'finder-2', file: 'finder-2-changed.png', expectedStatus: 'no changes' },
+            { name: 'stale-s', file: 'finder-1-changed.png', expectedStatus: 'needs review' },
+            { name: 'anc-s', file: 'finder-1-changed-2.png', expectedStatus: 'needs review' }
+        ],
+        expectedStatus: 'needs review',
+        expectedRemoved: [],
+        shouldApprove: true
+    });
+
+    // staleBase: a branch cut from m0 is compared with m0, even though main has moved on to m1
+    const x1 = await runScenario(facade, '2003', {
+        branch: 'stale-x',
+        commit: 'x1',
+        base: ['m0', ...MAIN_CHAIN],
+        screens: [
+            { name: 'finder-2', file: 'finder-2-changed.png', expectedStatus: 'no changes' },
+            { name: 'stale-s', file: 'finder-1.png', expectedStatus: 'no changes' },
+            { name: 'anc-s', file: 'finder-1.png', expectedStatus: 'no changes' }
+        ],
+        expectedStatus: 'no changes',
+        expectedRemoved: [],
+        shouldApprove: false
+    });
+    await checkReference(x1, m0, 'ancestor', 'staleBase X1');
+
+    // the same screens from a build that reports no base fall back to the latest main build (m1) and need review
+    const y1 = await runScenario(facade, '2004', {
+        branch: 'stale-y',
+        commit: 'y1',
+        screens: [
+            { name: 'finder-2', file: 'finder-2-changed.png', expectedStatus: 'no changes' },
+            { name: 'stale-s', file: 'finder-1.png', expectedStatus: 'needs review' },
+            { name: 'anc-s', file: 'finder-1-changed-2.png', expectedStatus: 'no changes' }
+        ],
+        expectedStatus: 'needs review',
+        expectedRemoved: [],
+        shouldApprove: false
+    });
+    await checkReference(y1, m1, 'latest', 'staleBase Y1 (no base)');
+
+    // ancestryOverRecency: base commits with no build are skipped; the first one that has an accepted build wins over a later main build
+    const z1 = await runScenario(facade, '2005', {
+        branch: 'anc-z',
+        commit: 'z1',
+        base: ['z0-no-build', 'm0', ...MAIN_CHAIN],
+        screens: [
+            { name: 'finder-2', file: 'finder-2-changed.png', expectedStatus: 'no changes' },
+            { name: 'stale-s', file: 'finder-1.png', expectedStatus: 'no changes' },
+            { name: 'anc-s', file: 'finder-1.png', expectedStatus: 'no changes' }
+        ],
+        expectedStatus: 'no changes',
+        expectedRemoved: [],
+        shouldApprove: false
+    });
+    await checkReference(z1, m0, 'ancestor', 'ancestryOverRecency Z1');
+
+    // the status endpoint reports how the reference was found, once the build is final
+    for (const [buildId, expected] of [
+        [x1, 'ancestor'],
+        [y1, 'latest']
+    ] as const) {
+        const res = await makeRequest<{ status: string; referenceSource?: string }>(
+            facade,
+            HttpRequest.GET(`/api/apps/${APP_ID}/builds/${buildId}/status`).header('authorization', `Bearer ${TEST_CI_TOKEN}`)
+        );
+        if (res.referenceSource !== expected) throw new Error(`status.referenceSource: expected ${expected}, got ${JSON.stringify(res)}`);
+    }
+
+    // uploads carry a content hash that matches the bytes; processed rows record the baseline's image source
+    const rows = await BuildScreenEntity.query().filter({ buildId: x1, isRemoved: false }).find();
+    for (const row of rows) {
+        if (!row.contentHash || !/^[0-9a-f]{64}$/.test(row.contentHash))
+            throw new Error(`Expected a content hash on ${row.id}, got ${row.contentHash}`);
+        if (!row.baseImageBuildId) throw new Error(`Expected baseImageBuildId on ${row.id}`);
+    }
+    const aHash = createHash('sha256')
+        .update(readFileSync(`${__dirname}/fixtures/finder-1.png`))
+        .digest('hex');
+    if (!rows.some(r => r.contentHash === aHash)) throw new Error('Expected a row whose contentHash is the sha256 of the uploaded file');
+    console.log('  PASS');
 }
 
 /** Rows that matched another build are marked pendingDeletion; once their uploads are gone, comparisons must use the source image. */
@@ -226,6 +346,7 @@ async function testCleanupRegression(facade: TestingFacade) {
     // a branch build whose screen equals the reference's: the reference row is a matched row whose own upload is gone
     const scenario: IScenario = {
         branch: 'cleanup-branch',
+        base: MAIN_CHAIN,
         screens: [{ name: 'finder-2', file: 'finder-2-changed.png', expectedStatus: 'no changes' }],
         expectedStatus: 'no changes',
         shouldApprove: false
@@ -235,6 +356,7 @@ async function testCleanupRegression(facade: TestingFacade) {
     // a changed screen on a branch: still compares (and previews) against the source image
     const changed: IScenario = {
         branch: 'cleanup-branch-2',
+        base: MAIN_CHAIN,
         screens: [{ name: 'finder-2', file: 'finder-2.png', expectedStatus: 'needs review' }],
         expectedStatus: 'needs review',
         shouldApprove: false
@@ -619,8 +741,14 @@ async function createBaseEntities(mockGitLabPort: number) {
     });
 }
 
-async function runScenario(facade: TestingFacade, scenarioId: string, scenario: IScenario) {
-    const commitHash = scenarioId.padStart(40, '0');
+/** A commit hash for a scenario number (1-based), or a label hashed to 40 hex characters. */
+function commitFor(ref: number | string): string {
+    return typeof ref === 'number' ? String(ref).padStart(40, '0') : createHash('sha1').update(ref).digest('hex');
+}
+
+/** Runs one scenario build (create, upload, process, check, optionally approve) and returns its id. */
+async function runScenario(facade: TestingFacade, scenarioId: string, scenario: IScenario): Promise<string> {
+    const commitHash = scenario.commit !== undefined ? commitFor(scenario.commit) : scenarioId.padStart(40, '0');
 
     // Update mock GitLab state for this scenario
     mockJobData = {
@@ -664,7 +792,9 @@ async function runScenario(facade: TestingFacade, scenarioId: string, scenario: 
     console.log('Processing build...');
     await makeRequest<{ ok: true }>(
         facade,
-        HttpRequest.POST(`/api/apps/${APP_ID}/builds/${buildId}/process`).header('authorization', `Bearer ${TEST_CI_TOKEN}`)
+        HttpRequest.POST(`/api/apps/${APP_ID}/builds/${buildId}/process`)
+            .header('authorization', `Bearer ${TEST_CI_TOKEN}`)
+            .json(scenario.base ? { base: { commits: scenario.base.map(commitFor), source: 'merge-base' } } : {})
     );
 
     console.log('Waiting for build to be processed...');
@@ -748,6 +878,8 @@ async function runScenario(facade: TestingFacade, scenarioId: string, scenario: 
             throw new Error(`Expected vcsUrl ending in /${PROJECT_PATH}/-/pipelines/7, got ${JSON.stringify(approval)}`);
         }
     }
+
+    return buildId;
 }
 
 async function makeRequest<T>(facade: TestingFacade, request: RequestBuilder, type?: ReceiveType<T>): Promise<T> {

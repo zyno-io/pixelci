@@ -24,4 +24,12 @@ export class BuildScreenEntity extends BaseEntity {
     /** What was masked (ignored) when this screen was processed: the audit record the review screen draws. Null before masks existed. */
     appliedMasks!: IMaskRect[] | null;
     isRemoved: boolean & HasDefault = false; // tombstone: the screen is in the reference build but removed from this one; no image
+    /** sha256 hex of this row's own uploaded PNG bytes; null for tombstones and pre-0.8 uploads (filled lazily by processing). Immutable. */
+    contentHash!: (string & DatabaseField<{ type: 'varchar(64)' }>) | null;
+    /** Image source of the baseline this row was compared with (null: not in the baseline). Tombstones: the removed image. */
+    baseImageBuildId!: UuidString | null;
+    /** The decision behind this row's outcome: matched approval, pre-marking rejection, or the decision made in this build. */
+    decisionId!: UuidString | null;
+    /** Pre-mark carried from this (originating) build screen on an earlier build of the same branch. */
+    reviewCarriedFromId!: UuidString | null;
 }

@@ -12,6 +12,7 @@ import {
     UuidString
 } from '@zyno-io/ts-server-foundation';
 import { AnyResponse, createPersistedEntity, uuid7 } from '@zyno-io/ts-server-foundation';
+import { createHash } from 'crypto';
 import { readFile } from 'fs/promises';
 import { keyBy, uniq } from 'lodash';
 
@@ -28,6 +29,7 @@ import { UserEntity } from '../entities/User.entity';
 import { AppAccessService } from '../services/AppAccess.service';
 import { IMaskRect, IScreenMasksResponse, loadUserNames, MAX_MASKS, toScreenMasksResponse, validateMasks } from '../services/Mask';
 import { PixelMatchService } from '../services/PixelMatch.service';
+import { referenceForBuild } from '../services/Reference';
 import { isNotFound, S3Service } from '../services/S3.service';
 import { parseScreenName, validateScreenName, readPngHeader, repairLatin1Filename } from '../services/ScreenUpload';
 import { ThumbnailService } from '../services/Thumbnail.service';
@@ -133,15 +135,6 @@ export class BuildScreensController {
         private thumbnails: ThumbnailService
     ) {}
 
-    /** The latest approved build on the app's default branch that precedes the given build. */
-    private async findReferenceBuild(app: AppEntity, build: BuildEntity): Promise<BuildEntity | undefined> {
-        if (!app.defaultBranchId) return undefined;
-        return BuildEntity.query()
-            .filter({ appId: app.id, branchId: app.defaultBranchId, status: 'changes approved', id: { $lt: build.id } })
-            .orderBy('id', 'desc')
-            .findOneOrUndefined();
-    }
-
     @http.GET('screens')
     @http.middleware(UserAuthMiddleware)
     async getScreens(appId: UuidString, id: UuidString, user: UserEntity): Promise<IBuildScreenResponse[]> {
@@ -152,7 +145,7 @@ export class BuildScreensController {
 
         const app = await this.db.query(AppEntity).filter({ id: appId }).findOne();
 
-        const referenceBuild = await this.findReferenceBuild(app, build);
+        const referenceBuild = await referenceForBuild(app, build);
 
         // Ordered by id (UUID7, so upload order). Postgres returns unordered rows in heap order, which
         // changes whenever a row is updated — without this the list reshuffles after each review.
@@ -240,7 +233,7 @@ export class BuildScreensController {
         if (!build) throw new HttpNotFoundError();
         const app = await this.db.query(AppEntity).filter({ id: appId }).findOne();
 
-        const referenceBuild = await this.findReferenceBuild(app, build);
+        const referenceBuild = await referenceForBuild(app, build);
         if (!referenceBuild) throw new HttpBadRequestError('No reference build to compare against');
 
         const current = await BuildScreenEntity.query().filter({ appId, buildId: build.id, screenId, isRemoved: false }).findOneOrUndefined();
@@ -298,6 +291,7 @@ export class BuildScreensController {
         // Read once (bounded by the request body cap) and validate and upload the same buffer
         const imageBuf = await readFile(body.image.path);
         readPngHeader(imageBuf, this.appConfig.SCREEN_MAX_PIXELS);
+        const contentHash = createHash('sha256').update(imageBuf).digest('hex');
 
         const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
         if (!build) throw new HttpNotFoundError();
@@ -353,6 +347,7 @@ export class BuildScreensController {
                     screenId: screen.id,
                     status: 'new',
                     storageStatus: 'stored',
+                    contentHash,
                     ...(shard && { shardIndex: shard.shardIndex })
                 },
                 txn

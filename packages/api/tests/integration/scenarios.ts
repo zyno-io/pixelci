@@ -3,6 +3,13 @@ import { BuildScreenEntity } from '../../src/entities/BuildScreen.entity';
 
 export interface IScenario {
     branch: string;
+    /**
+     * First-parent ancestors of the merge base, nearest first, sent as `base` with `process`: scenario numbers (1-based, their
+     * commits) or commit labels. Omitted: no base is sent (the server falls back to the latest accepted default-branch build).
+     */
+    base?: (number | string)[];
+    /** Overrides the scenario number as this build's commit (a label, hashed to a commit hash). */
+    commit?: string;
     screens: {
         name: string;
         file: string;
@@ -18,6 +25,7 @@ export const TestScenarios: IScenario[] = [
     // 1: initial
     {
         branch: 'main',
+        base: [1],
         screens: [
             {
                 name: 'finder-1',
@@ -32,6 +40,7 @@ export const TestScenarios: IScenario[] = [
     // 2: create a branch and add a screen. don't approve.
     {
         branch: 'test-1',
+        base: [1],
         screens: [
             {
                 name: 'finder-1',
@@ -51,6 +60,7 @@ export const TestScenarios: IScenario[] = [
     // 3: make a change to the new screen and approve
     {
         branch: 'test-1',
+        base: [1],
         screens: [
             {
                 name: 'finder-1',
@@ -70,6 +80,7 @@ export const TestScenarios: IScenario[] = [
     // 4: new build to the branch with no visual changes
     {
         branch: 'test-1',
+        base: [1],
         screens: [
             {
                 name: 'finder-1',
@@ -89,6 +100,7 @@ export const TestScenarios: IScenario[] = [
     // 5: new build to the branch changing back to the original screen
     {
         branch: 'test-1',
+        base: [1],
         screens: [
             {
                 name: 'finder-1',
@@ -108,6 +120,7 @@ export const TestScenarios: IScenario[] = [
     // 6: merge changes back to the main branch
     {
         branch: 'main',
+        base: [6, 1],
         screens: [
             {
                 name: 'finder-1',
@@ -127,6 +140,7 @@ export const TestScenarios: IScenario[] = [
     // 7: new branch, removes screen 1 (a removal needs review)
     {
         branch: 'test-2',
+        base: [6, 1],
         screens: [
             {
                 name: 'finder-2',
@@ -142,6 +156,7 @@ export const TestScenarios: IScenario[] = [
     // 8: another build to the branch with no visual changes (the removal is still unapproved)
     {
         branch: 'test-2',
+        base: [6, 1],
         screens: [
             {
                 name: 'finder-2',
@@ -157,6 +172,7 @@ export const TestScenarios: IScenario[] = [
     // 9: change screen 2 and approve (approving also accepts the removal of screen 1)
     {
         branch: 'test-2',
+        base: [6, 1],
         screens: [
             {
                 name: 'finder-2',
@@ -171,6 +187,7 @@ export const TestScenarios: IScenario[] = [
     // 10: merge back to main
     {
         branch: 'main',
+        base: [10, 6, 1],
         screens: [
             {
                 name: 'finder-2',
@@ -185,6 +202,7 @@ export const TestScenarios: IScenario[] = [
     // 11: new build on main with no visual changes
     {
         branch: 'main',
+        base: [11, 10, 6, 1],
         screens: [
             {
                 name: 'finder-2',
@@ -199,6 +217,7 @@ export const TestScenarios: IScenario[] = [
     // 12: new branch with no changes
     {
         branch: 'test-3',
+        base: [11, 10, 6, 1],
         screens: [
             {
                 name: 'finder-2',
@@ -213,6 +232,7 @@ export const TestScenarios: IScenario[] = [
     // 13: another new branch changing the screen back
     {
         branch: 'test-4',
+        base: [11, 10, 6, 1],
         screens: [
             {
                 name: 'finder-2',
@@ -227,6 +247,7 @@ export const TestScenarios: IScenario[] = [
     // 14: main adds a screen (never seen before) and approves it
     {
         branch: 'main',
+        base: [14, 11, 10, 6, 1],
         screens: [
             {
                 name: 'finder-2',
@@ -243,6 +264,7 @@ export const TestScenarios: IScenario[] = [
     // 15: main drops that screen: needs review until approved; approving accepts the removal
     {
         branch: 'main',
+        base: [15, 14, 11, 10, 6, 1],
         screens: [
             {
                 name: 'finder-2',
@@ -258,6 +280,7 @@ export const TestScenarios: IScenario[] = [
     // 16: the next main build without it passes (the approved removal is not removed again)
     {
         branch: 'main',
+        base: [16, 15, 14, 11, 10, 6, 1],
         screens: [
             {
                 name: 'finder-2',
@@ -273,6 +296,7 @@ export const TestScenarios: IScenario[] = [
     // 17: the screen reappears with a new image: it is new again
     {
         branch: 'main',
+        base: [17, 16, 15, 14, 11, 10, 6, 1],
         screens: [
             {
                 name: 'finder-2',

@@ -27,6 +27,7 @@ import { ProcessBuildJob } from '../jobs/ProcessBuild.job';
 import { RERUN_DEFERRED_NOTICE, RERUN_RETRY_DELAY_MS, RerunCiJobJob } from '../jobs/RerunCiJob.job';
 import { IBuildResponse, toBuildResponse } from '../responses/build.response';
 import { AppAccessService } from '../services/AppAccess.service';
+import { IBase, validateBase } from '../services/Reference';
 import { screenManifestHash, uploadedScreenNames } from '../services/ScreenManifest';
 import { VcsService } from '../services/Vcs.service';
 
@@ -38,7 +39,16 @@ interface IScreenManifest {
     count: number;
     hash: string;
 }
+export type IBuildReference = Pick<BuildEntity, 'id' | 'commitHash'> & { branchName: string };
+/** The build, plus the default-branch build it was compared with (null when it had none). */
+export type IBuildDetailResponse = IBuildResponse & { reference: IBuildReference | null };
+export type IBuildCreateResponse = IBuildResponse & {
+    /** Name of the app's default branch (null if none): the CLI uses its presence as the capability flag for `base`. */
+    defaultBranch: string | null;
+};
 type IBuildBasicResponse = Pick<BuildEntity, 'status'> & {
+    /** Final statuses only: how the reference build was found ('latest' means no merge base was available). */
+    referenceSource?: BuildEntity['referenceSource'];
     /** Sharded drafts only: how many shards have finished uploading. */
     shards?: { uploaded: number; total: number };
 };
@@ -163,7 +173,7 @@ export class BuildsController {
 
     @http.GET(':id')
     @http.middleware(UserAuthMiddleware)
-    async get(appId: UuidString, id: UuidString, user: UserEntity): Promise<IBuildResponse> {
+    async get(appId: UuidString, id: UuidString, user: UserEntity): Promise<IBuildDetailResponse> {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
 
         const build = await BuildEntity.query().filter({ id, appId }).findOneOrUndefined();
@@ -171,7 +181,20 @@ export class BuildsController {
 
         const branch = await BranchEntity.query().filter({ id: build.branchId }).select('name').findOneOrUndefined();
 
-        return toBuildResponse(build, branch?.name ?? '');
+        // the stored reference (pre-0.8 builds: the backfilled one); null when the build had none
+        let reference: IBuildReference | null = null;
+        if (build.referenceBuildId) {
+            const ref = await BuildEntity.query()
+                .filter({ id: build.referenceBuildId, appId })
+                .select('id', 'commitHash', 'branchId')
+                .findOneOrUndefined();
+            if (ref) {
+                const refBranch = await BranchEntity.query().filter({ id: ref.branchId }).select('name').findOneOrUndefined();
+                reference = { id: ref.id, commitHash: ref.commitHash, branchName: refBranch?.name ?? '' };
+            }
+        }
+
+        return { ...toBuildResponse(build, branch?.name ?? ''), reference };
     }
 
     @http.GET(':id/status')
@@ -196,7 +219,8 @@ export class BuildsController {
         // The CLI doesn't know `canceled`; report it as a clean failure
         const reportedStatus: BuildEntity['status'] = build.status === 'canceled' ? 'failed' : build.status;
 
-        return { status: reportedStatus };
+        const isFinal = reportedStatus !== 'processing';
+        return { status: reportedStatus, ...(isFinal && build.referenceSource ? { referenceSource: build.referenceSource } : {}) };
     }
 
     @http.POST()
@@ -209,7 +233,7 @@ export class BuildsController {
             runId?: string;
             shard?: { index: number; total: number };
         }>
-    ): Promise<IBuildResponse> {
+    ): Promise<IBuildCreateResponse> {
         const authHeader = request.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             this.logger.warn('Build creation failed: missing or malformed Authorization header');
@@ -227,6 +251,10 @@ export class BuildsController {
         const ciJobData = await this.vcsSvc.validateCiToken(app, ciToken);
 
         const ciTokenHash = hashCiToken(ciToken);
+        // Lets the CLI know the server understands `base` (and which branch to measure the merge base against)
+        const defaultBranch = app.defaultBranchId
+            ? ((await BranchEntity.query().filter({ id: app.defaultBranchId }).select('name').findOneOrUndefined())?.name ?? null)
+            : null;
         const { branch: branchName, commitHash, commitSubject, commitAuthor, jobId: ciJobId } = ciJobData;
 
         // Creation is serialized per (app, branch) by an advisory lock, but retry the whole transaction on a deadlock anyway
@@ -257,7 +285,7 @@ export class BuildsController {
                           runId
                       );
                 if (result instanceof HttpError) throw result;
-                return result;
+                return { ...result, defaultBranch };
             } catch (err) {
                 if (attempt >= MAX_DEADLOCK_ATTEMPTS || !isDeadlockError(err)) throw err;
                 this.logger.warn(`Build creation deadlocked (attempt ${attempt}); retrying`);
@@ -561,10 +589,11 @@ export class BuildsController {
         request: HttpRequest,
         appId: UuidString,
         id: UuidString,
-        body?: HttpBody<{ screens?: { count: number; hash: string } }>
+        body?: HttpBody<{ screens?: { count: number; hash: string }; base?: IBase }>
     ): OkResponse {
         const callerHash = hashCiToken((request.headers.authorization ?? '').slice(7));
         const manifest = validateManifest(body?.screens);
+        const base = validateBase(body?.base);
 
         // Validation failures are returned from the transaction (not thrown inside it) so a rejected request doesn't roll back anything.
         const outcome = await this.db.transaction(async txn => {
@@ -580,6 +609,13 @@ export class BuildsController {
             if (build.status === 'canceled' || build.status === 'failed') return new HttpBadRequestError('Build is not in draft status');
             // Retry-safe: a repeated process call (lost response) succeeds without re-enqueueing
             if (build.status !== 'draft') return 'already' as const;
+
+            // Shards can arrive with different clone depths: keep the longest ancestry
+            if (base && base.commits.length > (build.baseCommits?.length ?? 0)) {
+                build.baseCommits = base.commits;
+                build.baseSource = base.source;
+                txn.add(build);
+            }
 
             if (shard) {
                 // An empty shard (no screens) is fine; the build as a whole must have some

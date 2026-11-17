@@ -387,7 +387,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/IBuildResponse"
+                $ref: "#/components/schemas/IBuildCreateResponse"
       parameters:
         - name: appId
           in: path
@@ -438,7 +438,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/IBuildResponse"
+                $ref: "#/components/schemas/IBuildDetailResponse"
       parameters:
         - name: appId
           in: path
@@ -524,6 +524,8 @@ paths:
                   required:
                     - count
                     - hash
+                base:
+                  $ref: "#/components/schemas/IBase"
   /api/apps/{appId}/builds/{id}/approve:
     post:
       operationId: postBuildsApprove
@@ -1741,6 +1743,16 @@ components:
             - canceled
             - failed
           type: string
+        referenceBuildId:
+          type:
+            - string
+            - "null"
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        referenceSource:
+          type:
+            - string
+            - "null"
         branchName:
           type: string
         shard:
@@ -1761,6 +1773,92 @@ components:
         - commitSubject
         - commitAuthor
         - status
+        - referenceBuildId
+        - referenceSource
+        - branchName
+    IBuildDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        branchId:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        createdAt:
+          type: string
+          format: date-time
+        commitHash:
+          type: string
+        commitSubject:
+          type: string
+        commitAuthor:
+          type: string
+        status:
+          enum:
+            - draft
+            - processing
+            - no changes
+            - needs review
+            - changes approved
+            - changes rejected
+            - canceled
+            - failed
+          type: string
+        referenceBuildId:
+          type:
+            - string
+            - "null"
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        referenceSource:
+          type:
+            - string
+            - "null"
+        branchName:
+          type: string
+        shard:
+          type: object
+          properties:
+            index:
+              type: number
+            total:
+              type: number
+          required:
+            - index
+            - total
+        reference:
+          anyOf:
+            - $ref: "#/components/schemas/IBuildReference"
+            - type: "null"
+      required:
+        - id
+        - branchId
+        - createdAt
+        - commitHash
+        - commitSubject
+        - commitAuthor
+        - status
+        - referenceBuildId
+        - referenceSource
+        - branchName
+        - reference
+    IBuildReference:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        commitHash:
+          type: string
+        branchName:
+          type: string
+      required:
+        - id
+        - commitHash
         - branchName
     IBuildBasicResponse:
       type: object
@@ -1776,6 +1874,10 @@ components:
             - canceled
             - failed
           type: string
+        referenceSource:
+          type:
+            - string
+            - "null"
         shards:
           type: object
           properties:
@@ -1788,6 +1890,86 @@ components:
             - total
       required:
         - status
+    IBuildCreateResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        branchId:
+          type: string
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        createdAt:
+          type: string
+          format: date-time
+        commitHash:
+          type: string
+        commitSubject:
+          type: string
+        commitAuthor:
+          type: string
+        status:
+          enum:
+            - draft
+            - processing
+            - no changes
+            - needs review
+            - changes approved
+            - changes rejected
+            - canceled
+            - failed
+          type: string
+        referenceBuildId:
+          type:
+            - string
+            - "null"
+          format: uuid
+          pattern: ^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+        referenceSource:
+          type:
+            - string
+            - "null"
+        branchName:
+          type: string
+        shard:
+          type: object
+          properties:
+            index:
+              type: number
+            total:
+              type: number
+          required:
+            - index
+            - total
+        defaultBranch:
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - branchId
+        - createdAt
+        - commitHash
+        - commitSubject
+        - commitAuthor
+        - status
+        - referenceBuildId
+        - referenceSource
+        - branchName
+        - defaultBranch
+    IBase:
+      type: object
+      properties:
+        commits:
+          type: array
+          items:
+            type: string
+        source: {}
+      required:
+        - commits
+        - source
     IBuildApprovalResponse:
       type: object
       properties:

@@ -63,7 +63,11 @@ export async function computeRemovals(opts: {
                 reviewComment: null,
                 reviewedById: null,
                 reviewedAt: null,
-                isRemoved: true
+                isRemoved: true,
+                contentHash: null,
+                baseImageBuildId: ref.matchedBuildId ?? ref.buildId, // the removed image
+                decisionId: null,
+                reviewCarriedFromId: null
             })
         );
     }
