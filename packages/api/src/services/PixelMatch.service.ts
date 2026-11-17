@@ -1,6 +1,7 @@
 import { ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { memoize } from 'lodash';
 
+import { AppConfig } from '../config';
 import { decodeRgba, encodePng, IRgbaImage } from './Image';
 import { IMaskRect, MASK_FILL, rasterizeMasks } from './Mask';
 
@@ -25,7 +26,28 @@ export interface IPixelMatchDiffResult {
     shiftTolerantPixels: number;
     /** pixels under a mask: excluded from the comparison and from the denominator of diffPct */
     maskedPixels: number;
+    /** the two screenshots' padded canvas exceeded SCREEN_MAX_PIXELS, so nothing was pixel-compared and the screen counts as changed */
+    canvasTooLarge: boolean;
+    sizesDiffer: boolean;
     getDiffPng: () => Promise<Buffer>;
+}
+
+/** Red wash over the new screenshot standing in for the diff when the canvas is too large to build. */
+const TOO_LARGE_TINT = [255, 0, 0] as const;
+const TOO_LARGE_TINT_ALPHA = 0.35;
+
+function tintRed(img: IRgbaImage): IRgbaImage {
+    const data = Buffer.from(img.data);
+    for (let o = 0; o < data.length; o += 4) {
+        const a = data[o + 3] / 255;
+        for (let c = 0; c < 3; c++) {
+            // composite over white first so transparent pixels read as a plain page, then wash with red
+            const base = data[o + c] * a + 255 * (1 - a);
+            data[o + c] = Math.round(base * (1 - TOO_LARGE_TINT_ALPHA) + TOO_LARGE_TINT[c] * TOO_LARGE_TINT_ALPHA);
+        }
+        data[o + 3] = 255;
+    }
+    return { width: img.width, height: img.height, data };
 }
 
 function normalizeToCanvas(img: IRgbaImage, targetWidth: number, targetHeight: number): IRgbaImage {
@@ -259,7 +281,10 @@ function reclassifyNearMask(
 }
 
 export class PixelMatchService {
-    constructor(private logger: ScopedLogger) {}
+    constructor(
+        private logger: ScopedLogger,
+        private appConfig: AppConfig
+    ) {}
 
     private exclusive: Promise<unknown> = Promise.resolve();
 
@@ -291,6 +316,30 @@ export class PixelMatchService {
 
         const width = Math.max(img1.width, img2.width);
         const height = Math.max(img1.height, img2.height);
+
+        // Each upload is capped at SCREEN_MAX_PIXELS, but padding two differently shaped images to max(w) x max(h) is not
+        // (25000x1000 against 1000x25000 is 625 MP). Past the cap nothing canvas-sized is allocated: the screen counts as changed.
+        const canvasPixels = width * height;
+        if (sizesDiffer && canvasPixels > this.appConfig.SCREEN_MAX_PIXELS) {
+            this.logger.info('Diff skipped: comparison canvas exceeds the pixel cap; counting screen as changed', {
+                width1: img1.width,
+                height1: img1.height,
+                width2: img2.width,
+                height2: img2.height,
+                canvasPixels,
+                maxPixels: this.appConfig.SCREEN_MAX_PIXELS
+            });
+            return {
+                totalPixels: canvasPixels,
+                diffPixels: canvasPixels,
+                diffPct: 100,
+                shiftTolerantPixels: 0,
+                maskedPixels: 0,
+                canvasTooLarge: true,
+                sizesDiffer: true,
+                getDiffPng: () => encodePng(tintRed(img2))
+            };
+        }
 
         const norm1 = sizesDiffer ? normalizeToCanvas(img1, width, height) : img1;
         const norm2 = sizesDiffer ? normalizeToCanvas(img2, width, height) : img2;
@@ -367,6 +416,8 @@ export class PixelMatchService {
             diffPct,
             shiftTolerantPixels,
             maskedPixels,
+            canvasTooLarge: false,
+            sizesDiffer,
             getDiffPng: () => encodePng(diffTarget)
         };
     }

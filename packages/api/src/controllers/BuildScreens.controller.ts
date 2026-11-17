@@ -45,6 +45,8 @@ export type IBuildScreenCompareResponse = {
     /** pixels under a mask: excluded from the comparison and from the denominator of diffPct */
     maskedPixels: number;
     passes: boolean;
+    /** the two screenshots are too different in size to compare pixel by pixel; the screen counts as changed */
+    canvasTooLarge: boolean;
     diffImage: string;
 };
 export type IBuildScreenResponse = {
@@ -261,6 +263,7 @@ export class BuildScreensController {
             shiftTolerantPixels: result.shiftTolerantPixels,
             maskedPixels: result.maskedPixels,
             passes: result.diffPct <= body.diffPctTolerance,
+            canvasTooLarge: result.canvasTooLarge,
             diffImage: 'data:image/png;base64,' + (await result.getDiffPng()).toString('base64')
         };
     }
