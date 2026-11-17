@@ -9,6 +9,7 @@ import { AppEntity } from '../entities/App.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
 import { ScreenEntity } from '../entities/Screen.entity';
+import { ScreenDecisionEntity } from '../entities/ScreenDecision.entity';
 import { claimBuildLease, Lease, LeaseLostError } from '../services/BuildProcessingLease';
 import { absentEpoch, findDecision } from '../services/Decisions';
 import { IMaskRect, normalizeMasks, resolveMasks } from '../services/Mask';
@@ -328,10 +329,25 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             .filter({ appId: build.appId, buildId: prev.id, isRemoved: false, reviewStatus: { $ne: null } })
             .find();
         const markedByScreen = keyBy(marked, 'screenId');
+        const decisionIds = marked.map(p => p.decisionId).filter((id): id is string => !!id);
+        const revokedIds = new Set(
+            decisionIds.length
+                ? (
+                      await ScreenDecisionEntity.query()
+                          .filter({ appId: build.appId, id: { $in: decisionIds }, revokedAt: { $ne: null } })
+                          .select('id')
+                          .find()
+                  ).map(d => d.id)
+                : []
+        );
 
         for (const row of candidates) {
             const p = markedByScreen[row.screenId];
-            if (!p || p.baseImageBuildId !== row.baseImageBuildId) continue;
+            if (!p) continue;
+            // a mark that only came from a decision is not the reviewer's own: the decision re-applies it (or not, once revoked)
+            if (p.decisionId && !p.reviewedById) continue;
+            if (p.decisionId && revokedIds.has(p.decisionId)) continue;
+            if (p.baseImageBuildId !== row.baseImageBuildId) continue;
             const sameImage = (!!row.contentHash && row.contentHash === p.contentHash) || (await safeMatch(p.buildId, row));
             if (!sameImage) continue;
 

@@ -494,6 +494,9 @@ export class BuildScreensController {
             }
 
             buildScreen.reviewStatus = body.reviewStatus;
+            // the reviewer's own mark replaces any decision pre-mark or carried mark (approve records a fresh decision)
+            buildScreen.decisionId = null;
+            buildScreen.reviewCarriedFromId = null;
             buildScreen.reviewComment = body.comment?.trim() || null;
             buildScreen.reviewedById = user.id;
             buildScreen.reviewedAt = new Date();

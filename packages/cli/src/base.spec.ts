@@ -63,6 +63,33 @@ describe('resolveBase', () => {
         assert.equal(s.has('fetch'), false);
     });
 
+    it('default branch in a shallow clone: deepens and re-lists the ancestry', async () => {
+        let deepened = false;
+        const s = setup(
+            [
+                is('rev-parse --is-shallow-repository', OK('true')),
+                args => {
+                    if (args[0] === 'fetch' && args.includes('--deepen=50')) {
+                        deepened = true;
+                        return OK();
+                    }
+                    if (args[0] === 'rev-list') return OK(deepened ? `${T}\n${sha(90)}\n${sha(91)}\n` : `${T}\n`);
+                }
+            ],
+            { branchName: 'main' }
+        );
+        assert.deepEqual((await s.run())?.commits, [T, sha(90), sha(91)]);
+    });
+
+    it('default branch in a shallow clone with PIXELCI_GIT_FETCH=false: no deepening', async () => {
+        const s = setup([is('rev-parse --is-shallow-repository', OK('true')), args => (args[0] === 'rev-list' ? OK(`${T}\n`) : undefined)], {
+            branchName: 'main',
+            env: { PIXELCI_GIT_FETCH: 'false' }
+        });
+        assert.deepEqual((await s.run())?.commits, [T]);
+        assert.equal(s.has('fetch'), false);
+    });
+
     it('uses HEAD when the build commit is not in the checkout', async () => {
         const s = setup([is(`cat-file -e ${T}^{commit}`, FAIL), is('rev-parse HEAD', OK(`${sha(7)}\n`))], { branchName: 'main' });
         assert.equal((await s.run())?.commits[0], sha(7));
@@ -90,6 +117,23 @@ describe('resolveBase', () => {
         const s = setup([is(`cat-file -p ${T}`, OK(`tree abc\nparent ${B}\nparent ${sha(3)}\nauthor x\n\nparent ${sha(4)}\n`))], {
             env: { GITHUB_EVENT_NAME: 'pull_request' }
         });
+        assert.deepEqual(await s.run(), { commits: [B, sha(90)], source: 'pull-request-base' });
+    });
+
+    it('GitHub PR whose checked-out head is itself a merge commit: ignores its parents, uses the event base sha', async () => {
+        const H = sha(7);
+        const s = setup(
+            [
+                is(`cat-file -e ${T}^{commit}`, FAIL),
+                is('rev-parse HEAD', OK(`${H}\n`)),
+                is(`cat-file -p ${H}`, OK(`tree abc\nparent ${sha(3)}\nparent ${sha(4)}\n\n`)),
+                is(`merge-base ${H} ${sha(8)}`, OK(`${B}\n`))
+            ],
+            {
+                env: { GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: '/event.json' },
+                readFile: () => JSON.stringify({ pull_request: { base: { sha: sha(8) } } })
+            }
+        );
         assert.deepEqual(await s.run(), { commits: [B, sha(90)], source: 'pull-request-base' });
     });
 
@@ -137,6 +181,7 @@ describe('resolveBase', () => {
             is('rev-parse --is-shallow-repository', OK('true')),
             args => {
                 if (args.some(a => a.startsWith('--deepen='))) {
+                    if (args.includes('--deepen=50')) return OK(); // the ancestry listing deepens too
                     deepened++;
                     return OK();
                 }

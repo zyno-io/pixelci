@@ -76,7 +76,7 @@ async function resolve(o: IResolveBaseOptions): Promise<IBase | undefined> {
         ({ basePoint, source } = picked);
     }
 
-    const commits = await listAncestry(git, basePoint);
+    const commits = await listAncestry(o, basePoint);
     const valid = [...new Set(commits.map(c => c.toLowerCase()).filter(c => COMMIT_RE.test(c)))].slice(0, MAX_BASE_COMMITS);
     if (!valid.length) return fallback(`Base commit "${basePoint}" is not a valid commit hash`);
     return { commits: valid, source };
@@ -99,8 +99,10 @@ async function pickBasePoint(o: IResolveBaseOptions, target: string): Promise<{ 
     if (gl.mergeRequestTargetSha) return { basePoint: gl.mergeRequestTargetSha, source: 'merge-request-target' };
 
     const gh = githubHints(env);
-    if (gh.isPullRequest) {
-        // the checked-out merge commit's first parent is the base branch tip (cat-file works in depth-1 clones)
+    // Only GitHub's synthetic merge commit (the one the server recorded) has the base branch tip as its first parent. A checked-out
+    // PR head can itself be a merge commit ("Update branch"), whose first parent is the feature branch's previous commit.
+    if (gh.isPullRequest && target === o.commitHash) {
+        // cat-file works in depth-1 clones
         const parents = await parentsOf(git, target);
         if (parents.length === 2) return { basePoint: parents[0], source: 'pull-request-base' };
     }
@@ -161,19 +163,49 @@ async function mergeBaseWithDefault(o: IResolveBaseOptions, target: string): Pro
     return undefined;
 }
 
-/** First-parent ancestry of `basePoint`, nearest first, capped at 50. Fetches the commit if it is missing locally. */
-async function listAncestry(git: GitRunner, basePoint: string): Promise<string[]> {
+/**
+ * First-parent ancestry of `basePoint`, nearest first, capped at 50. Fetches the commit if it is missing locally, and deepens a
+ * shallow clone (where rev-list succeeds with just the visible commits) so a default-branch build has ancestors to match.
+ */
+async function listAncestry(o: IResolveBaseOptions, basePoint: string): Promise<string[]> {
+    const { git } = o;
+    const fetchAllowed = o.env.PIXELCI_GIT_FETCH?.trim().toLowerCase() !== 'false';
     const list = () => git(['rev-list', '--first-parent', `--max-count=${MAX_BASE_COMMITS}`, basePoint]);
+    const parse = (stdout: string) =>
+        stdout
+            .split('\n')
+            .map(l => l.trim())
+            .filter(Boolean);
     let r = await list();
     if (!r.ok) {
         await git(['fetch', '--no-tags', `--depth=${MAX_BASE_COMMITS}`, 'origin', basePoint], { timeoutMs: GIT_FETCH_TIMEOUT_MS });
         r = await list();
     }
     if (!r.ok) return [basePoint];
-    const lines = r.stdout
-        .split('\n')
-        .map(l => l.trim())
-        .filter(Boolean);
+    let lines = parse(r.stdout);
+
+    if (lines.length < MAX_BASE_COMMITS && fetchAllowed && (await git(['rev-parse', '--is-shallow-repository'])).stdout.trim() === 'true') {
+        let d = await git(['fetch', '--no-tags', `--deepen=${MAX_BASE_COMMITS}`, 'origin', basePoint], { timeoutMs: GIT_FETCH_TIMEOUT_MS });
+        // the commit may not exist on the remote (a local-only commit): deepen via the default branch instead
+        if (!d.ok && o.defaultBranch) {
+            d = await git(
+                [
+                    'fetch',
+                    '--no-tags',
+                    `--deepen=${MAX_BASE_COMMITS}`,
+                    'origin',
+                    `+refs/heads/${o.defaultBranch}:${BASE_REF_PREFIX}${o.defaultBranch}`
+                ],
+                {
+                    timeoutMs: GIT_FETCH_TIMEOUT_MS
+                }
+            );
+        }
+        if (d.ok) {
+            const again = await list();
+            if (again.ok && parse(again.stdout).length > lines.length) lines = parse(again.stdout);
+        }
+    }
     return lines.length ? lines : [basePoint];
 }
 

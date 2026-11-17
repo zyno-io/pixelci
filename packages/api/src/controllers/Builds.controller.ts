@@ -719,12 +719,14 @@ export class BuildsController {
             const app = await txn.query(AppEntity).filter({ id: appId }).findOne();
             const froms = await this.resolveFromImages(app, locked, changedScreens, txn);
             const toOf = (row: BuildScreenEntity) => (row.isRemoved ? null : { buildId: row.buildId, hash: row.contentHash });
+            // v0.7 carried the original reviewer onto later builds, so on a legacy build a reviewer may not have reviewed this one
+            const legacy = !build.referenceSource || build.referenceSource === 'legacy';
             const inputOf = (row: BuildScreenEntity, kind: 'approved' | 'rejected'): IDecisionInput => ({
                 row,
                 kind,
                 from: froms.get(row.id) ?? null,
                 to: toOf(row),
-                decidedById: row.reviewedById ?? user.id,
+                decidedById: legacy ? user.id : (row.reviewedById ?? user.id),
                 comment: row.reviewComment
             });
             // An approval made against a guessed baseline (no merge base on a non-default branch) is only reused on its own branch.

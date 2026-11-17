@@ -116,8 +116,35 @@ describe('resolveBase with real git', () => {
         const { base } = await run(dir, {}, { branchName: 'main', commitHash: tip });
         assert.equal(base?.source, 'first-parent');
         assert.equal(base?.commits[0], tip);
-        // depth-1 clone: only the tip is reachable until the base is fetched
-        assert.ok(base!.commits.length >= 1 && base!.commits.length <= 50);
+        // depth-1 clone: the ancestry is deepened so the server has ancestors to match
+        assert.ok(base!.commits.length >= 2 && base!.commits.length <= 50);
+        assert.equal(base?.commits[1], mainShas[mainShas.length - 2]);
+    });
+
+    it('default branch build with PIXELCI_GIT_FETCH=false: no deepening, just what is visible', async () => {
+        const dir = shallowClone('c5b', 'main');
+        const tip = mainShas[mainShas.length - 1];
+        const { base } = await run(dir, { PIXELCI_GIT_FETCH: 'false' }, { branchName: 'main', commitHash: tip });
+        assert.deepEqual(base?.commits, [tip]);
+    });
+
+    it('GitHub PR job that checked out a head which is itself a merge commit: base is the event base sha merge-base', async () => {
+        const work = join(root, 'prwork');
+        git(root, 'clone', `file://${origin}`, work);
+        git(work, 'checkout', '-b', 'pr-feat', mainShas[2]);
+        commit(work, 'pr-f0');
+        git(work, 'merge', '--no-ff', '-m', 'Update branch', mainShas[mainShas.length - 1]);
+        const head = git(work, 'rev-parse', 'HEAD');
+        git(work, 'push', 'origin', 'pr-feat');
+        const dir = join(root, 'c7');
+        git(root, 'clone', '--branch', 'pr-feat', `file://${origin}`, dir);
+        const event = join(root, 'event.json');
+        writeFileSync(event, JSON.stringify({ pull_request: { base: { sha: mainShas[mainShas.length - 1] } } }));
+        // the server-recorded commit (GitHub's synthetic merge) is absent from the checkout, so the target is HEAD
+        const { base } = await run(dir, { GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event }, { commitHash: 'a'.repeat(40) });
+        assert.equal(git(dir, 'rev-parse', 'HEAD'), head);
+        assert.equal(base?.source, 'pull-request-base');
+        assert.equal(base?.commits[0], mainShas[mainShas.length - 1]);
     });
 
     it('override of an ancestor missing from a shallow clone is fetched', async () => {

@@ -1078,5 +1078,95 @@ const SETS: Record<string, SetFn> = {
         assertEq(await got(feat), [m2, 'legacy'], 'a branch build: the latest approved main build before it');
         assertEq(await got(draft), [null, null], 'a draft is untouched');
         assertEq(await got(already), [m1, 'ancestor'], 'a build that already has a reference is untouched');
+    },
+
+    // review finding: a mark that only came from a decision pre-mark is not carried to the branch's next build
+    async staleCarry(h) {
+        await h.run(baseline({ s1: A }));
+        const r1 = await h.run({
+            label: 'R1',
+            branch: 'feat-r',
+            base: ['M0'],
+            screens: { s1: B },
+            review: { s1: 'rejected' },
+            submit: true,
+            expect: { build: 'needs review', screens: { s1: 'needs review' }, afterSubmit: 'changes rejected' }
+        });
+        await h.run({
+            label: 'F1',
+            branch: 'feat-f',
+            base: ['M0'],
+            screens: { s1: B },
+            expect: { build: 'needs review', screens: { s1: ['needs review', 'rejected'] }, decisionFrom: { s1: 'R1' } }
+        });
+        await h.revoke((await h.decisionOf((await h.rowsOf(r1.buildId)).s1))!.id);
+        const f2 = await h.run({
+            label: 'F2',
+            branch: 'feat-f',
+            base: ['M0'],
+            screens: { s1: B },
+            expect: { build: 'needs review', screens: { s1: ['needs review', null as unknown as string] } }
+        });
+        assertEq([f2.rows.s1.reviewStatus, f2.rows.s1.reviewCarriedFromId, f2.rows.s1.decisionId], [null, null, null], 'F2 carries nothing');
+        assertEq(await h.submit(f2.buildId), 200, 'F2 submit');
+        assertEq((await BuildEntity.query().filter({ id: f2.buildId }).findOne()).status, 'changes approved', 'F2 approves');
+    },
+
+    // review finding: a reviewer who flips a pre-marked row owns the mark; the row no longer points at the old decision
+    async reviewClearsDecision(h) {
+        await h.run(baseline({ s1: A, s2: A }));
+        await h.run({
+            label: 'R1',
+            branch: 'feat-r',
+            base: ['M0'],
+            screens: { s1: B, s2: A },
+            review: { s1: 'rejected' },
+            submit: true,
+            expect: { build: 'needs review', afterSubmit: 'changes rejected' }
+        });
+        const f1 = await h.run({
+            label: 'F1',
+            branch: 'feat-f',
+            base: ['M0'],
+            screens: { s1: B, s2: C },
+            review: { s1: 'approved', s2: 'rejected' },
+            submit: true,
+            expect: { build: 'needs review', screens: { s1: ['needs review', 'rejected'] }, afterSubmit: 'changes rejected' }
+        });
+        const rows = await h.rowsOf(f1.buildId);
+        assertEq(
+            [rows.s1.reviewStatus, rows.s1.decisionId, rows.s1.reviewCarriedFromId],
+            ['approved', null, null],
+            "flipped row is the reviewer's own"
+        );
+        const screens = await h.getScreens(f1.buildId);
+        const s1 = screens.find(s => s.screenId === f1.screenIds.s1)!;
+        const p = s1 as { decision?: unknown; decisionId?: unknown };
+        assertTrue(!p.decision && !p.decisionId, 'no decision reported on the approved row');
+        assertEq((await h.decisionOf(rows.s2))?.kind, 'rejected', 's2 keeps its own rejection decision');
+    },
+
+    // review finding: a legacy in-flight build's carried reviewer is not who decides; the submitter is
+    async legacyAttribution(h, facade) {
+        await h.run(baseline({ s1: A }));
+        const other = uuid7();
+        await createPersistedEntity(UserEntity, {
+            id: other,
+            name: 'Someone Else',
+            createdAt: new Date(),
+            lastLoginAt: new Date(),
+            isAdmin: false,
+            vcsId: ZERO_ID,
+            vcsUserId: other
+        });
+        const f1 = await h.run({ label: 'F1', branch: 'feat-f', base: ['M0'], screens: { s1: B }, expect: { build: 'needs review' } });
+        await BuildEntity.query().filter({ id: f1.buildId }).patchMany({ referenceSource: null });
+        await BuildScreenEntity.query()
+            .filter({ id: f1.rows.s1.id })
+            .patchMany({ reviewStatus: 'approved', reviewedById: other, reviewedAt: new Date() });
+        assertEq(await h.submit(f1.buildId), 200, 'legacy submit');
+        const d = await h.decisionOf((await h.rowsOf(f1.buildId)).s1);
+        assertEq(d?.decidedById, ZERO_ID, 'the submitter decides on a legacy build');
+        void facade;
     }
 };
