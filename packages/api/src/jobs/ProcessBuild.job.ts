@@ -9,11 +9,15 @@ import { BuildEntity } from '../entities/Build.entity';
 import { BuildScreenEntity } from '../entities/BuildScreen.entity';
 import { ScreenEntity } from '../entities/Screen.entity';
 import { claimBuildLease, Lease, LeaseLostError } from '../services/BuildProcessingLease';
+import { IMaskRect, normalizeMasks, resolveMasks } from '../services/Mask';
 import { PixelMatchService } from '../services/PixelMatch.service';
 import { computeRemovals } from '../services/RemovedScreens';
 import { S3Service } from '../services/S3.service';
 import { ThumbnailService } from '../services/Thumbnail.service';
 import { ITolerances, resolveTolerances } from '../services/Tolerance';
+
+/** Everything that decides whether two images of a screen match: tolerances, plus the masks in effect. */
+type IComparison = ITolerances & { masks: IMaskRect[] };
 
 interface IProcessBuildJobData {
     buildId: string;
@@ -103,7 +107,24 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             .filter({ id: { $in: currentBuildScreens.map(bs => bs.screenId) } })
             .find();
         const screenEntitiesById = keyBy(screenEntities, 'id');
-        const tolerancesFor = (screenId: string): ITolerances => resolveTolerances(this.appConfig, app, screenEntitiesById[screenId]);
+        // Resolved once from the rows loaded above, so a tolerance or mask save during processing applies to all of this build or none of it.
+        const comparisons = new Map<string, IComparison>();
+        const comparisonFor = (screenId: string): IComparison => {
+            let comparison = comparisons.get(screenId);
+            if (!comparison) {
+                const screenEntity = screenEntitiesById[screenId];
+                comparison = {
+                    ...resolveTolerances(this.appConfig, app, screenEntity),
+                    masks: normalizeMasks(resolveMasks(app, screenEntity))
+                };
+                comparisons.set(screenId, comparison);
+            }
+            return comparison;
+        };
+        // the audit record of what was ignored; written with the screens in the transaction below
+        for (const buildScreen of currentBuildScreens) {
+            if (!buildScreen.isRemoved) buildScreen.appliedMasks = comparisonFor(buildScreen.screenId).masks;
+        }
         logger.info('Using diff threshold', { diffThreshold: this.appConfig.DEFAULT_PIXEL_DIFF_PCT_THRESHOLD });
 
         const isDefaultBranch = currentBuild.branchId === app.defaultBranchId;
@@ -166,7 +187,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                     screen.previousBuildScreen.matchedBuildId ?? screen.previousBuildScreen.buildId,
                     currentBuild.id,
                     screen.screenId,
-                    tolerancesFor(screen.screenId)
+                    comparisonFor(screen.screenId)
                 );
 
                 if (isMatch) {
@@ -187,7 +208,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                     screen.referenceBuildScreen.buildId,
                     currentBuild.id,
                     screen.screenId,
-                    tolerancesFor(screen.screenId)
+                    comparisonFor(screen.screenId)
                 );
 
                 if (isMatch) {
@@ -232,7 +253,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                     approvedBuildScreen.matchedBuildId ?? approvedBuildScreen.buildId,
                     currentBuild.id,
                     screen.screenId,
-                    tolerancesFor(screen.screenId)
+                    comparisonFor(screen.screenId)
                 );
 
                 if (isMatch) {
@@ -265,8 +286,9 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         // approved/rejected since this branch's last approval and the current image still matches it,
         // re-apply that decision (and comment) so reviewers don't re-review unchanged screens build after build.
         // NOTE: the lower bound is this branch's last approval, but candidates are matched app-wide (across
-        // branches) by screenId, since builds_screens has no branchId. Carry-forward only fires on an exact
-        // pixel match, so a cross-branch decision is only inherited when the screen is visually identical.
+        // branches) by screenId, since builds_screens has no branchId. Carry-forward fires only when the two
+        // images match within the screen's tolerances and masks (the same test as every other comparison here),
+        // so a cross-branch decision is inherited only when the screen is visually the same outside its masks.
         const reviewWindowLowerBoundId = previousBuild?.id ?? referenceBuild?.id;
 
         for (const screen of screens) {
@@ -292,7 +314,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                         priorReviewedScreen.matchedBuildId ?? priorReviewedScreen.buildId,
                         currentBuild.id,
                         screen.screenId,
-                        tolerancesFor(screen.screenId)
+                        comparisonFor(screen.screenId)
                     );
                 } catch (err) {
                     logger.info('Failed to compare against prior reviewed screen; skipping candidate', {
@@ -370,19 +392,19 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         return currentBuildScreens.filter(bs => !bs.matchedBuildId);
     }
 
-    private async loadAndDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, tolerances: ITolerances) {
+    private async loadAndDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, comparison: IComparison) {
         const leftScreenData = await this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, leftBuildId, screenId));
         const rightScreenData = await this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, rightBuildId, screenId));
-        return this.pixelMatch.getDiff(leftScreenData, rightScreenData, tolerances.colorTolerance, tolerances.shiftTolerance);
+        return this.pixelMatch.getDiff(leftScreenData, rightScreenData, comparison.colorTolerance, comparison.shiftTolerance, comparison.masks);
     }
 
-    private async performDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, tolerances: ITolerances) {
+    private async performDiff(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, comparison: IComparison) {
         this.logger.info('Performing diff', { leftBuildId, rightBuildId, screenId });
 
-        const { getDiffPng, diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId, tolerances);
+        const { getDiffPng, diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId, comparison);
 
-        if (diffPct > tolerances.diffPctTolerance) {
-            this.logger.info('Diff exceeds threshold. Storing diff.', { diffPct, diffThreshold: tolerances.diffPctTolerance });
+        if (diffPct > comparison.diffPctTolerance) {
+            this.logger.info('Diff exceeds threshold. Storing diff.', { diffPct, diffThreshold: comparison.diffPctTolerance });
             const diffBuf = await getDiffPng();
             await this.s3Svc.uploadFile(diffBuf, this.s3Svc.getPathForDiff(appId, rightBuildId, screenId), 'image/png');
             return false;
@@ -393,8 +415,8 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
 
     // like performDiff, but only reports whether two screens match without storing a diff image,
     // so it can be used for speculative comparisons without clobbering the stored reference diff
-    private async screensMatch(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, tolerances: ITolerances) {
-        const { diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId, tolerances);
-        return diffPct <= tolerances.diffPctTolerance;
+    private async screensMatch(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, comparison: IComparison) {
+        const { diffPct } = await this.loadAndDiff(appId, leftBuildId, rightBuildId, screenId, comparison);
+        return diffPct <= comparison.diffPctTolerance;
     }
 }

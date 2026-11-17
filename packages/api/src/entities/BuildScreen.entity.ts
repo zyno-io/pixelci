@@ -1,6 +1,8 @@
 import { entity, PrimaryKey } from '@zyno-io/ts-server-foundation';
 import { BaseEntity, DatabaseField, HasDefault, UuidString } from '@zyno-io/ts-server-foundation';
 
+import { IMaskRect } from '../services/Mask';
+
 @entity.name('builds_screens')
 @entity.index(['buildId', 'screenId'], { unique: true })
 @entity.index(['screenId', 'id'])
@@ -19,5 +21,7 @@ export class BuildScreenEntity extends BaseEntity {
     reviewedAt!: Date | null;
     /** The shard (1-based) that uploaded this screen; always 1 for unsharded builds. */
     shardIndex: (number & DatabaseField<{ type: 'integer' }>) & HasDefault = 1;
+    /** What was masked (ignored) when this screen was processed: the audit record the review screen draws. Null before masks existed. */
+    appliedMasks!: IMaskRect[] | null;
     isRemoved: boolean & HasDefault = false; // tombstone: the screen is in the reference build but removed from this one; no image
 }
