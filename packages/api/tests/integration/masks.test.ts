@@ -10,11 +10,13 @@ import type { IAppGalleryResponse } from '../../src/controllers/Screens.controll
 import type { IAppMasksResponse, IMaskRect, IScreenMasksResponse } from '../../src/services/Mask';
 
 import { CoreAppOptions } from '../../src/app';
+import { AppConfig } from '../../src/config';
 import { AppEntity } from '../../src/entities/App.entity';
 import { BranchEntity } from '../../src/entities/Branch.entity';
 import { BuildEntity } from '../../src/entities/Build.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { PixelMatchService } from '../../src/services/PixelMatch.service';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
 import { configureTestDatabase } from './db-defaults';
 
@@ -468,11 +470,31 @@ async function run() {
     ]);
     assertEq(xbControl.status, 'needs review', 'without the mask the other approval does not match');
 
+    // xb-control differs from the reference (base) and from xb-a's approved change. Checking that candidate must not clobber the
+    // stored diff: the review UI shows the reference as the left-hand image, so the stored diff must be against the reference.
     const storedDiff = async (buildId: string, screenId: string) => {
         const res = await facade.request(user(HttpRequest.GET(`/api/apps/${APP_ID}/builds/${buildId}/screens/${screenId}/diff`)));
         assertEq(res.statusCode, 302, 'diff redirects to the stored image');
         return Buffer.from(await (await fetch(String(res.getHeader('location')))).arrayBuffer());
     };
+    const quiet = { info() {}, warn() {}, error() {}, debug() {} } as never;
+    const localDiff = async (leftFile: string, rightFile: string) => {
+        const svc = new PixelMatchService(quiet, facade.app.config as AppConfig);
+        const diff = await svc.getDiff(
+            readFileSync(`${__dirname}/fixtures/${leftFile}`),
+            readFileSync(`${__dirname}/fixtures/${rightFile}`),
+            0.2,
+            1,
+            []
+        );
+        return diff.getDiffPng();
+    };
+    const xbStored = await storedDiff(xbControl.id, f2);
+    const xbReferenceDiff = await localDiff('finder-2.png', 'finder-2-changed-2.png');
+    assertTrue(xbStored.equals(xbReferenceDiff), 'stored diff for the build screen is the diff against the reference build');
+    // and it is not the diff against xb-a's approved change (which is what a candidate comparison would have stored)
+    const xbCandidateDiff = await localDiff('finder-2-changed.png', 'finder-2-changed-2.png');
+    assertTrue(!xbStored.equals(xbCandidateDiff), 'stored diff is not xb-a candidate comparison output');
 
     await setScreenMasks(f2, [box2]);
     const xbB = await runBuild('xb-b', [

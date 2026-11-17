@@ -182,7 +182,9 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             if (screen.previousBuildScreen?.status === 'changes approved') {
                 logger.info('Screen in previous build with approved changes', { screenId: screen.screenId });
 
-                const isMatch = await this.performDiff(
+                // speculative: the review UI's left-hand image is the reference build, not the previous branch build, so this
+                // comparison must not store a diff (it would overwrite the one stored for the reference below)
+                const isMatch = await this.screensMatch(
                     appId,
                     screen.previousBuildScreen.matchedBuildId ?? screen.previousBuildScreen.buildId,
                     currentBuild.id,
@@ -203,6 +205,8 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
 
             // if we have a reference build screen, compare the current screen with the reference build screen
             if (screen.referenceBuildScreen) {
+                // the only authoritative diff: the review UI shows the reference build's screen as the left-hand image, so a
+                // mismatch stores the diff against it. Every other comparison in this flow is speculative (screensMatch).
                 const isMatch = await this.performDiff(
                     appId,
                     screen.referenceBuildScreen.buildId,
@@ -248,7 +252,8 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                     buildId: approvedBuildScreen.buildId
                 });
 
-                const isMatch = await this.performDiff(
+                // speculative candidate from another branch: must not store a diff over the one against the reference
+                const isMatch = await this.screensMatch(
                     appId,
                     approvedBuildScreen.matchedBuildId ?? approvedBuildScreen.buildId,
                     currentBuild.id,
@@ -413,6 +418,7 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         return true;
     }
 
+    // the authoritative diff is the one against the reference build (see the screenLoop); everything else uses this.
     // like performDiff, but only reports whether two screens match without storing a diff image,
     // so it can be used for speculative comparisons without clobbering the stored reference diff
     private async screensMatch(appId: string, leftBuildId: string, rightBuildId: string, screenId: string, comparison: IComparison) {
