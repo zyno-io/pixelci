@@ -60,6 +60,14 @@ colorSchemes.forEach(colorScheme => {
             await page.waitForSelector('[data-testid="lightbox-stage"] img');
             await takeScreenshot(page, 'Screen Lightbox');
             await page.locator('[data-testid="lightbox-close"]').click();
+
+            // The seeded Homepage screen has one mask; the editor draws it over the screenshot, with its fields beside it.
+            await page.locator('[data-testid="gallery-tile"]').filter({ hasText: 'Homepage' }).click();
+            await page.waitForSelector('[data-testid="lightbox-stage"] [data-testid="mask-rect"]');
+            await expect(page.locator('[data-testid="mask-row"]')).toHaveCount(1);
+            await page.locator('[data-testid="masks-section"]').scrollIntoViewIfNeeded();
+            await takeScreenshot(page, 'Screen Lightbox - Masks');
+            await page.locator('[data-testid="lightbox-close"]').click();
             await page.goBack();
             await page.waitForSelector('.build');
 

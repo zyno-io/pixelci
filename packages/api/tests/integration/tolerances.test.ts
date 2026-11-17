@@ -293,7 +293,7 @@ async function run() {
     const compareUrl = `/api/apps/${APP_ID}/builds/${feat.id}/screens/${f2}/compare`;
     const cmp = (t: object) =>
         call<IBuildScreenCompareResponse>(
-            user(HttpRequest.POST(compareUrl)).json({ colorTolerance: 0.2, shiftTolerance: 1, diffPctTolerance: 0.01, ...t })
+            user(HttpRequest.POST(compareUrl)).json({ colorTolerance: 0.2, shiftTolerance: 1, diffPctTolerance: 0.01, masks: [], ...t })
         );
     const strict = await cmp({});
     assertTrue(strict.totalPixels > 0 && strict.diffPixels > 0, 'expected differing pixels');
@@ -306,15 +306,16 @@ async function run() {
     assertEq(tight.passes, false, 'just-below tolerance fails');
     const lenient = await cmp({ colorTolerance: 1 });
     assertTrue(lenient.diffPixels <= strict.diffPixels, 'higher colour tolerance never adds diff pixels');
-    await call(user(HttpRequest.POST(compareUrl)).json({ colorTolerance: 0.2, shiftTolerance: 1 }), 400);
-    await call(user(HttpRequest.POST(compareUrl)).json({ colorTolerance: 0.2, shiftTolerance: null, diffPctTolerance: 1 }), 400);
-    await call(user(HttpRequest.POST(compareUrl)).json({ colorTolerance: 3, shiftTolerance: 1, diffPctTolerance: 1 }), 400);
+    await call(user(HttpRequest.POST(compareUrl)).json({ colorTolerance: 0.2, shiftTolerance: 1, masks: [] }), 400);
+    await call(user(HttpRequest.POST(compareUrl)).json({ colorTolerance: 0.2, shiftTolerance: null, diffPctTolerance: 1, masks: [] }), 400);
+    await call(user(HttpRequest.POST(compareUrl)).json({ colorTolerance: 3, shiftTolerance: 1, diffPctTolerance: 1, masks: [] }), 400);
     // 'extra' is not in the reference build
     await call(
         user(HttpRequest.POST(`/api/apps/${APP_ID}/builds/${feat.id}/screens/${extra.screenId}/compare`)).json({
             colorTolerance: 0.2,
             shiftTolerance: 1,
-            diffPctTolerance: 1
+            diffPctTolerance: 1,
+            masks: []
         }),
         400
     );

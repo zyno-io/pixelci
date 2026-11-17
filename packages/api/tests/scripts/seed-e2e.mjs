@@ -108,6 +108,21 @@ async function resetReviews(conn) {
     );
 }
 
+// One mask on the Homepage screen, and the same one recorded as applied to Homepage in build 007 (the build the review
+// screen and its visual-regression captures use). Fixed values, written with UPDATEs, so re-seeding is idempotent and a
+// persisted local DB converges on the same state.
+const HOMEPAGE_MASKS = [{ id: '00000000-0000-4000-8000-0000000000a1', x: 760, y: 20, width: 400, height: 60, label: 'Clock' }];
+
+async function seedMasks(conn) {
+    await conn.query(
+        `UPDATE screens
+         SET "masks" = $2, "masksVersion" = 1, "masksUpdatedAt" = $3, "masksUpdatedById" = $4, "inheritAppMasks" = TRUE
+         WHERE id = $1`,
+        [SCREEN_HOMEPAGE_ID, JSON.stringify(HOMEPAGE_MASKS), new Date('2025-01-22T11:00:00Z'), ZERO_ID]
+    );
+    await conn.query(`UPDATE builds_screens SET "appliedMasks" = $2 WHERE id = $1`, [BS_02A, JSON.stringify(HOMEPAGE_MASKS)]);
+}
+
 function buildRow(id, branchId, createdAt, commitHash, commitSubject, ciJobId, status, approvedById, approvedAt) {
     return {
         id,
@@ -249,6 +264,7 @@ async function seedDatabase() {
     // Make re-seeding idempotent w.r.t. reviews: a persisted local DB may retain decisions
     // from a prior run, and ON CONFLICT DO NOTHING above won't overwrite them.
     await resetReviews(conn);
+    await seedMasks(conn);
 
     await conn.end();
     console.log('Database seeded.');
@@ -325,7 +341,10 @@ const utc = iso => iso.replace('Z', '');
 async function seedOAuthScreens(conn) {
     const now = utc(new Date().toISOString());
     await conn.query(`DELETE FROM oauth_tokens WHERE "grantId" IN (SELECT id FROM oauth_grants WHERE "userId" = $1)`, [ZERO_ID]);
-    await conn.query(`UPDATE oauth_grants SET "revokedAt" = $2, "revokedReason" = 'user' WHERE "userId" = $1 AND "revokedAt" IS NULL`, [ZERO_ID, now]);
+    await conn.query(`UPDATE oauth_grants SET "revokedAt" = $2, "revokedReason" = 'user' WHERE "userId" = $1 AND "revokedAt" IS NULL`, [
+        ZERO_ID,
+        now
+    ]);
 
     const clients = [
         [OAUTH_DCR_CLIENT_ID, 'Claude Code', ['http://127.0.0.1:53682/callback'], null, null, null],
@@ -369,6 +388,7 @@ async function main() {
     if (process.argv.includes('--reset-reviews')) {
         const conn = await connect();
         await resetReviews(conn);
+        await seedMasks(conn);
         await conn.end();
         console.log('E2E review state reset.');
         return;

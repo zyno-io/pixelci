@@ -1,6 +1,8 @@
 import { entity, PrimaryKey } from '@zyno-io/ts-server-foundation';
 import { BaseEntity, DatabaseField, HasDefault, UuidString } from '@zyno-io/ts-server-foundation';
 
+import { IMaskRect } from '../services/Mask';
+
 /** Lowest VCS role a non-admin needs to review and approve an app's builds. 'read' = anyone who can see the app. */
 export type IApprovalMinRole = 'read' | 'write' | 'maintain';
 
@@ -18,4 +20,8 @@ export class AppEntity extends BaseEntity {
     colorTolerance!: (number & DatabaseField<{ type: 'double precision' }>) | null;
     shiftTolerance!: (number & DatabaseField<{ type: 'integer' }>) | null;
     diffPctTolerance!: (number & DatabaseField<{ type: 'double precision' }>) | null;
+    masks!: IMaskRect[] | null;
+    masksVersion: (number & DatabaseField<{ type: 'integer' }>) & HasDefault = 0;
+    masksUpdatedAt!: Date | null;
+    masksUpdatedById!: UuidString | null;
 }

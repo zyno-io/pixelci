@@ -231,7 +231,8 @@ async function createBaseEntities() {
         reviewStatus: 'approved',
         reviewComment: 'Looks good to me',
         reviewedById: USER_ID,
-        reviewedAt: new Date()
+        reviewedAt: new Date(),
+        appliedMasks: [{ id: 'e2222222-aaaa-bbbb-cccc-000000000060', x: 10, y: 20, width: 30, height: 40, label: 'clock' }]
     });
 
     // tombstone: a screen removed in this build (no image)
@@ -308,7 +309,14 @@ async function testGetBuildDetail(facade: Facade) {
     expectStatus(response.statusCode, 200);
 
     const build = response.json as {
-        screens: { screenId: string; name: string; reviewStatus: string | null; reviewComment: string | null; reviewedByName: string | null }[];
+        screens: {
+            screenId: string;
+            name: string;
+            reviewStatus: string | null;
+            reviewComment: string | null;
+            reviewedByName: string | null;
+            appliedMasks: unknown;
+        }[];
     };
     const screen = build.screens.find(s => s.screenId === SCREEN_ID);
     if (!screen) throw new Error(`Expected screen ${SCREEN_ID} in response`);
@@ -316,6 +324,13 @@ async function testGetBuildDetail(facade: Facade) {
     if (screen.reviewStatus !== 'approved') throw new Error(`Expected reviewStatus 'approved', got '${screen.reviewStatus}'`);
     if (screen.reviewComment !== 'Looks good to me') throw new Error(`Expected reviewComment, got '${screen.reviewComment}'`);
     if (screen.reviewedByName !== 'Reviewer Rita') throw new Error(`Expected reviewedByName 'Reviewer Rita', got '${screen.reviewedByName}'`);
+    // appliedMasks are read-only audit data without ids; a screen with none recorded reports null
+    const expectedMasks = JSON.stringify([{ x: 10, y: 20, width: 30, height: 40, label: 'clock' }]);
+    if (JSON.stringify(screen.appliedMasks) !== expectedMasks)
+        throw new Error(`Expected appliedMasks ${expectedMasks}, got ${JSON.stringify(screen.appliedMasks)}`);
+    const removed = (response.json as typeof build).screens.find(s => s.screenId === REMOVED_SCREEN_ID);
+    if (removed?.appliedMasks !== null)
+        throw new Error(`Expected null appliedMasks on a screen without any, got ${JSON.stringify(removed?.appliedMasks)}`);
     console.log('  PASS');
 }
 

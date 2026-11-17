@@ -40,7 +40,7 @@ const TOOLS: Tool[] = [
     {
         name: 'get_build',
         description:
-            'Get a build and every screen in it: comparison status (removed=true marks a screen deleted from this build; it has no image), the per-screen review decision (approved/rejected/none), the review comment, and who reviewed it, plus build-level approval.',
+            'Get a build and every screen in it: comparison status (removed=true marks a screen deleted from this build; it has no image), the per-screen review decision (approved/rejected/none), the review comment, and who reviewed it, plus build-level approval. Each screen also lists appliedMasks: the regions (x, y, width, height in screenshot pixels from the top-left, plus an optional label) that were ignored when it was compared, so a screen reported as unchanged may still differ inside them; null for builds processed before masks existed.',
         inputSchema: {
             type: 'object',
             properties: {

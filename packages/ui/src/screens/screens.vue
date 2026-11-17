@@ -119,6 +119,14 @@
                             </div>
 
                             <div class="screen-meta-end">
+                                <span
+                                    v-if="appliedMasks(screen).length"
+                                    class="tag"
+                                    v-tooltip="`${formatMaskCount(appliedMasks(screen).length)} ignored in this comparison`"
+                                    data-testid="screen-masked"
+                                >
+                                    <i class="fa fa-table-cells-large" aria-hidden="true" /> Masked
+                                </span>
                                 <button
                                     v-if="screen.currentBuildScreen"
                                     type="button"
@@ -183,12 +191,20 @@
                                                 <span>This image couldn't be loaded.</span>
                                             </div>
                                             <Loader v-else-if="!screen.referenceBuildScreen.imageSrc" class="loading" />
-                                            <img
-                                                v-else
-                                                :src="screen.referenceBuildScreen.imageSrc"
-                                                :alt="`Reference screenshot: ${screen.name}`"
-                                                @load="onImageLoad"
-                                            />
+                                            <div v-else class="img-frame">
+                                                <img
+                                                    :src="screen.referenceBuildScreen.imageSrc"
+                                                    :alt="`Reference screenshot: ${screen.name}`"
+                                                    @load="onImageLoad"
+                                                />
+                                                <MaskLayer
+                                                    v-if="appliedMasks(screen).length && sizeOf(screen.referenceBuildScreen.imageSrc)"
+                                                    :masks="appliedMasks(screen)"
+                                                    :width="sizeOf(screen.referenceBuildScreen.imageSrc)!.width"
+                                                    :height="sizeOf(screen.referenceBuildScreen.imageSrc)!.height"
+                                                    data-testid="applied-masks"
+                                                />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -216,12 +232,20 @@
                                                         <span>This image couldn't be loaded.</span>
                                                     </div>
                                                     <Loader v-else-if="!screen.currentBuildScreen.imageSrc" class="loading" />
-                                                    <img
-                                                        v-else
-                                                        :src="screen.currentBuildScreen.imageSrc"
-                                                        :alt="`New build screenshot: ${screen.name}`"
-                                                        @load="onImageLoad"
-                                                    />
+                                                    <div v-else class="img-frame">
+                                                        <img
+                                                            :src="screen.currentBuildScreen.imageSrc"
+                                                            :alt="`New build screenshot: ${screen.name}`"
+                                                            @load="onImageLoad"
+                                                        />
+                                                        <MaskLayer
+                                                            v-if="appliedMasks(screen).length && sizeOf(screen.currentBuildScreen.imageSrc)"
+                                                            :masks="appliedMasks(screen)"
+                                                            :width="sizeOf(screen.currentBuildScreen.imageSrc)!.width"
+                                                            :height="sizeOf(screen.currentBuildScreen.imageSrc)!.height"
+                                                            data-testid="applied-masks"
+                                                        />
+                                                    </div>
                                                 </div>
 
                                                 <div v-if="diffShown && hasDiff(screen)" class="image-wrapper-inner diff">
@@ -229,7 +253,9 @@
                                                         <span>This image couldn't be loaded.</span>
                                                     </div>
                                                     <Loader v-else-if="!screen.diffImageSrc" class="loading" />
-                                                    <img v-else :src="screen.diffImageSrc" :alt="`Visual diff: ${screen.name}`" @load="onImageLoad" />
+                                                    <div v-else class="img-frame">
+                                                        <img :src="screen.diffImageSrc" :alt="`Visual diff: ${screen.name}`" @load="onImageLoad" />
+                                                    </div>
                                                 </div>
                                             </template>
                                         </div>
@@ -324,8 +350,12 @@
             :app-tolerances="appTolerances"
             :can-edit="userCanReview"
             current-label="New build"
+            :app-masks="{ masks: app?.masks ?? [], version: app?.masksVersion ?? 0 }"
+            :on-reload-masks="reloadMasks"
             @close="lightboxIndex = null"
             @saved="onToleranceSaved"
+            @masks-saved="onMasksSaved"
+            @app-masks-saved="onAppMasksSaved"
         />
 
         <div class="sr-only" role="status" aria-live="polite">{{ announcement }}</div>
@@ -335,21 +365,25 @@
 <script lang="ts" setup>
 import { dataFrom, dataFromAsync } from '@zyno-io/openapi-client-codegen';
 import { handleError, handleErrorAndAlert, presentOverlay, showAlert, showToast } from '@zyno-io/vue-foundation';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import {
     AppsApi,
     BuildScreensApi,
     BuildsApi,
+    type IAppMasksResponse,
     type IAppShowResponse,
     type IBuildResponse,
-    type IBuildScreenResponse
+    type IBuildScreenResponse,
+    type IScreenMasksResponse
 } from '@/openapi-client-generated';
 import { accessDeniedMessage, signOut } from '@/shared/access-error';
 import LoaderModal from '@/shared/components/loader-modal.vue';
 import Loader from '@/shared/components/loader.vue';
+import MaskLayer from '@/shared/components/mask-layer.vue';
 import ScreenLightbox, { type ILightboxScreen } from '@/shared/components/screen-lightbox.vue';
+import { formatMaskCount, type IMaskRect } from '@/shared/masks';
 import { BUILD_STATUS, REMOVED_STATUS, REVIEW_STATUS, SCREEN_STATUS } from '@/shared/status';
 import { hasOverride, type IToleranceOverrides, type ITolerances, pickOverrides, resolveTolerances } from '@/shared/tolerances';
 
@@ -563,6 +597,7 @@ const lightboxItems = computed<ILightboxScreen[]>(() =>
             name: screen.name,
             status: current?.reviewStatus ? REVIEW_STATUS[current.reviewStatus] : getScreenStatus(screen),
             tolerances: pickOverrides(screen.tolerances),
+            masks: screen.masks,
             current: currentImage,
             reference: reference ? { buildId: reference.matchedBuildId ?? reference.buildId } : null,
             diff: hasDiff(screen) ? currentImage : null,
@@ -579,6 +614,42 @@ function openTolerance(screen: IScreen) {
 function onToleranceSaved(screenId: string, tolerances: IToleranceOverrides) {
     const screen = screens.value?.find(s => s.screenId === screenId);
     if (screen) screen.tolerances = tolerances;
+}
+
+// ── Masks ──
+// The masks this build was processed with, drawn as a translucent grey fill over both screenshots: what
+// was ignored is always visible to the reviewer. The new build's set governs the comparison, so the
+// reference pane shows the same rectangles. The diff image carries the same tint itself, so it gets no layer.
+function appliedMasks(screen: IScreen): IMaskRect[] {
+    return screen.currentBuildScreen?.appliedMasks ?? [];
+}
+
+// Each image's own size, which is the layer's coordinate space.
+const imageSizes = reactive(new Map<string, { width: number; height: number }>());
+function sizeOf(src: string | false | undefined) {
+    return src ? imageSizes.get(src) : undefined;
+}
+
+function onMasksSaved(screenId: string, masks: IScreenMasksResponse) {
+    const screen = screens.value?.find(s => s.screenId === screenId);
+    if (screen) screen.masks = masks;
+}
+
+function onAppMasksSaved(masks: IAppMasksResponse) {
+    if (app.value) Object.assign(app.value, { masks: masks.masks, masksVersion: masks.version });
+}
+
+/** Re-reads the masks after a save was refused as stale, without closing the lightbox. */
+async function reloadMasks() {
+    const [screensResponse, appResponse] = await Promise.all([
+        dataFromAsync(BuildScreensApi.getBuildScreensGetScreens({ path: { appId, id: buildId } })),
+        dataFromAsync(AppsApi.getAppsShow({ path: { id: appId } }))
+    ]);
+    app.value = appResponse;
+    for (const fresh of screensResponse) {
+        const screen = screens.value?.find(s => s.screenId === fresh.screenId);
+        if (screen) screen.masks = fresh.masks;
+    }
 }
 
 // ── Sticky chrome ──
@@ -656,6 +727,7 @@ function syncPaneFromSibling(pane: HTMLElement | null) {
 function onImageLoad(e: Event) {
     const img = e.target as HTMLImageElement;
     img.style.setProperty('--natural-width', `${img.naturalWidth}px`);
+    imageSizes.set(img.currentSrc || img.src, { width: img.naturalWidth, height: img.naturalHeight });
     syncPaneFromSibling(img.closest<HTMLElement>('.image-wrapper'));
 }
 
@@ -1369,6 +1441,13 @@ async function submitBuild() {
     }
     .image-wrapper-inner {
         width: 100%;
+    }
+    // Shrink-wraps the screenshot so the mask layer lies exactly over it at every zoom.
+    .img-frame {
+        position: relative;
+        width: fit-content;
+        max-width: 100%;
+        margin: 0 auto;
     }
     .image-wrapper-inner.is-covered {
         opacity: 0;

@@ -2,6 +2,16 @@ import { ScopedLogger } from '@zyno-io/ts-server-foundation';
 import { memoize } from 'lodash';
 
 import { decodeRgba, encodePng, IRgbaImage } from './Image';
+import { IMaskRect, MASK_FILL, rasterizeMasks } from './Mask';
+
+/** Mask tint on the stored diff image: mid grey at 40%, matching the UI's `--mask-fill`. */
+const MASK_TINT_GREY = 128;
+const MASK_TINT_ALPHA = 0.4;
+/** Thin diagonal lines over the tint, matching the UI's `--mask-line`: a darker grey at a higher alpha, 8 px apart along x. */
+const MASK_LINE_GREY = 70;
+const MASK_LINE_ALPHA = 0.6;
+const MASK_LINE_SPACING = 8;
+import { isAntialiasedIgnoringMask } from './MaskedAntialias';
 
 const loadPixelMatch = memoize(async () => {
     return (await import('pixelmatch')).default;
@@ -13,6 +23,8 @@ export interface IPixelMatchDiffResult {
     diffPct: number;
     /** pixels that differed in place but were explained by a small positional shift (not counted in diffPixels) */
     shiftTolerantPixels: number;
+    /** pixels under a mask: excluded from the comparison and from the denominator of diffPct */
+    maskedPixels: number;
     getDiffPng: () => Promise<Buffer>;
 }
 
@@ -92,7 +104,8 @@ function hasNearbyMatch(
     width: number,
     height: number,
     radius: number,
-    maxDelta: number
+    maxDelta: number,
+    mask: Uint8Array | null
 ) {
     const i = y * width + x;
     const rgba = src32[i];
@@ -120,6 +133,7 @@ function hasNearbyMatch(
         for (let nx = xMin; nx <= xMax; nx++) {
             const j = ny * width + nx;
             if (j === i) continue;
+            if (mask && mask[j]) continue; // masked content can't excuse an unmasked pixel
             if (other32[j] === rgba) return true;
             if (!opaque || other[j * 4 + 3] !== 255) continue;
 
@@ -162,7 +176,8 @@ async function applyShiftTolerance(
     width: number,
     height: number,
     radius: number,
-    threshold: number
+    threshold: number,
+    mask: Uint8Array | null
 ) {
     const len = width * height;
     const a32 = new Uint32Array(img1.buffer, img1.byteOffset, len);
@@ -177,8 +192,8 @@ async function applyShiftTolerance(
             if (diff[idx] !== 255 || diff[idx + 1] !== 0 || diff[idx + 2] !== 0) continue;
 
             if (
-                hasNearbyMatch(img1, a32, img2, b32, x, y, width, height, radius, threshold) &&
-                hasNearbyMatch(img2, b32, img1, a32, x, y, width, height, radius, threshold)
+                hasNearbyMatch(img1, a32, img2, b32, x, y, width, height, radius, threshold, mask) &&
+                hasNearbyMatch(img2, b32, img1, a32, x, y, width, height, radius, threshold, mask)
             ) {
                 diff[idx + 1] = 255;
                 forgiven++;
@@ -192,6 +207,55 @@ async function applyShiftTolerance(
     }
 
     return forgiven;
+}
+
+const AA_RADIUS = 2;
+
+/**
+ * Policy: a mask must never excuse a pixel that plain pixelmatch, run with the fill painted, counted as changed. Near a mask a
+ * pixel is excused only if pixelmatch (with the fill) and the masked-absent test both call it anti-aliasing. So the only flip
+ * is yellow to red: a pixel pixelmatch excused as anti-aliasing which, with masked pixels treated as absent, is not. False
+ * positives at mask edges are accepted (the docs advise padding masks).
+ *
+ * Only pixels within AA_RADIUS (Chebyshev distance) of a masked pixel can be skewed by the fill, so this visits only each mask
+ * rectangle grown by AA_RADIUS and clipped to the canvas, skipping masked pixels. Cost is proportional to the masks' grown
+ * area, not to the number of differing pixels. Overlapping rectangles need no visited bitmap: a flipped pixel is repainted red,
+ * so a second visit no longer sees it as yellow and cannot count it twice. Returns the number of pixels newly counted.
+ * Same-coloured pixels are gray in the output and are left alone.
+ */
+function reclassifyNearMask(
+    img1: Uint8Array,
+    img2: Uint8Array,
+    diff: Uint8Array,
+    width: number,
+    height: number,
+    mask: Uint8Array,
+    rects: readonly IMaskRect[]
+): number {
+    const len = width * height;
+    const a32 = new Uint32Array(img1.buffer, img1.byteOffset, len);
+    const b32 = new Uint32Array(img2.buffer, img2.byteOffset, len);
+    let change = 0;
+
+    for (const rect of rects) {
+        const x0 = Math.max(0, rect.x - AA_RADIUS);
+        const y0 = Math.max(0, rect.y - AA_RADIUS);
+        const x1 = Math.min(width, rect.x + rect.width + AA_RADIUS);
+        const y1 = Math.min(height, rect.y + rect.height + AA_RADIUS);
+
+        for (let y = y0; y < y1; y++) {
+            for (let x = x0, i = y * width + x0; x < x1; x++, i++) {
+                const o = i << 2;
+                // yellow only (255, 255, 0); masked pixels are never compared
+                if (diff[o] !== 255 || diff[o + 1] !== 255 || diff[o + 2] !== 0 || mask[i]) continue;
+                if (!isAntialiasedIgnoringMask(img1, img2, a32, b32, x, y, width, height, mask)) {
+                    diff[o + 1] = 0; // red
+                    change++;
+                }
+            }
+        }
+    }
+    return change;
 }
 
 export class PixelMatchService {
@@ -210,7 +274,13 @@ export class PixelMatchService {
         return run;
     }
 
-    async getDiff(img1Buf: Buffer, img2Buf: Buffer, pixelMatchThreshold = 0.2, shiftTolerance = 0): Promise<IPixelMatchDiffResult> {
+    async getDiff(
+        img1Buf: Buffer,
+        img2Buf: Buffer,
+        pixelMatchThreshold = 0.2,
+        shiftTolerance = 0,
+        masks: readonly IMaskRect[] = []
+    ): Promise<IPixelMatchDiffResult> {
         const pixelmatch = await loadPixelMatch();
 
         const diffStart = performance.now();
@@ -225,11 +295,31 @@ export class PixelMatchService {
         const norm1 = sizesDiffer ? normalizeToCanvas(img1, width, height) : img1;
         const norm2 = sizesDiffer ? normalizeToCanvas(img2, width, height) : img2;
 
+        // Masked pixels are painted identically into both images, so pixelmatch (and its anti-aliasing checks next to a
+        // mask edge) sees no difference there, and nothing under a mask can influence a result.
+        const raster = rasterizeMasks(masks, width, height);
+        const mask = raster?.bitmap ?? null;
+        const maskedPixels = raster?.maskedPixels ?? 0;
+        if (mask) {
+            for (let i = 0; i < mask.length; i++) {
+                if (!mask[i]) continue;
+                const o = i << 2;
+                norm1.data[o] = norm2.data[o] = MASK_FILL[0];
+                norm1.data[o + 1] = norm2.data[o + 1] = MASK_FILL[1];
+                norm1.data[o + 2] = norm2.data[o + 2] = MASK_FILL[2];
+                norm1.data[o + 3] = norm2.data[o + 3] = MASK_FILL[3];
+            }
+        }
+
         const diffTarget: IRgbaImage = { width, height, data: Buffer.alloc(width * height * 4) };
-        const rawDiffPixels = pixelmatch(norm1.data, norm2.data, diffTarget.data, width, height, {
+        let rawDiffPixels = pixelmatch(norm1.data, norm2.data, diffTarget.data, width, height, {
             threshold: pixelMatchThreshold,
             includeAA: false
         });
+
+        // The uniform fill under a mask has many "siblings" and so can make pixelmatch excuse a pixel up to 2 px away as
+        // anti-aliasing. Re-test those with masked pixels absent; only ever yellow to red, never the other way.
+        if (mask) rawDiffPixels += reclassifyNearMask(norm1.data, norm2.data, diffTarget.data, width, height, mask, masks);
 
         const shiftRadius = Math.max(0, Math.floor(shiftTolerance));
         const shiftChecks = rawDiffPixels * ((2 * shiftRadius + 1) ** 2 - 1);
@@ -238,23 +328,45 @@ export class PixelMatchService {
         }
         const shiftTolerantPixels =
             shiftRadius > 0 && rawDiffPixels > 0 && shiftChecks <= MAX_SHIFT_CHECKS
-                ? await applyShiftTolerance(norm1.data, norm2.data, diffTarget.data, width, height, shiftRadius, pixelMatchThreshold)
+                ? await applyShiftTolerance(norm1.data, norm2.data, diffTarget.data, width, height, shiftRadius, pixelMatchThreshold, mask)
                 : 0;
         const diffPixels = rawDiffPixels - shiftTolerantPixels;
 
         const totalPixels = width * height;
-        const diffPct = (diffPixels / totalPixels) * 100;
+        const comparedPixels = totalPixels - maskedPixels;
+        const diffPct = comparedPixels > 0 ? (diffPixels / comparedPixels) * 100 : 0;
+
+        // masked pixels get the translucent neutral tint (the UI's mask fill) composited over whatever the diff already
+        // has there, so red, yellow and magenta keep their meanings. Display only: the counts above already exclude them.
+        if (mask) {
+            for (let i = 0; i < mask.length; i++) {
+                if (!mask[i]) continue;
+                const o = i << 2;
+                // on a line (x + y a multiple of the spacing): the darker line colour, else the plain tint
+                const onLine = ((i % width) + Math.floor(i / width)) % MASK_LINE_SPACING === 0;
+                const grey = onLine ? MASK_LINE_GREY : MASK_TINT_GREY;
+                const alpha = onLine ? MASK_LINE_ALPHA : MASK_TINT_ALPHA;
+                const dstA = diffTarget.data[o + 3] / 255;
+                const outA = alpha + dstA * (1 - alpha);
+                for (let c = 0; c < 3; c++) {
+                    const blended = (grey * alpha + diffTarget.data[o + c] * dstA * (1 - alpha)) / outA;
+                    diffTarget.data[o + c] = Math.round(blended);
+                }
+                diffTarget.data[o + 3] = Math.round(outA * 255);
+            }
+        }
 
         const diffEnd = performance.now();
         const diffTime = diffEnd - diffStart;
 
-        this.logger.info('Diff completed', { sizesDiffer, diffTime, totalPixels, diffPixels, diffPct, shiftTolerantPixels });
+        this.logger.info('Diff completed', { sizesDiffer, diffTime, totalPixels, diffPixels, diffPct, shiftTolerantPixels, maskedPixels });
 
         return {
             totalPixels,
             diffPixels,
             diffPct,
             shiftTolerantPixels,
+            maskedPixels,
             getDiffPng: () => encodePng(diffTarget)
         };
     }

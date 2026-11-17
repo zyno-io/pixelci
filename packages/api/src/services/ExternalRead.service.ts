@@ -8,6 +8,7 @@ import { BuildScreenEntity } from '../entities/BuildScreen.entity';
 import { ScreenEntity } from '../entities/Screen.entity';
 import { UserEntity } from '../entities/User.entity';
 import { AppAccessService, IAppAccessPrincipal } from './AppAccess.service';
+import { IMaskRect } from './Mask';
 import { S3Service } from './S3.service';
 
 export type IExtAppResponse = { id: string; name: string };
@@ -24,6 +25,9 @@ export type IExtBuildResponse = {
     approvedAt: Date | null;
 };
 
+/** A region ignored when a screen was compared: x/y from the top-left, in screenshot pixels. */
+export type IExtMask = Omit<IMaskRect, 'id'>;
+
 export type IExtBuildScreenResponse = {
     screenId: string;
     name: string;
@@ -33,6 +37,8 @@ export type IExtBuildScreenResponse = {
     reviewComment: string | null;
     reviewedByName: string | null;
     reviewedAt: Date | null;
+    /** Regions ignored when this screen was compared; null for builds processed before masks existed. */
+    appliedMasks: IExtMask[] | null;
 };
 
 export type IExtBuildDetailResponse = IExtBuildResponse & {
@@ -105,7 +111,8 @@ export class ExternalReadService {
                 reviewStatus: buildScreen.reviewStatus,
                 reviewComment: buildScreen.reviewComment,
                 reviewedByName: buildScreen.reviewedById ? (reviewersById[buildScreen.reviewedById]?.name ?? null) : null,
-                reviewedAt: buildScreen.reviewedAt
+                reviewedAt: buildScreen.reviewedAt,
+                appliedMasks: buildScreen.appliedMasks?.map(({ x, y, width, height, label }) => ({ x, y, width, height, label })) ?? null
             }))
             .sort((a, b) => a.name.localeCompare(b.name));
 

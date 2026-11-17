@@ -110,6 +110,103 @@ test.describe('Accessibility', () => {
         await expect(dialog).toBeHidden();
         await expect(addApp).toBeFocused();
     });
+
+    for (const colorScheme of ['light', 'dark'] as const) {
+        test(`the mask editor is labelled, keyboard-operable and readable in ${colorScheme} mode`, async ({ page }) => {
+            await page.emulateMedia({ colorScheme });
+            await page.locator('.app').first().click();
+            await page.getByTestId('browse-screens').click();
+            // the seeded Homepage screen has one mask
+            await page.getByTestId('gallery-tile').filter({ hasText: 'Homepage' }).click();
+            const lightbox = page.getByTestId('lightbox');
+            await expect(lightbox.getByTestId('mask-rect')).toHaveCount(1);
+
+            // Structural checks, the ones an automated audit (axe) would make of this dialog: every control and every
+            // mask has an accessible name, the mask layer and its live region have the right roles, ids are unique, and
+            // nothing focusable is left without a role.
+            const problems = await lightbox.evaluate(root => {
+                const found: string[] = [];
+                const nameOf = (el: Element) => {
+                    const labelledBy = el.getAttribute('aria-labelledby');
+                    const byId = labelledBy
+                        ? labelledBy
+                              .split(/\s+/)
+                              .map(id => document.getElementById(id)?.textContent ?? '')
+                              .join(' ')
+                        : '';
+                    const label = (el as HTMLInputElement).labels?.[0]?.textContent ?? '';
+                    return (el.getAttribute('aria-label') || byId || label || el.getAttribute('title') || el.textContent || '').trim();
+                };
+                for (const el of root.querySelectorAll('button, input, select, textarea, [role="group"]')) {
+                    if (!nameOf(el)) found.push(`no accessible name: ${el.tagName.toLowerCase()}[data-testid=${el.getAttribute('data-testid')}]`);
+                }
+                for (const el of root.querySelectorAll('[tabindex]')) {
+                    const tag = el.tagName.toLowerCase();
+                    const interactive = ['button', 'input', 'select', 'textarea', 'a'].includes(tag);
+                    if (!interactive && !el.getAttribute('role'))
+                        found.push(`focusable without a role: ${tag}[data-testid=${el.getAttribute('data-testid')}]`);
+                }
+                const ids = [...root.querySelectorAll('[id]')].map(el => el.id);
+                for (const id of new Set(ids.filter((id, i) => ids.indexOf(id) !== i))) found.push(`duplicate id: ${id}`);
+                const layer = root.querySelector('[data-testid="mask-layer"]');
+                if (layer?.getAttribute('role') !== 'group' || !layer.getAttribute('aria-label'))
+                    found.push('mask layer needs role=group and a label');
+                const live = root.querySelector('[data-testid="mask-live"]');
+                if (live?.getAttribute('role') !== 'status' || live.getAttribute('aria-live') !== 'polite') found.push('mask live region missing');
+                for (const img of root.querySelectorAll('img')) if (img.getAttribute('alt') === null) found.push('image without alt');
+
+                // Text contrast over the panel, composited through translucent backgrounds.
+                const rgba = (value: string) => (value.match(/[\d.]+/g) ?? ['0', '0', '0', '0']).map(Number);
+                const luminance = (c: number[]) =>
+                    c.slice(0, 3).reduce((sum, channel, i) => {
+                        const n = channel / 255;
+                        return sum + (n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4) * [0.2126, 0.7152, 0.0722][i];
+                    }, 0);
+                for (const el of root.querySelectorAll(
+                    '.lb-panel .lb-note, .lb-panel .lb-lead, .lb-panel .mask-num-label, .lb-panel .lb-check, .lb-panel h3'
+                )) {
+                    if (!el.textContent?.trim() || el.closest(':disabled, .disabled')) continue;
+                    let background = [255, 255, 255];
+                    const chain: Element[] = [];
+                    for (let node: Element | null = el; node; node = node.parentElement) chain.unshift(node);
+                    for (const node of chain) {
+                        const color = rgba(getComputedStyle(node).backgroundColor);
+                        const alpha = color[3] ?? 1;
+                        background = background.map((channel, i) => color[i] * alpha + channel * (1 - alpha));
+                    }
+                    const fg = luminance(rgba(getComputedStyle(el).color));
+                    const bg = luminance(background);
+                    const ratio = (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+                    if (ratio < 4.5)
+                        found.push(`low contrast ${ratio.toFixed(2)}: ${el.className || el.tagName} "${el.textContent.trim().slice(0, 30)}"`);
+                }
+                return found;
+            });
+            expect(problems).toEqual([]);
+
+            // Keyboard only: focus the mask, nudge it, and the dialog stays open on the same screen.
+            const mask = lightbox.getByTestId('mask-rect');
+            await mask.focus();
+            await expect(mask).toBeFocused();
+            const x = await lightbox.getByTestId('mask-x').inputValue();
+            await page.keyboard.press('Shift+ArrowRight');
+            await expect(lightbox.getByTestId('mask-x')).toHaveValue(String(Number(x) + 10));
+            await expect(lightbox.getByTestId('mask-live')).toContainText('Mask 1');
+            await expect(lightbox).toBeVisible();
+
+            // the focus ring on a focused mask is the focus colour, not a status colour
+            const stroke = await mask.locator('.mask-focus').evaluate(el => getComputedStyle(el).stroke);
+            const focus = await page.evaluate(() => {
+                const probe = document.createElement('i');
+                probe.style.color = 'var(--focus)';
+                document.body.appendChild(probe);
+                const color = getComputedStyle(probe).color;
+                probe.remove();
+                return color;
+            });
+            expect(stroke).toBe(focus);
+        });
+    }
 });
 
 // Presses Tab until the focused element matches the selector (the nav and toolbar controls come first).
