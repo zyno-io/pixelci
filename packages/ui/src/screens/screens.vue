@@ -785,6 +785,7 @@ watch(
         // The lightbox shares this cache and queues its own requests; don't drop anything while it's open.
         if (previous && lightboxIndex.value === null) for (const [key, args] of previous) if (!wanted.has(key)) images.release(...args);
         for (const args of wanted.values()) images.request(...args); // re-requesting reorders the queue to this priority
+        images.hold('list', wanted.values()); // rendered, expanded cards' images are never unloaded
     },
     { immediate: true }
 );

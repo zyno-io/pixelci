@@ -116,6 +116,31 @@ test.describe('Virtual scrolling', () => {
         expect(requests).toBeLessThan(50);
     });
 
+    test('full-size images past the memory budget are unloaded, and fetched again when their card comes back', async ({ page }) => {
+        await openBuild(page);
+        // 8 MB per image: a few screens of cards go past the 200 MB budget.
+        const body = Buffer.alloc(8 * 1024 * 1024);
+        await page.route(/\/(image|diff)$/, route => route.fulfill({ status: 200, contentType: 'image/png', body }));
+        let firstImageRequests = 0;
+        page.on('request', req => {
+            if (new URL(req.url()).pathname.endsWith('/screen-000/image')) firstImageRequests++;
+        });
+        await page.reload();
+        await expect(cards(page).first()).toBeVisible();
+        await expect.poll(() => firstImageRequests).toBeGreaterThan(0);
+        const loadedOnce = firstImageRequests;
+
+        // Each stop renders a fresh set of cards and waits for their images, so earlier ones fall out of use.
+        for (let stop = 0; stop < 4; stop++) {
+            for (let i = 0; i < 8; i++) await page.keyboard.press('j');
+            await expect(page.locator('#screens .screen .loading')).toHaveCount(0);
+        }
+
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await expect.poll(() => firstImageRequests).toBeGreaterThan(loadedOnce);
+        await expect(page.locator('#screens .screen .loading')).toHaveCount(0);
+    });
+
     test('the gallery renders only the rows near the viewport', async ({ page }) => {
         await mockApi(page, { screenCount: 300 });
         await page.goto(`/apps/${appId}/screens`);
