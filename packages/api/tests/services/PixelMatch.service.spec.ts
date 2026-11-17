@@ -328,22 +328,29 @@ describe('PixelMatchService', () => {
             const service = new PixelMatchService(createMockLogger());
             const other = createPngWithRect(10, 10, 6, 6, 2, 2);
             const plain = PNG.sync.read(Buffer.from(await (await service.getDiff(white, other, 0.2, 0)).getDiffPng()));
-            const result = await service.getDiff(white, other, 0.2, 0, [mask(1, 1, 3, 3)]);
+            const result = await service.getDiff(white, other, 0.2, 0, [mask(0, 0, 5, 5)]);
             const parsed = PNG.sync.read(Buffer.from(await result.getDiffPng()));
             const at = (png: PNG, x: number, y: number) => [...png.data.subarray((10 * y + x) << 2, ((10 * y + x) << 2) + 4)];
             for (let y = 0; y < 10; y++) {
                 for (let x = 0; x < 10; x++) {
-                    const masked = x >= 1 && x < 4 && y >= 1 && y < 4;
+                    const masked = x < 5 && y < 5; // includes the line pixels (0,0) and (4,4)
                     if (!masked) {
                         assert.deepEqual(at(parsed, x, y), at(plain, x, y), `pixel ${x},${y} is untouched`);
                         continue;
                     }
-                    // mid grey at 40% composited over whatever the untinted diff has there
+                    // line pixels ((x + y) % 8 == 0): grey 70 at 60%; the rest: grey 128 at 40%; each composited over the untinted diff
+                    const onLine = (x + y) % 8 === 0;
+                    const grey = onLine ? 70 : 128;
+                    const a = onLine ? 0.6 : 0.4;
                     const [r, g, bl, alpha] = at(plain, x, y);
                     const dstA = alpha / 255;
-                    const outA = 0.4 + dstA * 0.6;
-                    const ch = (v: number) => Math.round((128 * 0.4 + v * dstA * 0.6) / outA);
-                    assert.deepEqual(at(parsed, x, y), [ch(r), ch(g), ch(bl), Math.round(outA * 255)], `pixel ${x},${y} is tinted`);
+                    const outA = a + dstA * (1 - a);
+                    const ch = (v: number) => Math.round((grey * a + v * dstA * (1 - a)) / outA);
+                    assert.deepEqual(
+                        at(parsed, x, y),
+                        [ch(r), ch(g), ch(bl), Math.round(outA * 255)],
+                        `pixel ${x},${y} is ${onLine ? 'a line' : 'tinted'}`
+                    );
                     assert.ok(at(parsed, x, y)[3] >= 102, `pixel ${x},${y} is visible`);
                 }
             }

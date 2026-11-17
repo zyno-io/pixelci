@@ -10,8 +10,8 @@
 - Draw, move and resize masks in the screen lightbox, or type their position in pixels. Every mask can be moved, resized
   and deleted from the keyboard. The lightbox previews proposed masks against the build you are looking at ("would pass",
   and how many pixels are masked) before you save
-- Each build records the masks every screen was compared with. The review screen tints them over both screenshots and tags
-  the screen **Masked**, the diff shows masked pixels under the same translucent grey tint, and the gallery tags masked screens
+- Each build records the masks every screen was compared with. The review screen draws them over both screenshots as a translucent grey fill with thin diagonal lines and tags
+  the screen **Masked**, the diff shows masked pixels under the same grey tint and lines, and the gallery tags masked screens
   and counts them under **Custom**. `appliedMasks` is available to the MCP server and the `/api/ext` build detail
 - **Breaking:** the `POST /api/apps/:appId/builds/:buildId/screens/:screenId/compare` endpoint now requires a `masks` array
   in its body (send `[]` for none) and returns `maskedPixels`

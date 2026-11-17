@@ -230,7 +230,12 @@ test.describe('mask editor, keyboard', () => {
         for (const i of [0, 1]) {
             await expect(masks.nth(i).locator('.mask-fill')).toHaveCSS('stroke', 'none');
             await expect(masks.nth(i).locator('.mask-fill')).toHaveCSS('stroke-dasharray', 'none');
+            // thin diagonal lines over the fill, from the pattern, with no outline of their own
+            await expect(masks.nth(i).locator('.mask-lines')).toHaveAttribute('fill', /^url\(#mask-lines-[\w-]+\)$/);
+            await expect(masks.nth(i).locator('.mask-lines')).toHaveCSS('stroke', 'none');
         }
+        const patternId = (await masks.nth(0).locator('.mask-lines').getAttribute('fill'))!.slice(5, -1);
+        await expect(page.locator(`pattern#${patternId} .mask-line`)).toHaveCount(1);
 
         await masks.nth(1).focus();
         await expect(masks.nth(1).locator('.mask-focus')).toHaveCSS('display', 'block');
@@ -341,6 +346,7 @@ test.describe('mask editor, state', () => {
         const appFill = page.getByTestId('app-mask-rect').locator('.mask-fill');
         await expect(appFill).toHaveCSS('stroke-dasharray', 'none');
         await expect(appFill).toHaveCSS('stroke', 'none');
+        await expect(page.getByTestId('app-mask-rect').locator('.mask-lines')).toHaveCount(1);
         await expect(page.getByTestId('tolerance-preview')).toContainText('Would pass');
         expect(lastCompare(requests).masks.map(m => m.id)).toEqual([ID_B, ID_A]);
 

@@ -230,7 +230,7 @@ When you open a screen from a build, the preview on the lightbox panel runs the 
 
 Masks apply from the next build. A build that has already been processed keeps its result, so a screen you are reviewing still needs its Approve or Reject, and a build that needs review stays that way; the preview will say it would pass, and approving re-runs your CI as usual.
 
-Because masks can hide a real regression, each screen in a build records the masks it was compared with. On the review screen they're drawn as a translucent grey fill over both screenshots, and the screen carries a **Masked** tag. The diff image tints masked pixels with the same grey, so red and yellow keep their meaning. The lightbox warns when masks cover more than half of a screenshot. [LLM access](/llm-access) reports the same masks as `appliedMasks`.
+Because masks can hide a real regression, each screen in a build records the masks it was compared with. On the review screen they're drawn as a translucent grey fill with thin diagonal lines over both screenshots, and the screen carries a **Masked** tag. The diff image tints masked pixels with the same grey and draws the same thin diagonal lines, so red and yellow keep their meaning. The lightbox warns when masks cover more than half of a screenshot. [LLM access](/llm-access) reports the same masks as `appliedMasks`.
 
 A screen that comes out unchanged is shown using the earlier approved image rather than its own upload, so what you see can differ from what was uploaded inside a mask.
 

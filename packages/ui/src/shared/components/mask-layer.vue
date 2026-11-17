@@ -11,6 +11,13 @@
         focusable="false"
         data-testid="mask-layer"
     >
+        <defs>
+            <!-- 45deg lines, 1 screen px wide and LINE_GAP screen px apart along x at every zoom (sized from the current scale). -->
+            <pattern :id="patternId" patternUnits="userSpaceOnUse" :width="linePeriod" :height="linePeriod" patternTransform="rotate(-45)">
+                <rect class="mask-line" x="0" y="0" :width="linePeriod" :height="1 / scale" />
+            </pattern>
+        </defs>
+
         <!-- Starts a draw anywhere on the screenshot; only present in draw mode so clicks otherwise pass through. -->
         <rect
             v-if="editable && drawing"
@@ -24,6 +31,7 @@
         <g v-for="mask in context" :key="mask.id" class="mask is-context" data-testid="app-mask-rect">
             <title>{{ mask.label ? `App mask: ${mask.label}` : 'App mask (edit it from Edit app masks)' }}</title>
             <rect class="mask-fill" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" />
+            <rect class="mask-lines" :fill="linesFill" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" />
         </g>
 
         <g
@@ -41,6 +49,7 @@
             @keydown="onKeydown($event, mask, index)"
         >
             <rect class="mask-fill" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" />
+            <rect class="mask-lines" :fill="linesFill" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" />
             <rect class="mask-focus" :x="mask.x" :y="mask.y" :width="mask.width" :height="mask.height" />
         </g>
 
@@ -52,6 +61,15 @@
             :width="draftRect.width"
             :height="draftRect.height"
             data-testid="mask-draft"
+        />
+        <rect
+            v-if="draftRect"
+            class="mask-lines"
+            :fill="linesFill"
+            :x="draftRect.x"
+            :y="draftRect.y"
+            :width="draftRect.width"
+            :height="draftRect.height"
         />
 
         <template v-if="editable && selected && !drag?.draft">
@@ -74,13 +92,13 @@
 <script lang="ts" setup>
 /**
  * Mask rectangles drawn over a screenshot, in the screenshot's own pixels (`viewBox` is its natural
- * size, so the layer follows Fit and the zoom levels). Every mask is a solid translucent fill with no
- * outline. Read-only, it has no pointer events, so the image underneath still takes clicks. Editable, masks can be drawn, moved and resized
+ * size, so the layer follows Fit and the zoom levels). Every mask is a translucent grey fill with thin
+ * diagonal lines (an SVG pattern kept at a constant on-screen spacing) and no outline. Read-only, it has no pointer events, so the image underneath still takes clicks. Editable, masks can be drawn, moved and resized
  * with a pointer, and each one is focusable and moves, resizes and deletes from the keyboard. Only the
  * selected or keyboard-focused mask gets a 1px outline (also the focus indicator) and resize handles.
  * `context` masks (the other set, e.g. the app's while editing a screen's) look the same but are fixed.
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue';
 
 import { describeMask, type IMaskRect, MAX_MASKS, newMaskId } from '@/shared/masks';
 
@@ -139,6 +157,13 @@ const svg = ref<SVGSVGElement>();
 const scale = ref(1);
 const coarse = ref(false);
 let resizeObserver: ResizeObserver | undefined;
+
+// Lines keep a constant on-screen spacing: 8 screen px along x, so the perpendicular period is 8 / sqrt(2) screen px,
+// divided by the current scale to get image pixels. The `viewBox` scales everything, so the tile is recomputed on zoom.
+const LINE_GAP = 8;
+const patternId = `mask-lines-${useId().replace(/[^\w-]/g, '')}`;
+const linesFill = `url(#${patternId})`;
+const linePeriod = computed(() => LINE_GAP / Math.SQRT2 / scale.value);
 
 const handleSize = computed(() => (coarse.value ? 16 : 9) / scale.value);
 const selected = computed(() => props.masks.find(m => m.id === props.selectedId));
@@ -394,14 +419,16 @@ function onKeydown(e: KeyboardEvent, mask: IMaskRect, index: number) {
 </script>
 
 <style lang="scss">
-// One neutral tint for every mask, everywhere (the stored diff image blends toward 128 grey at 40%).
-// Redeclared for dark mode like every other token.
+// One neutral tint for every mask, everywhere (the stored diff image blends toward 128 grey at 40%), with thin
+// diagonal lines a little darker than the fill. Redeclared for dark mode like every other token.
 :root {
     --mask-fill: rgba(118, 122, 130, 0.4);
+    --mask-line: rgba(70, 74, 84, 0.55);
     --mask-handle-fill: #ffffff;
 }
 html.dark {
     --mask-fill: rgba(150, 154, 164, 0.4);
+    --mask-line: rgba(78, 82, 92, 0.6);
     --mask-handle-fill: #ececf0;
 }
 </style>
@@ -419,6 +446,13 @@ html.dark {
 .mask-fill {
     fill: var(--mask-fill);
     stroke: none;
+}
+.mask-line {
+    fill: var(--mask-line);
+}
+.mask-lines {
+    stroke: none;
+    pointer-events: none;
 }
 // The only outline: 1px, on the selected or keyboard-focused mask in the editor. It doubles as the focus indicator.
 .mask-focus,

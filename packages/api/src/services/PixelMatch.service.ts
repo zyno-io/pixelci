@@ -7,6 +7,10 @@ import { IMaskRect, MASK_FILL, rasterizeMasks } from './Mask';
 /** Mask tint on the stored diff image: mid grey at 40%, matching the UI's `--mask-fill`. */
 const MASK_TINT_GREY = 128;
 const MASK_TINT_ALPHA = 0.4;
+/** Thin diagonal lines over the tint, matching the UI's `--mask-line`: a darker grey at a higher alpha, 8 px apart along x. */
+const MASK_LINE_GREY = 70;
+const MASK_LINE_ALPHA = 0.6;
+const MASK_LINE_SPACING = 8;
 import { isAntialiasedIgnoringMask } from './MaskedAntialias';
 
 const loadPixelMatch = memoize(async () => {
@@ -338,10 +342,14 @@ export class PixelMatchService {
             for (let i = 0; i < mask.length; i++) {
                 if (!mask[i]) continue;
                 const o = i << 2;
+                // on a line (x + y a multiple of the spacing): the darker line colour, else the plain tint
+                const onLine = ((i % width) + Math.floor(i / width)) % MASK_LINE_SPACING === 0;
+                const grey = onLine ? MASK_LINE_GREY : MASK_TINT_GREY;
+                const alpha = onLine ? MASK_LINE_ALPHA : MASK_TINT_ALPHA;
                 const dstA = diffTarget.data[o + 3] / 255;
-                const outA = MASK_TINT_ALPHA + dstA * (1 - MASK_TINT_ALPHA);
+                const outA = alpha + dstA * (1 - alpha);
                 for (let c = 0; c < 3; c++) {
-                    const blended = (MASK_TINT_GREY * MASK_TINT_ALPHA + diffTarget.data[o + c] * dstA * (1 - MASK_TINT_ALPHA)) / outA;
+                    const blended = (grey * alpha + diffTarget.data[o + c] * dstA * (1 - alpha)) / outA;
                     diffTarget.data[o + c] = Math.round(blended);
                 }
                 diffTarget.data[o + 3] = Math.round(outA * 255);
