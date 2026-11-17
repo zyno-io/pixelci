@@ -168,9 +168,9 @@ The gallery shows screens as thumbnails, without the side-by-side review layout.
 - **An app's screens.** Open it with **Screens** on the build list. It shows each screen as new builds will be compared against it: the image from the latest approved build on the default branch. A screen that has been uploaded since but isn't part of that baseline yet is tagged **Not in baseline** and shows its latest upload.
 - **A build's screens.** Open it with the grid button in the header of the screen comparison view. It shows every screen in that build with its status.
 
-Type in **Find a screen** to filter by name, use the buttons beside it to show only changed, unchanged or custom-tolerance screens, and pick a thumbnail size. Thumbnails take the shape of your screenshots; a screenshot much taller than its thumbnail shows its top.
+Type in **Find a screen** to filter by name, use the buttons beside it to show only changed, unchanged or custom screens (those with their own [tolerances](#tolerances) or [masks](#masks)), and pick a thumbnail size. Thumbnails take the shape of your screenshots; a screenshot much taller than its thumbnail shows its top.
 
-Click a thumbnail to open the screen at full size. There, the **left and right arrow keys** step through the screens, **Fit**, **100%** and **200%** set the zoom, and in a build's gallery you can switch between the new build, the reference and the diff (or hold **D** for the diff). The panel beside the image shows the screen's details and its [tolerances](#tolerances).
+Click a thumbnail to open the screen at full size. There, the **left and right arrow keys** step through the screens, **Fit**, **100%** and **200%** set the zoom, and in a build's gallery you can switch between the new build, the reference and the diff (or hold **D** for the diff). The panel beside the image shows the screen's details, its [tolerances](#tolerances) and its [masks](#masks).
 
 ## Tolerances
 
@@ -194,6 +194,45 @@ When you open a screen from a build, the tolerance panel runs the comparison aga
 
 Saved tolerances apply from the next build. A build that has already been processed keeps its result, so a screen you are reviewing still needs its Approve or Reject.
 
+## Masks
+
+A mask is a rectangle on a screen whose pixels never affect the result. Use one for content that changes on every run: a clock, an ad slot, a rotating avatar, a live chart. Nothing under a mask can make a screen differ, and masked pixels are left out of the percentage too: **Changed pixels allowed** is a share of the pixels that are compared, not of the whole screenshot. A screen that is entirely masked has nothing to flag.
+
+Masks can be set at two levels, and both apply:
+
+1. **App** — in the lightbox of any screen, click **Edit app masks**. Administrators can change these; everyone else sees them drawn dashed. They apply to every screen in the app, so keep them to things that really are on every screen, such as a header clock.
+2. **Screen** — open the screen from a gallery, or click **Tolerance** on its card in the screen comparison view, and use the **Masks** section. Anyone who can review the app can change these.
+
+A screen is compared with its own masks plus the app's. Untick **Use app masks** to leave the app's out for that screen.
+
+### Drawing and editing
+
+In the **Masks** section:
+
+- Click **Draw mask**, then drag on the screenshot. **Add mask** (or **N**) puts a mask in view that you then move and resize.
+- Drag a mask to move it and drag its handles to resize it, or type its **X**, **Y**, **W** and **H** in the list. Add a label if you want a reminder of what it covers (up to 80 characters).
+- **Hide masks** (or **M**) hides the outlines while you look at the screenshot.
+- Each screen can have 50 masks, and the app another 50.
+
+Masks are fully usable from the keyboard. Tab to a mask; the **arrow keys** move it by 1 pixel (hold **Shift** for 10), **Alt** with the arrows resizes it, **Delete** removes it, and **Escape** returns to the screenshot. **Escape** also cancels a draw in progress.
+
+When you open a screen from a build, the preview on the lightbox panel runs the comparison again with your masks and tells you whether the screen **would pass** or **would be flagged**, and how many pixels are masked. Nothing is saved until you click **Save masks** (or **Save app masks**). If someone else saved masks for the same screen or app first, PixelCI reloads what they saved and discards your unsaved edits, so you never overwrite them unseen.
+
+### Where masks sit
+
+- **Pixels, from the top-left.** A mask is a rectangle in whole pixels measured from the top-left corner of the screenshot, so it keeps the same position in every build.
+- **Masks never scale.** If a screenshot changes size (a full-page capture that gets longer, or a different device pixel ratio), the mask stays at the same pixel position. Anything past the edge of the compared area is ignored, and PixelCI tells you when a mask is partly or wholly outside the screenshot you are looking at.
+- **Pad for shift tolerance.** Content that moves across a mask's edge can still show up as a thin sliver of difference, up to the [shift tolerance](#tolerances) wide, just outside it. Make masks at least that much larger than the content they hide.
+- **Layout that moves needs a different tool.** A fixed rectangle can't follow content that reflows. If it does, mask it where you take the screenshot instead: Playwright's `page.screenshot({ mask: [page.locator('.clock')] })` paints over the elements wherever they are, and PixelCI then sees identical pixels there.
+
+### Reviewing masked screens
+
+Masks apply from the next build. A build that has already been processed keeps its result, so a screen you are reviewing still needs its Approve or Reject, and a build that needs review stays that way; the preview will say it would pass, and approving re-runs your CI as usual.
+
+Because masks can hide a real regression, each screen in a build records the masks it was compared with. On the review screen they're drawn as dashed outlines over both screenshots and the diff, and the screen carries a **Masked** tag. The diff image shows masked pixels in a grey hatch, so red and yellow keep their meaning. The lightbox warns when masks cover more than half of a screenshot. [LLM access](/llm-access) reports the same masks as `appliedMasks`.
+
+A screen that comes out unchanged is shown using the earlier approved image rather than its own upload, so what you see can differ from what was uploaded inside a mask.
+
 ## How Comparisons Work
 
 When a build is processed, PixelCI runs a multi-stage comparison:
@@ -203,4 +242,6 @@ When a build is processed, PixelCI runs a multi-stage comparison:
 3. **Cross-branch matching** — looks for identical approved changes on other branches since the baseline
 4. **New screen detection** — screens not present in the baseline are flagged as new
 
-Changes are flagged only when the share of differing pixels exceeds the screen's [tolerance](#tolerances) (by default, 0.01% of the screenshot). This approach minimizes false positives — once a change is approved anywhere, it's recognized across all branches.
+Every one of these comparisons ignores the screen's [masks](#masks): the pixels under them are treated as identical, and they are left out of the percentage.
+
+Changes are flagged only when the share of differing pixels exceeds the screen's [tolerance](#tolerances) (by default, 0.01% of the compared pixels). This approach minimizes false positives — once a change is approved anywhere, it's recognized across all branches.

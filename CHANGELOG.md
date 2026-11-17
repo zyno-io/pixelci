@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Masks: draw rectangles over the parts of a screen that change on every run (a clock, an ad, a live chart) and PixelCI
+  ignores them. The pixels under a mask never make a screen differ, and they are left out of the percentage, so **Changed
+  pixels allowed** is now a share of the pixels that are compared. Masks can be set per screen by anyone who can review
+  the app, and per app by administrators; a screen uses the app's masks plus its own, and can opt out of the app's. They
+  apply from the next build, like tolerances
+- Draw, move and resize masks in the screen lightbox, or type their position in pixels. Every mask can be moved, resized
+  and deleted from the keyboard. The lightbox previews proposed masks against the build you are looking at ("would pass",
+  and how many pixels are masked) before you save
+- Each build records the masks every screen was compared with. The review screen outlines them over both screenshots and the
+  diff and tags the screen **Masked**, the diff shows masked pixels as a grey hatch, and the gallery tags masked screens
+  and counts them under **Custom**. `appliedMasks` is available to the MCP server and the `/api/ext` build detail
+- **Breaking:** the `POST /api/apps/:appId/builds/:buildId/screens/:screenId/compare` endpoint now requires a `masks` array
+  in its body (send `[]` for none) and returns `maskedPixels`
+
 ## v0.6.1
 
 - Re-release of v0.6.0, whose tag build failed before publishing the server and CLI images. No changes to PixelCI itself

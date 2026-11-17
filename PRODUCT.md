@@ -47,8 +47,8 @@ Success: a reviewer reaches a confident approve/reject decision quickly, and the
 - **Workspaces:** `packages/ui` (Vue 3 review app), `packages/api` (backend and worker), `packages/cli` (CI uploader), `docs/` (documentation site, docs.pixelci.dev).
 - **UI routes:** login, apps, builds, screens, admin (users, VCS integrations), first-run onboarding.
 - **Build statuses (fixed terminology):** `draft`, `processing`, `no changes`, `needs review`, `changes approved`.
-- **Other fixed terms:** app, branch, build, screen, reference build, baseline, diff, threshold.
-- **Comparison:** pixel-by-pixel, flagged only above a tolerance configurable per instance, app, and screen (by default, more than 0.01% of pixels differing). Screens absent from the baseline are marked new.
+- **Other fixed terms:** app, branch, build, screen, reference build, baseline, diff, threshold, tolerance, mask.
+- **Comparison:** pixel-by-pixel, flagged only above a tolerance configurable per instance, app, and screen (by default, more than 0.01% of the compared pixels differing). Masks, rectangles set per app and per screen, are ignored entirely and left out of that percentage; each build records the masks it was compared with and the review screen outlines them. Screens absent from the baseline are marked new.
 - **VCS/CI:** GitLab (OAuth login, GitLab CI) and GitHub (GitHub Actions). Setup guides: `docs/gitlab-setup.md`, `docs/github-setup.md`.
 - **Themes:** the UI ships in light and dark.
 - **Auth:** login is via the configured OAuth provider; there are no local passwords.
