@@ -384,7 +384,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { IStatusTag } from '@/shared/status';
 
-import { useScreenImages, type ScreenImages } from '@/composables/useScreenImages';
+import { useScreenImages, type ScreenImageRef, type ScreenImages } from '@/composables/useScreenImages';
 import {
     AppsApi,
     BuildScreensApi,
@@ -545,6 +545,12 @@ function requestImages() {
     if (screen.current) images.value.request('image', screen.current.buildId, screen.screenId);
     if (screen.reference) images.value.request('image', screen.reference.buildId, screen.screenId);
     if (screen.diff && !canCompare.value) images.value.request('diff', screen.diff.buildId, screen.screenId);
+    // Kept loaded while shown, including the stored diff a failed preview falls back to.
+    const held: ScreenImageRef[] = [];
+    if (screen.current) held.push(['image', screen.current.buildId, screen.screenId]);
+    if (screen.reference) held.push(['image', screen.reference.buildId, screen.screenId]);
+    if (screen.diff) held.push(['diff', screen.diff.buildId, screen.screenId]);
+    images.value.hold('lightbox', held);
 }
 
 // The image the mask layer is currently aligned to; a new image is loading until this catches up.
@@ -1041,6 +1047,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
     disposed = true;
+    images.value.hold('lightbox', []);
     stageObserver?.disconnect();
     window.removeEventListener('resize', measureStage);
     window.removeEventListener('keydown', onDrawEscape, true);

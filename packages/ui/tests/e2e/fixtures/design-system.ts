@@ -41,6 +41,8 @@ export function createDesignApi(
         appliedMasks?: Record<string, IMaskRect[]>;
         /** Every request the mocked API served, for assertions on what the UI sent. */
         requests?: { path: string; method: string; body?: unknown }[];
+        /** Replaces the two build screens and the gallery with this many generated ones (for virtual scrolling). */
+        screenCount?: number;
     } = {}
 ) {
     const app: IAppShowResponse = {
@@ -73,7 +75,7 @@ export function createDesignApi(
         commitAuthor: 'Design Reviewer',
         status: 'needs review'
     };
-    const screens: IBuildScreenResponse[] = ['Dashboard', 'Login'].map((name, index) => ({
+    let screens: IBuildScreenResponse[] = ['Dashboard', 'Login'].map((name, index) => ({
         name,
         screenId: `screen-${index}`,
         tolerances: { colorTolerance: null, shiftTolerance: null, diffPctTolerance: null },
@@ -119,7 +121,7 @@ export function createDesignApi(
     }));
 
     // The app gallery: the two build screens as the baseline, plus enough others to fill a grid.
-    const gallery: IAppGalleryResponse = {
+    let gallery: IAppGalleryResponse = {
         baselineBuild: { ...build, status: 'changes approved' },
         screens: ['Dashboard', 'Login', 'Settings', 'Billing', 'Team members', 'Audit log', 'Onboarding', 'Empty state'].map((name, index) => ({
             name,
@@ -129,6 +131,48 @@ export function createDesignApi(
             image: { buildId, sourceBuildId: buildId, isBaseline: index !== 7 }
         }))
     };
+
+    if (options.screenCount) {
+        const noTolerances = { colorTolerance: null, shiftTolerance: null, diffPctTolerance: null };
+        const ids = Array.from({ length: options.screenCount }, (_, i) => ({
+            i,
+            name: `Screen ${String(i + 1).padStart(3, '0')}`,
+            screenId: `screen-${String(i).padStart(3, '0')}`
+        }));
+        // The first needs review; the next 59 are unchanged; after that the three kinds repeat.
+        const statusOf = (i: number) => (i === 0 ? 'needs review' : i < 60 ? 'no changes' : (['needs review', 'new', 'no changes'] as const)[i % 3]);
+        const row = (screenId: string, forBuildId: string, status: string) => ({
+            id: appId,
+            buildId: forBuildId,
+            screenId,
+            matchedBuildId: null,
+            approvalBuildId: null,
+            status,
+            reviewStatus: null,
+            reviewComment: null,
+            reviewedById: null,
+            reviewedAt: null,
+            appliedMasks: null
+        });
+        screens = ids.map(({ i, name, screenId }) => ({
+            name,
+            screenId,
+            tolerances: noTolerances,
+            masks: noMasks(),
+            currentBuildScreen: row(screenId, buildId, statusOf(i)),
+            referenceBuildScreen: statusOf(i) === 'new' ? undefined : row(screenId, appId, 'changes approved')
+        })) as IBuildScreenResponse[];
+        gallery = {
+            ...gallery,
+            screens: ids.map(({ name, screenId }) => ({
+                name,
+                screenId,
+                tolerances: noTolerances,
+                masks: noMasks(),
+                image: { buildId, sourceBuildId: buildId, isBaseline: true }
+            }))
+        };
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (path: string, method = 'GET', body?: any) => {

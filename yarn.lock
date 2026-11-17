@@ -3091,6 +3091,24 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@tanstack/virtual-core@npm:3.19.11":
+  version: 3.19.11
+  resolution: "@tanstack/virtual-core@npm:3.19.11"
+  checksum: 10c0/61558882fd09f64020104ecd94bacaa2a6ccbb0745247610ede7683d709cf8d134cc3f6d1ee2d22203cb881e531bc4a3bb92e4657c08edf923ab6d5c39a958ec
+  languageName: node
+  linkType: hard
+
+"@tanstack/vue-virtual@npm:^3.13.52":
+  version: 3.13.52
+  resolution: "@tanstack/vue-virtual@npm:3.13.52"
+  dependencies:
+    "@tanstack/virtual-core": "npm:3.19.11"
+  peerDependencies:
+    vue: ^2.7.0 || ^3.0.0
+  checksum: 10c0/6974c7cfa7f02a0de83ad01b2aaa1ca1f24a42bba51175bea05d30e4c4ab77cc32bb29ae366c17e6e4bddbbda6c83b37760b47856cca1eeb230f5f63df0c3af4
+  languageName: node
+  linkType: hard
+
 "@tokenizer/inflate@npm:^0.5.1":
   version: 0.5.2
   resolution: "@tokenizer/inflate@npm:0.5.2"
@@ -4309,6 +4327,7 @@ __metadata:
     "@sentry/browser": "npm:^11.12.0"
     "@sentry/vue": "npm:^11.12.0"
     "@tailwindcss/postcss": "npm:^4.3.5"
+    "@tanstack/vue-virtual": "npm:^3.13.52"
     "@tsconfig/node22": "npm:^22.0.7"
     "@types/jsdom": "npm:^30.0.0"
     "@types/lodash": "npm:^4.17.27"

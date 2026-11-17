@@ -109,49 +109,68 @@
                 </div>
             </div>
 
-            <ul v-else class="tiles" :data-size="size" data-testid="gallery-tiles">
-                <li v-for="tile in visibleTiles" :key="tile.screenId">
-                    <button
-                        :ref="el => observeTile(tile, el as HTMLElement | null)"
-                        type="button"
-                        class="tile"
-                        :aria-label="tileLabel(tile)"
-                        data-testid="gallery-tile"
-                        @click="openTile(tile)"
+            <div
+                v-else
+                ref="gridEl"
+                class="tiles"
+                :data-size="size"
+                role="list"
+                aria-label="Screens"
+                data-testid="gallery-tiles"
+                :style="{ height: `${gridHeight}px`, '--cols': cols }"
+            >
+                <div
+                    v-for="row in renderedRows"
+                    :key="row.index"
+                    :ref="el => virtualizer.measureElement(el as HTMLElement | null)"
+                    :data-index="row.index"
+                    class="tile-row"
+                    role="none"
+                    :style="{ transform: `translateY(${row.y}px)` }"
+                    @focusin="focusedRow = row.index"
+                >
+                    <div
+                        v-for="{ tile, position } in row.tiles"
+                        :key="tile.screenId"
+                        role="listitem"
+                        :aria-setsize="visibleTiles.length"
+                        :aria-posinset="position"
                     >
-                        <span class="tile-mat">
-                            <span v-if="!tile.thumb || thumbSrc(tile) === false" class="tile-missing">
-                                {{ tile.thumb ? "Couldn't load" : 'No screenshot' }}
+                        <button type="button" class="tile" :aria-label="tileLabel(tile)" data-testid="gallery-tile" @click="openTile(tile)">
+                            <span class="tile-mat">
+                                <span v-if="!tile.thumb || thumbSrc(tile) === false" class="tile-missing">
+                                    {{ tile.thumb ? "Couldn't load" : 'No screenshot' }}
+                                </span>
+                                <span v-else-if="!thumbSrc(tile)" class="tile-loading" aria-hidden="true" />
+                                <img
+                                    v-else
+                                    :src="thumbSrc(tile) as string"
+                                    alt=""
+                                    decoding="async"
+                                    :class="{ 'is-tall': tallTiles.has(tile.screenId) }"
+                                    @load="onThumbLoad($event, tile)"
+                                />
                             </span>
-                            <span v-else-if="!thumbSrc(tile)" class="tile-loading" aria-hidden="true" />
-                            <img
-                                v-else
-                                :src="thumbSrc(tile) as string"
-                                alt=""
-                                decoding="async"
-                                :class="{ 'is-tall': tallTiles.has(tile.screenId) }"
-                                @load="onThumbLoad($event, tile)"
-                            />
-                        </span>
 
-                        <span class="tile-foot">
-                            <span class="tile-name" :title="tile.name">{{ tile.name }}</span>
-                            <span class="tile-tags">
-                                <span v-if="hasOverride(tile.tolerances)" class="tag" v-tooltip="toleranceSummary(tile)">
-                                    <i class="fa fa-sliders" aria-hidden="true" /> Custom
-                                </span>
-                                <span v-if="tile.masks.masks.length" class="tag" v-tooltip="maskSummary(tile)" data-testid="tile-masked">
-                                    <i class="fa fa-table-cells-large" aria-hidden="true" /> Masked
-                                </span>
-                                <span v-if="tile.status" class="tag" :class="tile.status.tone">
-                                    <i v-if="tile.status.icon" class="fa" :class="tile.status.icon" aria-hidden="true" />
-                                    {{ tile.status.label }}
+                            <span class="tile-foot">
+                                <span class="tile-name" :title="tile.name">{{ tile.name }}</span>
+                                <span class="tile-tags">
+                                    <span v-if="hasOverride(tile.tolerances)" class="tag" v-tooltip="toleranceSummary(tile)">
+                                        <i class="fa fa-sliders" aria-hidden="true" /> Custom
+                                    </span>
+                                    <span v-if="tile.masks.masks.length" class="tag" v-tooltip="maskSummary(tile)" data-testid="tile-masked">
+                                        <i class="fa fa-table-cells-large" aria-hidden="true" /> Masked
+                                    </span>
+                                    <span v-if="tile.status" class="tag" :class="tile.status.tone">
+                                        <i v-if="tile.status.icon" class="fa" :class="tile.status.icon" aria-hidden="true" />
+                                        {{ tile.status.label }}
+                                    </span>
                                 </span>
                             </span>
-                        </span>
-                    </button>
-                </li>
-            </ul>
+                        </button>
+                    </div>
+                </div>
+            </div>
         </template>
 
         <ScreenLightbox
@@ -181,12 +200,14 @@
  * (what new builds are compared against) and one build's screens. A thumbnail opens the lightbox,
  * where the screen's comparison tolerances can be read and changed.
  */
+import { useWindowVirtualizer, type Range as VirtualRange } from '@tanstack/vue-virtual';
 import { dataFrom, dataFromAsync } from '@zyno-io/openapi-client-codegen';
 import { handleError } from '@zyno-io/vue-foundation';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { useScreenImages } from '@/composables/useScreenImages';
+import { useDocumentTop } from '@/composables/useDocumentTop';
+import { type ScreenImageKind, useScreenImages } from '@/composables/useScreenImages';
 import {
     AppsApi,
     BuildScreensApi,
@@ -213,6 +234,7 @@ import {
     resolveTolerances,
     TOLERANCE_FIELDS
 } from '@/shared/tolerances';
+import { measureExact, rangeWithPinned } from '@/shared/virtual';
 
 import AppTolerances from './app-tolerances.vue';
 import ScreensSegmented from './screens-segmented.vue';
@@ -407,33 +429,90 @@ function thumbSrc(tile: ITile) {
     return tile.thumb ? images.get('thumb', tile.thumb.buildId, tile.screenId) : false;
 }
 
-// Only fetch thumbnails as their tiles come near the viewport.
-const tileByElement = new WeakMap<Element, ITile>();
-const elementByScreen = new Map<string, Element>();
-const observer = new IntersectionObserver(
-    entries => {
-        for (const entry of entries) {
-            if (!entry.isIntersecting) continue;
-            const tile = tileByElement.get(entry.target);
-            if (tile?.thumb) images.request('thumb', tile.thumb.buildId, tile.screenId);
-            observer.unobserve(entry.target);
+// ── Virtual grid ──
+// Only the rows near the viewport are rendered. The column count is worked out here (not by CSS auto-fill)
+// because rows are the unit being positioned.
+const gridEl = ref<HTMLElement>();
+const grid = reactive({ width: 0, tileMin: 260, gap: 16 });
+function readGrid() {
+    const el = gridEl.value;
+    if (!el) return;
+    const style = getComputedStyle(el);
+    grid.width = el.getBoundingClientRect().width;
+    grid.tileMin = parseFloat(style.getPropertyValue('--tile-min')) || 260;
+    grid.gap = parseFloat(style.getPropertyValue('--tile-gap')) || 16;
+}
+const gridObserver = new ResizeObserver(readGrid);
+watch(
+    gridEl,
+    el => {
+        gridObserver.disconnect();
+        if (el) {
+            gridObserver.observe(el);
+            readGrid();
         }
     },
-    { rootMargin: '600px 0px' }
+    { flush: 'post' }
 );
+watch(size, readGrid, { flush: 'post' });
+// The count auto-fill gave: as many columns of at least --tile-min as fit.
+const cols = computed(() => (grid.width ? Math.max(1, Math.floor((grid.width + grid.gap) / (Math.min(grid.tileMin, grid.width) + grid.gap))) : 1));
+const gridTop = useDocumentTop(gridEl);
+const focusedRow = ref(-1); // set on focusin; reset in load()
 
-function observeTile(tile: ITile, el: HTMLElement | null) {
-    const previous = elementByScreen.get(tile.screenId);
-    if (previous === el) return;
-    if (previous) observer.unobserve(previous);
-    if (!el) {
-        elementByScreen.delete(tile.screenId);
-        return;
-    }
-    elementByScreen.set(tile.screenId, el);
-    tileByElement.set(el, tile);
-    observer.observe(el);
+function estimateRow() {
+    if (!grid.width) return 240;
+    const tileWidth = (grid.width - (cols.value - 1) * grid.gap) / cols.value;
+    const stacked = size.value === 's' || window.innerWidth <= 640;
+    return (tileWidth - 18) / tileRatio.value + 28 + (stacked ? 50 : 24); // mat + tile chrome + footer
 }
+
+const virtualizer = useWindowVirtualizer<HTMLElement>(
+    computed(() => {
+        const pinned = focusedRow.value;
+        return {
+            count: Math.ceil(visibleTiles.value.length / cols.value),
+            estimateSize: () => estimateRow(),
+            measureElement: measureExact,
+            gap: grid.gap,
+            overscan: 3,
+            scrollMargin: gridTop.value,
+            rangeExtractor: (range: VirtualRange) => rangeWithPinned(range, [pinned]) // keeps a focused tile (the lightbox's return target) rendered
+        };
+    })
+);
+// Every row changes height when the grid's width, size or tile shape change, and content when the list is filtered.
+watch([() => Math.round(grid.width), cols, size, tileRatio, visibleTiles], () => virtualizer.value.measure());
+const gridHeight = computed(() => virtualizer.value.getTotalSize());
+const renderedRows = computed(() => {
+    const n = cols.value;
+    const list = visibleTiles.value;
+    const margin = virtualizer.value.options.scrollMargin;
+    return virtualizer.value.getVirtualItems().map(row => ({
+        index: row.index,
+        y: row.start - margin,
+        tiles: list.slice(row.index * n, row.index * n + n).map((tile, i) => ({ tile, position: row.index * n + i + 1 }))
+    }));
+});
+
+// Thumbnails for rendered tiles only. Built bottom row first and right to left, so the newest-first queue fills top-left first.
+const wantedThumbs = computed(() => {
+    const wanted = new Map<string, [ScreenImageKind, string, string]>();
+    for (const row of [...renderedRows.value].reverse()) {
+        for (const { tile } of [...row.tiles].reverse()) {
+            if (tile.thumb) wanted.set(`thumb:${tile.thumb.buildId}:${tile.screenId}`, ['thumb', tile.thumb.buildId, tile.screenId]);
+        }
+    }
+    return wanted;
+});
+watch(
+    wantedThumbs,
+    (wanted, previous) => {
+        if (previous) for (const [key, args] of previous) if (!wanted.has(key)) images.release(...args);
+        for (const args of wanted.values()) images.request(...args);
+    },
+    { immediate: true }
+);
 
 function tileLabel(tile: ITile) {
     return [tile.name, tile.status?.label, hasOverride(tile.tolerances) ? 'custom tolerance' : '', tile.masks.masks.length ? 'masked' : '']
@@ -511,6 +590,7 @@ async function load() {
     filter.value = 'all';
     tiles.value = [];
     imageRatios.clear();
+    focusedRow.value = -1;
     tileRatio.value = readSavedRatio();
     build.value = undefined;
     baselineBuild.value = null;
@@ -561,7 +641,7 @@ watch([appId, buildId], load);
 
 onBeforeUnmount(() => {
     loadRun++;
-    observer.disconnect();
+    gridObserver.disconnect();
 });
 </script>
 
@@ -713,22 +793,29 @@ onBeforeUnmount(() => {
     }
 
     // ── Tiles ──
+    // Rows are positioned by the virtualizer (translateY); the column count comes from --cols.
     .tiles {
         --tile-min: 260px;
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(min(var(--tile-min), 100%), 1fr));
-        gap: 16px;
-        margin: 0;
-        padding: 0;
-        list-style: none;
+        --tile-gap: 16px;
+        position: relative;
+        overflow-anchor: none;
 
         &[data-size='s'] {
             --tile-min: 180px;
-            gap: 12px;
+            --tile-gap: 12px;
         }
         &[data-size='l'] {
             --tile-min: 400px;
         }
+    }
+    .tile-row {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+        gap: var(--tile-gap);
     }
     .tile {
         display: flex;
@@ -862,7 +949,7 @@ onBeforeUnmount(() => {
     #gallery .tiles,
     #gallery .tiles[data-size] {
         --tile-min: 150px;
-        gap: 10px;
+        --tile-gap: 10px;
     }
     #gallery .tile-foot {
         flex-direction: column;

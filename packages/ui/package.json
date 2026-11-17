@@ -20,6 +20,7 @@
         "@fortawesome/fontawesome-free": "^7.3.1",
         "@sentry/browser": "^11.12.0",
         "@sentry/vue": "^11.12.0",
+        "@tanstack/vue-virtual": "^3.13.52",
         "@vue/devtools-api": "^8.2.1",
         "@zyno-io/openapi-client-codegen": "^2.11.0",
         "@zyno-io/vue-foundation": "^4.40.0",
