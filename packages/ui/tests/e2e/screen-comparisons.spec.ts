@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 
 test.describe('Screen Comparisons', () => {
     test.beforeEach(async ({ page }) => {
@@ -449,4 +449,171 @@ test.describe('Screen Comparisons', () => {
             await expect(dialog).toBeHidden();
         });
     }
+
+    // ── Provenance, base chip and revoke (stubbed: the seeded build carries none of these) ──
+    const DECISION = {
+        id: '00000000-0000-4000-8000-0000000000e1',
+        kind: 'approved',
+        buildId: '00000000-0000-0000-0000-000000000099',
+        commitHash: 'abc1234def5678',
+        branchName: 'feature/other',
+        decidedByName: 'Ada Lovelace',
+        decidedAt: '2025-01-18T09:30:00.000Z',
+        comment: null,
+        revokedAt: null,
+        revokedByName: null,
+        branchScoped: false
+    };
+
+    // Re-serves the screen list with the Homepage row changed, then reloads. Returns that row's own build id.
+    async function stubHomepage(page: Page, patch: (row: Record<string, any>, ownBuildId: string) => void) {
+        await page.route(/\/builds\/[^/]+\/screens$/, async route => {
+            const response = await route.fetch();
+            const screens = await response.json();
+            for (const screen of screens) {
+                if (!screen.currentBuildScreen) continue;
+                screen.currentBuildScreen.reviewStatus = null;
+                screen.currentBuildScreen.reviewComment = null;
+                screen.currentBuildScreen.reviewedById = null;
+                screen.currentBuildScreen.reviewedAt = null;
+            }
+            const homepage = screens.find((s: { name: string }) => s.name === 'Homepage');
+            patch(homepage.currentBuildScreen, homepage.currentBuildScreen.buildId);
+            await route.fulfill({ response, json: screens });
+        });
+        await page.reload();
+        await page.waitForSelector('.screen');
+        return page.locator('.screen').filter({ hasText: 'Homepage' });
+    }
+
+    test('shows the reference as a base chip linking to its build', async ({ page }) => {
+        const chip = page.getByTestId('base-chip');
+        await expect(chip).toContainText('base');
+        await expect(chip).toContainText('main');
+        await expect(chip).toHaveAttribute('href', /\/builds\/00000000-0000-0000-0000-000000000004$/);
+        await expect(page.getByTestId('reference-fallback')).toHaveCount(0);
+    });
+
+    test('warns when the build was compared against the latest approved build', async ({ page }) => {
+        await page.route(/\/builds\/[^/]+$/, async route => {
+            if (!['fetch', 'xhr'].includes(route.request().resourceType())) return route.fallback();
+            const response = await route.fetch();
+            const build = await response.json();
+            build.referenceSource = 'latest';
+            await route.fulfill({ response, json: build });
+        });
+        await page.reload();
+        await page.waitForSelector('.screen');
+
+        const notice = page.getByTestId('reference-fallback');
+        await expect(notice).toContainText("couldn't find where this build's history meets the default branch");
+        await expect(notice.getByRole('link')).toHaveAttribute('href', /docs\.pixelci\.dev/);
+        await expect(page.getByTestId('base-chip')).toBeVisible();
+    });
+
+    test('hides the base chip for a build without a reference', async ({ page }) => {
+        await page.route(/\/builds\/[^/]+$/, async route => {
+            if (!['fetch', 'xhr'].includes(route.request().resourceType())) return route.fallback();
+            const response = await route.fetch();
+            const build = await response.json();
+            build.referenceSource = 'none';
+            build.referenceBuildId = null;
+            build.reference = null;
+            await route.fulfill({ response, json: build });
+        });
+        await page.reload();
+        await page.waitForSelector('.screen');
+        await expect(page.getByTestId('base-chip')).toHaveCount(0);
+        await expect(page.getByTestId('reference-fallback')).toHaveCount(0);
+    });
+
+    test('names the review an automatically approved screen came from', async ({ page }) => {
+        const screen = await stubHomepage(page, row => {
+            row.decisionId = DECISION.id;
+            row.decision = DECISION;
+        });
+        const line = screen.getByTestId('provenance');
+        await expect(line).toContainText('Approved automatically: the same change was approved on feature/other in abc1234 by Ada Lovelace.');
+        await expect(line).not.toContainText('since revoked');
+        await expect(screen.getByTestId('revoke-approval')).toHaveCount(0);
+    });
+
+    test('marks an approval that was revoked since', async ({ page }) => {
+        const screen = await stubHomepage(page, row => {
+            row.decision = { ...DECISION, revokedAt: '2025-01-19T10:00:00.000Z', revokedByName: 'Grace Hopper' };
+        });
+        await expect(screen.getByTestId('provenance')).toContainText('(since revoked)');
+    });
+
+    test('shows a rejection from an earlier build as a pre-marked rejection', async ({ page }) => {
+        const screen = await stubHomepage(page, row => {
+            row.reviewStatus = 'rejected';
+            row.decision = { ...DECISION, kind: 'rejected', branchName: 'main', comment: 'Too bold' };
+        });
+        await expect(screen.getByTestId('provenance')).toContainText('Rejected on main in abc1234 by Ada Lovelace: “Too bold”. Approve to override.');
+        await expect(screen.getByTestId('revoke-approval')).toHaveCount(0);
+    });
+
+    test('says when a review mark was carried over from the previous build', async ({ page }) => {
+        const screen = await stubHomepage(page, row => {
+            row.reviewStatus = 'approved';
+            row.reviewCarriedFrom = {
+                buildId: DECISION.buildId,
+                commitHash: '9f8e7d6c5b',
+                reviewedByName: 'Grace Hopper',
+                reviewedAt: DECISION.decidedAt
+            };
+        });
+        await expect(screen.getByTestId('provenance')).toContainText('Carried over from 9f8e7d6 (reviewed by Grace Hopper).');
+    });
+
+    test('revoking an approval made in this build asks first, then shows it revoked', async ({ page }) => {
+        const screen = await stubHomepage(page, (row, ownBuildId) => {
+            row.decision = { ...DECISION, buildId: ownBuildId };
+        });
+        await expect(screen.getByTestId('provenance')).toContainText('Approved by Ada Lovelace');
+
+        let revokes = 0;
+        await page.route(/\/decisions\/[^/]+\/revoke$/, async route => {
+            revokes++;
+            const body = {
+                ...DECISION,
+                buildId: new URL(page.url()).pathname.split('/')[4],
+                revokedAt: '2025-01-19T10:00:00.000Z',
+                revokedByName: 'Grace Hopper'
+            };
+            await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+        });
+
+        await screen.getByTestId('revoke-approval').click();
+        const dialog = page.getByRole('dialog');
+        await expect(dialog).toContainText('Future builds that make this change will ask again. Builds already approved stay approved.');
+
+        // Cancelling revokes nothing.
+        await page.locator('[data-testid="submit-cancel"]').click();
+        await expect(dialog).toBeHidden();
+        expect(revokes).toBe(0);
+
+        await screen.getByTestId('revoke-approval').click();
+        await page.locator('[data-testid="submit-confirm"]').click();
+        await expect(screen.getByTestId('provenance')).toContainText('Approval revoked by Grace Hopper');
+        await expect(screen.getByTestId('revoke-approval')).toHaveCount(0);
+        expect(revokes).toBe(1);
+    });
+
+    test("a changed screen's diff and image come from its own build, not the build it matched", async ({ page }) => {
+        const MATCHED = '00000000-0000-0000-0000-000000000003';
+        const requests: string[] = [];
+        page.on('request', request => {
+            if (/\/builds\/[^/]+\/screens\/[^/]+\/(diff|image)$/.test(request.url())) requests.push(new URL(request.url()).pathname);
+        });
+        let own = '';
+        await stubHomepage(page, (row, ownBuildId) => {
+            row.matchedBuildId = MATCHED;
+            own = ownBuildId;
+        });
+
+        await expect.poll(() => requests.filter(r => r.includes(`/builds/${own}/`) && r.endsWith('/diff')).length).toBeGreaterThan(0);
+        expect(requests.some(r => r.includes(`/builds/${MATCHED}/`) && r.endsWith('/diff'))).toBe(false);
+    });
 });

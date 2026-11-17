@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+- **Approvals are remembered as changes: the screen's image before and after.** A build is approved automatically only
+  when it makes a change that was already approved, from the same starting image, on any branch or after the merge. This
+  fixes a branch's approved change being asked again on the default branch after another merge landed first, and an older
+  approval letting a different change through (an approval older than the baseline, a rebase that dropped a newer
+  default-branch change, or a removed screen re-added with its old image)
+- **Branches are compared with the default branch where they forked**, not with its latest approved build, so changes made
+  on the default branch since you branched no longer appear in your review. The CLI finds the merge base with git and uses
+  the merge-request or pull-request base commit when there is one. Without git history it falls back to the latest
+  approved build and the review page says so. Set `GIT_DEPTH: 0` (GitLab) or `fetch-depth: 0` (GitHub Actions). The CLI
+  image now includes git. New variables: `PIXELCI_BASE_COMMIT` and `PIXELCI_GIT_FETCH`
+- **Rejections stick.** A rejected change arrives pre-marked as rejected on every branch that makes it, showing who
+  rejected it and where, until someone approves it
+- **Revoke an approval** from the build it was made in. Future builds that make the same change ask again; builds already
+  approved stay approved
+- Clearer audit trail: automatically approved screens show the review they came from, and review marks carried from the
+  branch's previous build say so. Review marks now carry over only within a branch; decisions travel between branches as
+  approvals and rejections. In MCP and `/api/ext`, `reviewedByName` is null for screens nobody reviewed in that build, and
+  a new `decision` field is added
+- When matching earlier approvals, PixelCI uses each screen's current tolerances and masks. Screens byte-identical to
+  their baseline skip the pixel comparison
+- Fixed: the diff for an automatically approved screen could be against an older baseline than the image beside it. The
+  review screen, the gallery and the external API now show the two images processing compared and the diff between them
+- Fixed: processing and the tolerance preview compared against the reference build's own upload instead of the image it was
+  matched to
+- Fixed: comparing two screenshots of different shapes could allocate a canvas far above `SCREEN_MAX_PIXELS` and exhaust
+  memory; a pair whose padded canvas exceeds the cap now counts as fully changed without a pixel comparison, and the
+  compare preview says so
+- Fixed: checking other branches' approved changes could overwrite a screen's stored diff
+- **Upgrade notes:** approvals made before this release are not reused, so in-flight branches may ask once more. Approved
+  builds remain baselines
+- **Breaking (API):** `process` accepts `base`; the create response adds `defaultBranch`; build and screen responses add
+  reference and decision fields; new `POST /api/apps/:appId/decisions/:id/revoke`
+
 ## v0.7.0
 
 - Masks: draw rectangles over the parts of a screen that change on every run (a clock, an ad, a live chart) and PixelCI

@@ -112,13 +112,11 @@ Build statuses flow: `draft` → `processing` → `no changes` | `needs review` 
 
 The `ProcessBuildJob` (api/src/jobs/ProcessBuild.job.ts) implements the core visual regression algorithm:
 
-1. **Previous Build Comparison**: For non-default branches, compares against the last approved build on same branch
-2. **Reference Build Comparison**: Compares against latest approved build on default branch
-3. **Intermediate Approval Matching**: Checks if changes match any approved changes on other branches since reference build
-4. **New Screen Detection**: Marks screens not in reference build as "new"
-5. **Diff Storage**: Stores visual diff images to S3 when pixel difference exceeds threshold (default 1%)
-
-The algorithm uses UUID7 time-ordering to temporally compare builds and screens even across different branches.
+1. **Reference Resolution** (`services/Reference.ts`): the CLI sends the first-parent ancestry of the branch's merge base with the default branch; the reference is the nearest accepted default-branch build in that list (fallback: latest accepted, `referenceSource='latest'`). Stored on the build as `referenceBuildId`.
+2. **Baseline Comparison**: each screen is compared with its baseline's image source (`matchedBuildId ?? buildId` of the reference row); byte-identical uploads (`contentHash`) skip pixelmatch. Only this comparison stores a diff, at the row's own path.
+3. **Decision Matching** (`services/Decisions.ts`): approvals and rejections are stored as transitions in `screen_decisions` (from-image → to-image). A changed screen is auto-approved only when its baseline is the decision's from-image, the decision is newer than that baseline (epoch rule), and its upload matches the to-image. Newest decision wins; revoked decisions are ignored; bounded candidates and pixel compares.
+4. **New/Removed Screens**: absent baselines and tombstones use the same transition model (`∅ → image`, `image → ∅`).
+5. **Review Carry-Forward**: review marks carry only from the previous build on the same branch, for the same transition.
 
 ### API Structure
 

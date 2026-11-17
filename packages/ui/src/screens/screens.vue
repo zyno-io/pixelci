@@ -30,6 +30,20 @@
                         <span class="truncate subject">{{ build.commitSubject }}</span>
                     </component>
 
+                    <RouterLink
+                        v-if="referenceChip"
+                        :to="`${buildsPath}/builds/${referenceChip.id}`"
+                        class="context-item base"
+                        v-tooltip="referenceChip.note"
+                        data-testid="base-chip"
+                    >
+                        <i class="fa fa-code-compare fa-sm" aria-hidden="true" />
+                        <span>base</span>
+                        <span class="truncate">{{ referenceChip.branchName }}</span>
+                        <span>&#64;</span>
+                        <span class="mono hash">{{ referenceChip.shortHash }}</span>
+                    </RouterLink>
+
                     <span v-if="buildStatus" class="tag build-status" :class="buildStatus.tone" data-testid="build-status">
                         <i v-if="buildStatus.icon" class="fa fa-fw" :class="buildStatus.icon" aria-hidden="true" />
                         {{ buildStatus.label }}
@@ -63,6 +77,14 @@
             <div v-if="!loadError && reviewLocked" class="notice review-locked" data-testid="review-locked">
                 <i class="fa fa-lock" aria-hidden="true" />
                 <div class="notice-body">You can view this build but not review it. {{ reviewLockedReason }}</div>
+            </div>
+
+            <div v-if="!loadError && build?.referenceSource === 'latest'" class="notice warning reference-fallback" data-testid="reference-fallback">
+                <i class="fa fa-triangle-exclamation" aria-hidden="true" />
+                <div class="notice-body">
+                    {{ REFERENCE_FALLBACK_NOTICE }}
+                    <a :href="REFERENCE_FALLBACK_DOCS_URL" target="_blank" rel="noopener">How to fetch full history</a>
+                </div>
             </div>
 
             <div v-if="loadError" class="notice danger load-error" role="alert">
@@ -158,6 +180,51 @@
                                     {{ getScreenStatus(screen)!.label }}
                                 </span>
                             </div>
+                        </div>
+
+                        <div v-if="provenanceOf(screen)" class="provenance" :class="provenanceOf(screen)!.kind" data-testid="provenance">
+                            <i class="fa fa-fw" :class="provenanceOf(screen)!.icon" aria-hidden="true" />
+                            <span class="provenance-text">
+                                <template v-if="provenanceOf(screen)!.kind === 'auto-approved'">
+                                    Approved automatically: the same change was approved on
+                                    <em>{{ provenanceOf(screen)!.decision!.branchName }}</em> in
+                                    <span class="mono">{{ short(provenanceOf(screen)!.decision!.commitHash) }}</span> by
+                                    {{ nameOf(provenanceOf(screen)!.decision!.decidedByName) }}.<template
+                                        v-if="provenanceOf(screen)!.decision!.revokedAt"
+                                    >
+                                        (since revoked)</template
+                                    >
+                                </template>
+                                <template v-else-if="provenanceOf(screen)!.kind === 'approved-here'">
+                                    Approved by {{ nameOf(provenanceOf(screen)!.decision!.decidedByName) }}
+                                </template>
+                                <template v-else-if="provenanceOf(screen)!.kind === 'revoked-here'">
+                                    Approval revoked by {{ nameOf(provenanceOf(screen)!.decision!.revokedByName) }}
+                                </template>
+                                <template v-else-if="provenanceOf(screen)!.kind === 'rejected'">
+                                    Rejected on <em>{{ provenanceOf(screen)!.decision!.branchName }}</em> in
+                                    <span class="mono">{{ short(provenanceOf(screen)!.decision!.commitHash) }}</span> by
+                                    {{ nameOf(provenanceOf(screen)!.decision!.decidedByName)
+                                    }}<template v-if="provenanceOf(screen)!.decision!.comment"
+                                        >: &ldquo;{{ provenanceOf(screen)!.decision!.comment }}&rdquo;</template
+                                    >.<template v-if="canReview(screen)"> Approve to override.</template>
+                                </template>
+                                <template v-else-if="provenanceOf(screen)!.carried">
+                                    Carried over from <span class="mono">{{ short(provenanceOf(screen)!.carried!.commitHash) }}</span> (reviewed by
+                                    {{ nameOf(provenanceOf(screen)!.carried!.reviewedByName) }}).
+                                </template>
+                            </span>
+                            <button
+                                v-if="provenanceOf(screen)!.canRevoke"
+                                type="button"
+                                class="btn ghost sm revoke"
+                                :disabled="screen.revokeSubmitting"
+                                :aria-label="`Revoke approval of ${screen.name}`"
+                                data-testid="revoke-approval"
+                                @click="revokeApproval(screen)"
+                            >
+                                {{ REVOKE_CONFIRM_LABEL }}
+                            </button>
                         </div>
 
                         <div v-if="!isCollapsed(screen)" class="image-wrapper-outer" :class="{ single: isUnchanged(screen) }">
@@ -385,10 +452,12 @@ import {
     AppsApi,
     BuildScreensApi,
     BuildsApi,
+    DecisionsApi,
     type IAppMasksResponse,
     type IAppShowResponse,
-    type IBuildResponse,
+    type IBuildDetailResponse,
     type IBuildScreenResponse,
+    type IDecisionSummary,
     type IScreenMasksResponse
 } from '@/openapi-client-generated';
 import { accessDeniedMessage, signOut } from '@/shared/access-error';
@@ -397,7 +466,18 @@ import Loader from '@/shared/components/loader.vue';
 import MaskLayer from '@/shared/components/mask-layer.vue';
 import ScreenLightbox, { type ILightboxScreen } from '@/shared/components/screen-lightbox.vue';
 import { formatMaskCount, type IMaskRect } from '@/shared/masks';
-import { BUILD_STATUS, REMOVED_STATUS, REVIEW_STATUS, SCREEN_STATUS } from '@/shared/status';
+import {
+    BUILD_STATUS,
+    REFERENCE_FALLBACK_DOCS_URL,
+    REFERENCE_FALLBACK_NOTICE,
+    REFERENCE_SOURCE_NOTE,
+    REMOVED_STATUS,
+    REVIEW_STATUS,
+    REVOKE_CONFIRM_LABEL,
+    REVOKE_CONFIRM_MESSAGE,
+    REVOKE_CONFIRM_TITLE,
+    SCREEN_STATUS
+} from '@/shared/status';
 import { hasOverride, type IToleranceOverrides, type ITolerances, pickOverrides, resolveTolerances } from '@/shared/tolerances';
 import { measureExact, rangeWithPinned } from '@/shared/virtual';
 
@@ -414,6 +494,7 @@ interface IScreen extends IBuildScreenResponse {
     reviewCommentDraft?: string;
     reviewExpanded?: boolean;
     reviewSubmitting?: boolean;
+    revokeSubmitting?: boolean;
 }
 
 const appId = String(route.params.id);
@@ -423,7 +504,7 @@ const buildsPath = `/apps/${appId}`;
 const isLoading = ref(true);
 
 const app = ref<IAppShowResponse>();
-const build = ref<IBuildResponse>();
+const build = ref<IBuildDetailResponse>();
 const screens = ref<IScreen[]>();
 const loadError = ref(false);
 const accessDenied = ref<string | null>(null);
@@ -497,6 +578,19 @@ const commitUrl = computed(() => {
         return `${app.value.commitUrlBase}/${build.value.commitHash}`;
     }
     return null;
+});
+
+// The reference build this one was compared against. Legacy builds, and builds with no reference, show no chip.
+const referenceChip = computed(() => {
+    const b = build.value;
+    const source = b?.referenceSource;
+    if (!b?.reference || (source !== 'ancestor' && source !== 'latest')) return undefined;
+    return {
+        id: b.reference.id,
+        branchName: b.reference.branchName,
+        shortHash: short(b.reference.commitHash),
+        note: REFERENCE_SOURCE_NOTE[source]
+    };
 });
 
 const buildStatus = computed(() => (build.value ? BUILD_STATUS[build.value.status] : undefined));
@@ -601,7 +695,7 @@ const lightboxItems = computed<ILightboxScreen[]>(() =>
     displayScreens.value.map(screen => {
         const current = screen.currentBuildScreen;
         const reference = screen.referenceBuildScreen;
-        const currentImage = current ? { buildId: current.matchedBuildId ?? current.buildId } : null;
+        const currentImage = current ? { buildId: currentBuildIdOf(current) } : null;
         return {
             screenId: screen.screenId,
             name: screen.name,
@@ -757,9 +851,13 @@ function estimateCard(screen: IScreen) {
 // ── Images ──
 const images = useScreenImages(() => appId);
 const buildIdOf = (s: { matchedBuildId: string | null; buildId: string }) => s.matchedBuildId ?? s.buildId;
-const currentSrc = (s: IScreen) => (s.currentBuildScreen ? images.get('image', buildIdOf(s.currentBuildScreen), s.screenId) : undefined);
+// A changed row's own upload and diff are exactly what processing compared (its matchedBuildId may point at an older
+// build's image); only an unchanged row shows the image it matched.
+const currentBuildIdOf = (s: { status: string | null; matchedBuildId: string | null; buildId: string }) =>
+    s.status === 'no changes' ? buildIdOf(s) : s.buildId;
+const currentSrc = (s: IScreen) => (s.currentBuildScreen ? images.get('image', currentBuildIdOf(s.currentBuildScreen), s.screenId) : undefined);
 const referenceSrc = (s: IScreen) => (s.referenceBuildScreen ? images.get('image', buildIdOf(s.referenceBuildScreen), s.screenId) : undefined);
-const diffSrc = (s: IScreen) => (s.currentBuildScreen ? images.get('diff', buildIdOf(s.currentBuildScreen), s.screenId) : undefined);
+const diffSrc = (s: IScreen) => (s.currentBuildScreen ? images.get('diff', s.currentBuildScreen.buildId, s.screenId) : undefined);
 
 // Rendered, expanded cards' images, least urgent first (the queue serves newest first): every diff (prefetched for
 // the D flash), then per card reference + new screenshot ordered overscan, on screen bottom-up, active card.
@@ -772,10 +870,10 @@ const wantedImages = computed(() => {
     const rank = (c: { screen: IScreen; index: number }) =>
         c.screen.screenId === activeScreenId.value ? 2 : c.index >= startIndex && c.index <= endIndex ? 1 : 0;
     const cards = rendered.filter(c => !isCollapsed(c.screen)).sort((a, b) => rank(a) - rank(b) || b.index - a.index);
-    for (const { screen } of cards) if (hasDiff(screen)) add('diff', buildIdOf(screen.currentBuildScreen!), screen.screenId);
+    for (const { screen } of cards) if (hasDiff(screen)) add('diff', screen.currentBuildScreen!.buildId, screen.screenId);
     for (const { screen } of cards) {
         if (screen.referenceBuildScreen && !isUnchanged(screen)) add('image', buildIdOf(screen.referenceBuildScreen), screen.screenId);
-        if (screen.currentBuildScreen) add('image', buildIdOf(screen.currentBuildScreen), screen.screenId);
+        if (screen.currentBuildScreen) add('image', currentBuildIdOf(screen.currentBuildScreen), screen.screenId);
     }
     return wanted;
 });
@@ -1143,6 +1241,64 @@ async function load() {
     }
 }
 
+// ── Provenance and revoking ──
+const short = (hash: string) => hash.substring(0, 7);
+const nameOf = (name: string | null) => name ?? 'a reviewer';
+
+type ProvenanceKind = 'auto-approved' | 'approved-here' | 'revoked-here' | 'rejected' | 'carried';
+
+// Where a screen's review state came from: a decision (made here, or on another build/branch) or a mark carried from
+// this branch's previous build. A removed screen has no current row, so its decision lives on removedBuildScreen.
+function provenanceOf(screen: IScreen):
+    | {
+          kind: ProvenanceKind;
+          icon: string;
+          decision?: IDecisionSummary;
+          carried?: NonNullable<NonNullable<IScreen['currentBuildScreen']>['reviewCarriedFrom']>;
+          canRevoke: boolean;
+      }
+    | undefined {
+    const row = screen.currentBuildScreen ?? screen.removedBuildScreen;
+    const decision = row?.decision;
+    if (decision) {
+        const here = decision.buildId === buildId;
+        if (decision.kind === 'approved') {
+            if (!here) return { kind: 'auto-approved', icon: 'fa-check', decision, canRevoke: false };
+            if (decision.revokedAt) return { kind: 'revoked-here', icon: 'fa-rotate-left', decision, canRevoke: false };
+            return { kind: 'approved-here', icon: 'fa-check', decision, canRevoke: userCanReview.value };
+        }
+        // A rejection from elsewhere is a pre-mark; once the reviewer approves over it the mark no longer applies.
+        if (!here && screen.currentBuildScreen?.reviewStatus !== 'approved')
+            return { kind: 'rejected', icon: 'fa-xmark', decision, canRevoke: false };
+    }
+    const carried = screen.currentBuildScreen?.reviewCarriedFrom;
+    if (carried && screen.currentBuildScreen?.reviewStatus) return { kind: 'carried', icon: 'fa-clock-rotate-left', carried, canRevoke: false };
+    return undefined;
+}
+
+async function revokeApproval(screen: IScreen) {
+    const decision = (screen.currentBuildScreen ?? screen.removedBuildScreen)?.decision;
+    if (!decision || screen.revokeSubmitting) return;
+    const ok = await presentOverlay(SubmitConfirm, {
+        title: REVOKE_CONFIRM_TITLE,
+        message: REVOKE_CONFIRM_MESSAGE,
+        confirmLabel: REVOKE_CONFIRM_LABEL
+    });
+    if (disposed || !ok) return;
+
+    try {
+        screen.revokeSubmitting = true;
+        const revoked = await dataFromAsync(DecisionsApi.postDecisionsRevoke({ path: { appId, id: decision.id } }));
+        const row = screen.currentBuildScreen ?? screen.removedBuildScreen;
+        if (row) row.decision = revoked;
+        announce(`Approval of ${screen.name} revoked.`);
+    } catch (err) {
+        handleErrorAndAlert(err);
+    } finally {
+        screen.revokeSubmitting = false;
+    }
+}
+
 function plural(n: number, one: string, many: string) {
     return `${n} ${n === 1 ? one : many}`;
 }
@@ -1309,8 +1465,16 @@ async function submitBuild() {
     .load-error {
         align-items: center;
     }
-    .review-locked {
+    .review-locked,
+    .reference-fallback {
         margin-bottom: 16px;
+    }
+    .context-item.base {
+        flex: 0 0 auto;
+
+        .truncate {
+            max-width: 120px;
+        }
     }
 
     // ── Cards ──
@@ -1373,6 +1537,41 @@ async function submitBuild() {
         align-items: center;
         gap: 8px;
         flex-shrink: 0;
+    }
+    .provenance {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: -6px;
+        color: var(--text-2);
+        font-size: 12px;
+
+        > i {
+            color: var(--text-3);
+        }
+        &.auto-approved > i,
+        &.approved-here > i {
+            color: var(--success);
+        }
+        &.rejected > i {
+            color: var(--danger);
+        }
+        em {
+            font-style: normal;
+            color: var(--text);
+            font-weight: 500;
+        }
+        .mono {
+            color: var(--text);
+        }
+    }
+    .provenance-text {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+    .revoke {
+        flex-shrink: 0;
+        color: var(--text-3);
     }
     .tolerance-open {
         color: var(--text-3);

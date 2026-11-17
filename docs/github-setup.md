@@ -96,6 +96,8 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0 # full history: PixelCI compares your branch with the default branch where it forked
             # ...build your app and generate screenshots...
             - uses: docker://ghcr.io/zyno-io/pixelci/cli:latest
               env:
@@ -103,6 +105,8 @@ jobs:
                   PIXELCI_APP_ID: <your-app-id>
                   PIXELCI_IMAGES_PATH: ./path/to/screenshots
 ```
+
+Keep `persist-credentials` at its default (`true`) on the checkout so the CLI can deepen the history itself if it needs to.
 
 `permissions: id-token: write` is required: the CLI authenticates with the job's OIDC token, so no secrets are needed. You can find the app ID in the PixelCI web UI on the app settings page.
 
@@ -138,10 +142,24 @@ Pull requests from forks are not supported, because GitHub does not issue OIDC t
 | `PIXELCI_IMAGES_PATH`     | No       | Path to screenshots directory (alternative to passing as argument)                                                                 |
 | `PIXELCI_TIMEOUT_MINUTES` | No       | How long to wait for the build result (default `15`, range 1-120)                                                                  |
 | `PIXELCI_SHARD`           | No       | `<index>/<total>` (1-based) when the suite is split across parallel jobs, e.g. `2/4`. Requires a server with sharded-build support |
+| `PIXELCI_BASE_COMMIT`     | No       | Full commit hash to treat as where the build forked from the default branch, instead of finding it with git (see below)            |
+| `PIXELCI_GIT_FETCH`       | No       | Set to `false` to stop the CLI running `git fetch` (see below). Anything else, or unset, lets it fetch when it needs history       |
 
 Exit code `0` only for `no changes` and `changes approved`. Every other outcome exits `1`: `needs review`, `changes rejected`, `failed`, a timeout, an API error, and any status this CLI version doesn't recognise. Transient API errors (network failures, HTTP 408/425/429/5xx) are retried with backoff before failing.
 
-### 5. How It Works
+### 5. Git History and the Baseline
+
+PixelCI compares a branch with the default branch where the branch forked from it (the merge base), not with the default branch's newest build. The CLI works that out from git, so the checkout needs the history:
+
+- Set `fetch-depth: 0` on `actions/checkout`, as above, for full history.
+- A `pull_request` build compares against the pull request's base commit. The CLI reads it from the checked-out merge commit, so this works even in a depth-1 checkout.
+- A shallow checkout can still work for pushes: unless `PIXELCI_GIT_FETCH=false`, the CLI fetches the default branch and deepens the clone as far as it needs, using the checkout's credentials (hence `persist-credentials`). It never prompts.
+- With no repository in the job, there is no history to read. The CLI warns and PixelCI compares against the latest approved default-branch build; the review page shows a notice saying so.
+- If the default branch's build for the base is still running or isn't approved, the nearest approved ancestor is used, so a pending change on the default branch shows up in your review too.
+
+`PIXELCI_BASE_COMMIT` overrides the search: set it to a full 40 or 64 character commit hash and the CLI treats that commit as the fork point (it still reads the commits before it from git when it can). A value that isn't a full hash is ignored with a warning. `PIXELCI_GIT_FETCH=false` makes the CLI work offline: it uses only the history and remote-tracking refs already in the checkout, and falls back to the latest approved build when they aren't enough.
+
+### 6. How It Works
 
 The CLI reads `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` (provided when `id-token: write` is granted) to request an OIDC token for your PixelCI audience, and sends it to the API. The API verifies the token's signature and claims against GitHub, checks that the repository matches the app, and fetches the commit subject and author using the GitHub App. OIDC tokens live for 5 minutes, which is enough to create the build; the rest of the session uses a per-build token.
 
@@ -153,7 +171,7 @@ The CLI then:
 4. Polls for completion (15-minute timeout by default; see `PIXELCI_TIMEOUT_MINUTES`)
 5. Exits with code 0 (pass) or 1 (anything else), printing a direct link to the build in PixelCI
 
-### 6. Screenshot Naming
+### 7. Screenshot Naming
 
 PNG files are named by their relative path from the screenshots directory. The `.png` extension is stripped, and directories are joined with " - " (space, hyphen, space):
 
@@ -165,7 +183,7 @@ PNG files are named by their relative path from the screenshots directory. The `
 
 Screens are identified by name, so renaming or moving a file starts a new screen with no baseline.
 
-### 7. Build Outcomes
+### 8. Build Outcomes
 
 | Exit code | Build status       | Meaning                                      |
 | --------- | ------------------ | -------------------------------------------- |
@@ -175,7 +193,7 @@ Screens are identified by name, so renaming or moving a file starts a new screen
 
 When a build needs review (or was rejected), the CLI emits an `::error` annotation, writes a summary to the job's step summary (`GITHUB_STEP_SUMMARY`), and prints a link to the build in PixelCI.
 
-### 8. Approve and Re-run
+### 9. Approve and Re-run
 
 After you approve the changes in the web UI, PixelCI re-runs the failed job through the GitHub API and sends you to the workflow run. The OIDC token carries the job's id, so PixelCI re-runs exactly that job; if it is unavailable, PixelCI re-runs the failed jobs of the run instead. The re-run is matched to the approved build and passes.
 
@@ -185,7 +203,7 @@ Things to know:
 - GitHub won't re-run a job while other jobs of the same workflow run are still in progress. In that case PixelCI tells you the workflow is still running and re-runs the job automatically once the run finishes (it checks every minute, for up to 6 hours). It gives up after that, or on a non-transient error; if the job hasn't re-run a few minutes after the workflow finishes, re-run it from the link PixelCI shows.
 - Runs older than 30 days can't be re-run by PixelCI. PixelCI shows a link to the run so you can re-run it manually from GitHub.
 
-### 9. Running the CLI Outside GitHub Actions
+### 10. Running the CLI Outside GitHub Actions
 
 Not supported. The CLI relies on the Actions OIDC token and cannot run outside GitHub Actions (or GitLab CI).
 

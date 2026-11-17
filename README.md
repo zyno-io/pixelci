@@ -4,13 +4,13 @@ A self-hosted visual regression testing platform for your GitLab CI/CD and GitHu
 
 ## What is PixelCI?
 
-PixelCI helps teams catch unintended visual changes by comparing screenshots from your CI/CD pipeline against approved baseline images. It intelligently tracks changes across branches, automatically approves matching changes, and highlights differences that need human review.
+PixelCI helps teams catch unintended visual changes by comparing screenshots from your CI/CD pipeline against approved baseline images. It compares each branch with the default branch where it forked, automatically approves a change that was already approved, and highlights differences that need human review.
 
 ## Key Features
 
 - **Intelligent Change Detection**: Pixel-perfect comparison with tolerances you can tune per app and per screen
-- **Branch-Aware Comparisons**: Automatically compares against the right baseline for each branch
-- **Cross-Branch Approval Tracking**: Changes approved on one branch are automatically recognized on others
+- **Branch-Aware Comparisons**: Each branch is compared with the default branch where it forked
+- **Cross-Branch Approval Tracking**: A change approved on one branch is automatically approved wherever the same change appears, and every automatic approval names the review it came from
 - **Visual Diff Viewer**: Side-by-side comparison with highlighted differences
 - **Self-Hosted**: Full control over your data and infrastructure
 - **CI/CD Integration**: Seamless integration with GitLab CI and GitHub Actions
@@ -20,7 +20,7 @@ PixelCI helps teams catch unintended visual changes by comparing screenshots fro
 
 1. **Upload Screenshots**: Your CI/CD pipeline uploads screenshots after each build
 2. **Automatic Comparison**: PixelCI compares screenshots against approved baselines
-3. **Smart Analysis**: Matches against previously approved changes on the same branch, the default branch baseline, and other branches
+3. **Smart Analysis**: Compares against the default branch where your branch forked, and matches changes already approved on any branch
 4. **Review & Approve**: When changes need review, the CI job fails with a direct link to the build. Team members review and approve changes through the web UI.
 5. **CI Re-run**: Approving a build automatically restarts the failed CI job and redirects you to the pipeline
 

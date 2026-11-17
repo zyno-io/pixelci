@@ -51,6 +51,7 @@ visual-regression:
         PIXELCI_API_URL: https://pixelci.example.com
         PIXELCI_APP_ID: <your-app-id>
         PIXELCI_IMAGES_PATH: ./path/to/screenshots
+        GIT_DEPTH: 0 # full history: PixelCI compares your branch with the default branch where it forked
     script:
         - pixelci
 ```
@@ -70,6 +71,8 @@ Every app is bound to a single GitLab project (its numeric project ID, set autom
 | `PIXELCI_IMAGES_PATH`     | No       | Path to screenshots directory (alternative to passing as argument)                                                                 |
 | `PIXELCI_TIMEOUT_MINUTES` | No       | How long to wait for the build result (default `15`, range 1-120)                                                                  |
 | `PIXELCI_SHARD`           | No       | `<index>/<total>` (1-based) when the suite is split across parallel jobs, e.g. `2/4`. Requires a server with sharded-build support |
+| `PIXELCI_BASE_COMMIT`     | No       | Full commit hash to treat as where the build forked from the default branch, instead of finding it with git (see below)            |
+| `PIXELCI_GIT_FETCH`       | No       | Set to `false` to stop the CLI running `git fetch` (see below). Anything else, or unset, lets it fetch when it needs history       |
 
 Exit code `0` only for `no changes` and `changes approved`. Every other outcome exits `1`: `needs review`, `changes rejected`, `failed`, a timeout, an API error, and any status this CLI version doesn't recognise. Transient API errors (network failures, HTTP 408/425/429/5xx) are retried with backoff before failing.
 
@@ -87,7 +90,19 @@ The CLI then:
 4. Polls for completion (15-minute timeout by default; see `PIXELCI_TIMEOUT_MINUTES`)
 5. Exits with code 0 (pass) or 1 (anything else), printing a direct link to the build in PixelCI
 
-### 5. Screenshot Naming
+### 5. Git History and the Baseline
+
+PixelCI compares a branch with the default branch where the branch forked from it (the merge base), not with the default branch's newest build. The CLI works that out from git, so the job needs the history:
+
+- Set `GIT_DEPTH: 0` on the job, as above, to fetch full history. The CLI image includes git.
+- In a merge request pipeline the CLI uses the merge request's own base commit (the target branch's tip, or the diff base), so MR builds compare against what the MR will merge into.
+- A shallow clone can still work: unless `PIXELCI_GIT_FETCH=false`, the CLI fetches the default branch and deepens the clone as far as it needs, using the job's own credentials (the job token from the checkout). It never prompts.
+- With `GIT_STRATEGY: none`, or no repository in the job, there is no history to read. The CLI warns and PixelCI compares against the latest approved default-branch build; the review page shows a notice saying so.
+- If the default branch's build for the fork point is still running or isn't approved, the nearest approved ancestor is used, so a pending change on the default branch shows up in your review too.
+
+`PIXELCI_BASE_COMMIT` overrides the search: set it to a full 40 or 64 character commit hash and the CLI treats that commit as the fork point (it still reads the commits before it from git when it can). A value that isn't a full hash is ignored with a warning. `PIXELCI_GIT_FETCH=false` makes the CLI work offline: it uses only the history and remote-tracking refs already in the checkout, and falls back to the latest approved build when they aren't enough.
+
+### 6. Screenshot Naming
 
 PNG files are named by their relative path from the screenshots directory. The `.png` extension is stripped, and directories are joined with " - " (space, hyphen, space):
 
@@ -99,7 +114,7 @@ PNG files are named by their relative path from the screenshots directory. The `
 
 Screens are identified by name, so renaming or moving a file starts a new screen with no baseline.
 
-### 6. Build Outcomes
+### 7. Build Outcomes
 
 | Exit code | Build status       | Meaning                                      |
 | --------- | ------------------ | -------------------------------------------- |
@@ -109,7 +124,7 @@ Screens are identified by name, so renaming or moving a file starts a new screen
 
 When a build needs review, the CLI output includes a direct link to the build in PixelCI. After reviewing and approving the changes in the web UI, PixelCI automatically restarts the failed CI job via the GitLab API and redirects you to the pipeline page.
 
-### 7. Running the CLI Outside GitLab
+### 8. Running the CLI Outside GitLab
 
 You can run the CLI manually with Docker, providing the required environment variables yourself:
 
