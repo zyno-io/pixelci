@@ -205,8 +205,8 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
 
             // if we have a reference build screen, compare the current screen with the reference build screen
             if (screen.referenceBuildScreen) {
-                // the only authoritative diff: the review UI shows the reference build's screen as the left-hand image, so a
-                // mismatch stores the diff against it. Every other comparison in this flow is speculative (screensMatch).
+                // the only comparison that stores a diff (against the reference build's screen); every other comparison in this
+                // flow is speculative (screensMatch). Screens resolved via matchedBuildId still show the matched build's diff.
                 const isMatch = await this.performDiff(
                     appId,
                     screen.referenceBuildScreen.buildId,

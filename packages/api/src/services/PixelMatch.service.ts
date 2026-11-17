@@ -26,7 +26,7 @@ export interface IPixelMatchDiffResult {
     shiftTolerantPixels: number;
     /** pixels under a mask: excluded from the comparison and from the denominator of diffPct */
     maskedPixels: number;
-    /** the two screenshots' padded canvas exceeded SCREEN_MAX_PIXELS, so nothing was pixel-compared and the screen counts as changed */
+    /** the two screenshots' padded canvas exceeded SCREEN_MAX_PIXELS, so nothing was pixel-compared: every pixel counts as changed (diffPct 100) */
     canvasTooLarge: boolean;
     sizesDiffer: boolean;
     getDiffPng: () => Promise<Buffer>;
