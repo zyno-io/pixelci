@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.8.0
 
 - **Approvals are remembered as changes: the screen's image before and after.** A build is approved automatically only
   when it makes a change that was already approved, from the same starting image, on any branch or after the merge. This
