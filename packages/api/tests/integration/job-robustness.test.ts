@@ -16,10 +16,10 @@ import { ReapStuckBuildsJob } from '../../src/jobs/ReapStuckBuilds.job';
 import { claimBuildLease, Lease } from '../../src/services/BuildProcessingLease';
 import { S3Service } from '../../src/services/S3.service';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_jobstest';
+useIsolatedRedisPrefix('job-robustness');
 
 configureTestDatabase();
 
@@ -153,6 +153,7 @@ async function run() {
         databasePrefix: 'pixelci_jobstest',
         useSavepoints: false
     });
+    await ensureTestBucket();
     await facade.start();
 
     await createPersistedEntity(UserEntity, {

@@ -209,7 +209,8 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
                 // flow is speculative (screensMatch). Screens resolved via matchedBuildId still show the matched build's diff.
                 const isMatch = await this.performDiff(
                     appId,
-                    screen.referenceBuildScreen.buildId,
+                    // the image source: a reference row that matched another build keeps no upload of its own (it can be cleaned up)
+                    screen.referenceBuildScreen.matchedBuildId ?? screen.referenceBuildScreen.buildId,
                     currentBuild.id,
                     screen.screenId,
                     comparisonFor(screen.screenId)

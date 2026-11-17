@@ -17,10 +17,10 @@ import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { S3Service } from '../../src/services/S3.service';
 import { screenManifestHash } from '../../src/services/ScreenManifest';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('concurrent-builds');
 
 configureTestDatabase();
 
@@ -181,6 +181,7 @@ async function run() {
         // Real, independent connections/transactions are required to exercise concurrency (savepoint mode serializes on one)
         useSavepoints: false
     });
+    await ensureTestBucket();
     await facade.start();
 
     await createPersistedEntity(UserEntity, {

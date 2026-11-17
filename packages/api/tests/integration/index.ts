@@ -12,12 +12,13 @@ import { BuildScreenEntity } from '../../src/entities/BuildScreen.entity';
 import { ScreenEntity } from '../../src/entities/Screen.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
+import { S3Service } from '../../src/services/S3.service';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 import { IScenario, TestScenarios } from './scenarios';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('index');
 
 configureTestDatabase();
 
@@ -193,6 +194,7 @@ async function run() {
         enableDatabase: true,
         databasePrefix: 'pixelci_test'
     });
+    await ensureTestBucket();
     await facade.start();
 
     await createBaseEntities(mockGitLabPort);
@@ -203,10 +205,54 @@ async function run() {
         console.log(`Scenario ${Number(index) + 1} completed.`);
     }
 
+    await testCleanupRegression(facade);
     await testApprovalRights(facade);
     await testMalformedIds(facade);
     await testBuildsPagination(facade);
     await testImageRoutesRequireStoredRow(facade);
+}
+
+/** Rows that matched another build are marked pendingDeletion; once their uploads are gone, comparisons must use the source image. */
+async function testCleanupRegression(facade: TestingFacade) {
+    console.log('\nTest: baselines survive deletion of pendingDeletion uploads');
+    const s3 = facade.get<S3Service>(S3Service);
+    const doomed = await BuildScreenEntity.query().filter({ appId: APP_ID, storageStatus: 'pendingDeletion' }).find();
+    if (!doomed.length) throw new Error('Expected the scenarios to leave pendingDeletion rows');
+    for (const row of doomed) await s3.deleteFile(s3.getPathForScreen(APP_ID, row.buildId, row.screenId));
+    for (const row of doomed) {
+        if (await s3.exists(s3.getPathForScreen(APP_ID, row.buildId, row.screenId))) throw new Error('pendingDeletion object was not deleted');
+    }
+
+    // a branch build whose screen equals the reference's: the reference row is a matched row whose own upload is gone
+    const scenario: IScenario = {
+        branch: 'cleanup-branch',
+        screens: [{ name: 'finder-2', file: 'finder-2-changed.png', expectedStatus: 'no changes' }],
+        expectedStatus: 'no changes',
+        shouldApprove: false
+    };
+    await runScenario(facade, String(TestScenarios.length + 1), scenario);
+
+    // a changed screen on a branch: still compares (and previews) against the source image
+    const changed: IScenario = {
+        branch: 'cleanup-branch-2',
+        screens: [{ name: 'finder-2', file: 'finder-2.png', expectedStatus: 'needs review' }],
+        expectedStatus: 'needs review',
+        shouldApprove: false
+    };
+    await runScenario(facade, String(TestScenarios.length + 2), changed);
+    const build = await BuildEntity.query()
+        .filter({ appId: APP_ID, commitHash: String(TestScenarios.length + 2).padStart(40, '0') })
+        .findOne();
+    const screen = await ScreenEntity.query().filter({ appId: APP_ID, name: 'finder-2' }).findOne();
+    const jwt = await JWT.generate({ subject: ZERO_ID });
+    const compare = await makeRequest<{ passes: boolean; diffPct: number }>(
+        facade,
+        HttpRequest.POST(`/api/apps/${APP_ID}/builds/${build.id}/screens/${screen.id}/compare`)
+            .header('authorization', `Bearer ${jwt}`)
+            .json({ colorTolerance: 0, shiftTolerance: 0, diffPctTolerance: 0, masks: [] })
+    );
+    if (compare.passes || compare.diffPct <= 0) throw new Error(`Expected the preview to differ from the reference, got ${JSON.stringify(compare)}`);
+    console.log('  PASS');
 }
 
 async function testApprovalRights(facade: TestingFacade) {
@@ -609,7 +655,7 @@ async function runScenario(facade: TestingFacade, scenarioId: string, scenario: 
                     }
                 ])
         );
-        expectedStatuses[screenResponse.id] = screen.expectedStatus;
+        expectedStatuses[screenResponse.screenId] = screen.expectedStatus;
         if (screen.expectedStatus === 'new' || screen.expectedStatus === 'needs review') {
             screensToReview.push(screenResponse.screenId);
         }
@@ -646,6 +692,21 @@ async function runScenario(facade: TestingFacade, scenarioId: string, scenario: 
         throw new Error(`Expected build status ${scenario.expectedStatus}, but got ${buildStatus}`);
     } else {
         console.log(`Build status: ${buildStatus}`);
+    }
+
+    // per-screen statuses, by screen name
+    {
+        const rows = await BuildScreenEntity.query().filter({ buildId, isRemoved: false }).find();
+        const screens = await ScreenEntity.query()
+            .filter({ id: { $in: rows.map(r => r.screenId) } })
+            .find();
+        const nameOf = (id: string) => screens.find(s => s.id === id)?.name ?? id;
+        const actual = Object.fromEntries(rows.map(r => [nameOf(r.screenId), r.status]));
+        const expected = Object.fromEntries(Object.entries(expectedStatuses).map(([id, st]) => [nameOf(id), st]));
+        const sorted = (o: Record<string, string | null>) => JSON.stringify(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
+        if (sorted(actual) !== sorted(expected)) {
+            throw new Error(`Expected screen statuses ${sorted(expected)}, but got ${sorted(actual)}`);
+        }
     }
 
     if (scenario.expectedRemoved) {

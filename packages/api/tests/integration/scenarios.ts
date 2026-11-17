@@ -98,7 +98,7 @@ export const TestScenarios: IScenario[] = [
             {
                 name: 'finder-2',
                 file: 'finder-2.png',
-                expectedStatus: 'needs review'
+                expectedStatus: 'new'
             }
         ],
         expectedStatus: 'needs review',

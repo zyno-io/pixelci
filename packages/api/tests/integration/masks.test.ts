@@ -18,10 +18,10 @@ import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { PixelMatchService } from '../../src/services/PixelMatch.service';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_masktest';
+useIsolatedRedisPrefix('masks');
 
 configureTestDatabase();
 
@@ -121,6 +121,7 @@ async function run() {
         databasePrefix: 'pixelci_masktest',
         useSavepoints: false
     });
+    await ensureTestBucket();
     await facade.start();
 
     await createPersistedEntity(UserEntity, {

@@ -253,7 +253,11 @@ export class BuildScreensController {
         // The same pair processing compares: each build's own upload. `matchedBuildId` on the current
         // screen points at the image it was judged equal to, so following it would compare the
         // reference with itself and report no difference at any tolerance.
-        const [referenceImage, currentImage] = await Promise.all([this.getOwnScreenImage(appId, reference), this.getOwnScreenImage(appId, current)]);
+        // The reference side is its image source (a matched row keeps no upload of its own once cleaned up).
+        const [referenceImage, currentImage] = await Promise.all([
+            this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, reference.matchedBuildId ?? reference.buildId, reference.screenId)),
+            this.getOwnScreenImage(appId, current)
+        ]);
 
         const result = await this.pixelMatch.getDiffExclusive(referenceImage, currentImage, body.colorTolerance, body.shiftTolerance, body.masks);
         return {

@@ -23,10 +23,10 @@ import { OAuthTokenEntity } from '../../src/entities/OAuthToken.entity';
 import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
-import { configureTestDatabase } from './db-defaults';
+import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
-process.env.REDIS_PREFIX = 'pixelci_test';
+useIsolatedRedisPrefix('response-canary');
 // OAuth is only available on an https issuer
 process.env.PUBLIC_URL = 'https://pixelci.test';
 
@@ -524,6 +524,7 @@ async function run() {
         enableDatabase: true,
         databasePrefix: 'pixelci_canarytest'
     });
+    await ensureTestBucket();
     await facade.start();
 
     await seedBase();
