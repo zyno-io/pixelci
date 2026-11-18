@@ -3,6 +3,7 @@ import {
     HttpBadRequestError,
     HttpBody,
     HttpRequest,
+    HttpUnauthorizedError,
     HttpResponse,
     HttpAccessDeniedError,
     HttpInternalServerError,
@@ -290,8 +291,10 @@ export class SessionController {
         let auth;
         try {
             auth = await getSessionAuth(request);
-        } catch {
-            // no usable session: just clear the cookie
+        } catch (err) {
+            // getSessionAuth answers 401 for a missing-user, invalid, expired or revoked session: nothing to revoke, just clear the
+            // cookie. Anything else (e.g. a database failure) must surface as a 5xx, not as a logout that silently revoked nothing.
+            if (!(err instanceof HttpUnauthorizedError)) throw err;
         }
         if (auth) await UserEntity.query().filter({ id: auth.user.id }).patchMany({ sessionsValidAfter: new Date() });
         // drop a renewal cookie this same request may already have queued

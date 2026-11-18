@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { signIn } from './fixtures/session';
+import { signIn, stubLogout } from './fixtures/session';
 
 test.describe('Error Handling', () => {
     test('sends unauthenticated users to authentication', async ({ page }) => {
@@ -44,6 +44,7 @@ test.describe('Error Handling (authenticated)', () => {
 
     test('signed in with the wrong provider: explains it and offers to switch account', async ({ page }) => {
         const message = 'This app is connected to GitHub. Sign in with GitHub to view it.';
+        const logoutHits = await stubLogout(page);
         await page.goto('/');
         await page.locator('.app').first().click();
         await page.waitForSelector('.build');
@@ -71,6 +72,7 @@ test.describe('Error Handling (authenticated)', () => {
         await page.getByTestId('switch-account').click();
         await expect(page.locator('#login button.btn.primary')).toHaveCount(1);
         expect(new URL(page.url()).pathname).toBe(appPath);
+        expect(logoutHits()).toBe(1);
         expect((await page.context().cookies()).find(c => c.name === 'pixelci_session')).toBeUndefined();
     });
 

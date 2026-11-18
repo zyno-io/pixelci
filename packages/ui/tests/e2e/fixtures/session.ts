@@ -23,3 +23,18 @@ export async function signIn(page: Page) {
         .context()
         .addCookies([{ name: 'pixelci_session', value: mintSessionJwt(), domain: 'localhost', path: '/', httpOnly: true, sameSite: 'Lax' }]);
 }
+
+/** Stubs the logout endpoint (the real one revokes every session of the shared seeded user, breaking tests running in parallel). */
+export async function stubLogout(page: Page) {
+    let hits = 0;
+    await page.route('**/api/session/logout', route => {
+        hits++;
+        return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            headers: { 'set-cookie': 'pixelci_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax' },
+            body: '{"ok":true}'
+        });
+    });
+    return () => hits;
+}

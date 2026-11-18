@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { mintSessionJwt, signIn } from './fixtures/session';
+import { mintSessionJwt, signIn, stubLogout } from './fixtures/session';
 
 const SESSION_COOKIE = 'pixelci_session';
 
@@ -17,15 +17,18 @@ test.describe('Cookie session', () => {
     test('logout clears the cookie and shows the provider picker', async ({ page }) => {
         // The seeded provider's OAuth host is unreachable in tests; stub it so an auto-redirect can't hang on DNS.
         await page.route('**/oauth/authorize**', route => route.fulfill({ status: 200, contentType: 'text/html', body: 'ok' }));
+        const logoutHits = await stubLogout(page);
         await signIn(page);
         await page.goto('/apps');
         await expect(page.locator('.app').first()).toBeVisible();
 
         await page.getByRole('button', { name: 'Logout' }).click();
         await expect(page.locator('#login button.btn.primary')).toHaveCount(1);
+        expect(logoutHits()).toBe(1);
         expect((await page.context().cookies()).find(c => c.name === SESSION_COOKIE)).toBeUndefined();
 
-        // and the session really is gone server-side
+        // With the cookie gone the API sees no session. This does not prove server-side revocation (the logout call is stubbed so it
+        // can't sign out the seeded user for tests running in parallel); `test:int:session` covers that.
         const me = await page.request.get('/api/session/me');
         expect(me.status()).toBe(401);
     });
