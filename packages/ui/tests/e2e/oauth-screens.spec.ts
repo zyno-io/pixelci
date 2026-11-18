@@ -3,12 +3,12 @@ import { execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
+import { signIn } from './fixtures/session';
+
 // Visual-regression screenshots of the connect-app (OAuth) screens. State comes from `seed-e2e.mjs --oauth-screens`: fixed
 // clients and grants with fixed dates, and a fresh cached Client ID Metadata Document for claude.ai so authorizing it never
 // fetches. Dates render in the browser's timezone, so it is pinned to UTC.
 
-const JWT =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcHAiLCJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDAiLCJleHAiOjI1MjQ2MDc5OTksImlhdCI6MTc0NzYzMjc2Mn0.7FmHrOWWRWmH8i8floyAE-VvYu4Lya_9c-Qy68r8puI';
 const DCR_CLIENT_ID = '00000000-0000-4000-8000-0000000000c1';
 const CIMD_CLIENT_ID = 'https://claude.ai/oauth/mcp-oauth-client-metadata';
 
@@ -43,7 +43,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
         const takeScreenshot = (page: Page, name: string) => page.screenshot({ path: `screenshots/${name} (${colorScheme}).png` });
 
         test('connect-app screens', async ({ page, request }) => {
-            await page.addInitScript(token => window.localStorage.setItem('pixelci:jwt', token), JWT);
+            await signIn(page);
 
             // Consent for a Client ID Metadata Document client: the verified domain
             await page.goto(await consentPath(request, CIMD_CLIENT_ID, 'https://claude.ai/api/mcp/auth_callback'));

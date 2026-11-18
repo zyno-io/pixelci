@@ -3,9 +3,6 @@ import { expect, Page, Route, test } from '@playwright/test';
 // All API traffic is mocked with page.route: no DB writes, no dependency on the shared seed state,
 // and no screenshots (so the visual regression screen set is unchanged).
 
-const JWT =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcHAiLCJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDAiLCJleHAiOjI1MjQ2MDc5OTksImlhdCI6MTc0NzYzMjc2Mn0.7FmHrOWWRWmH8i8floyAE-VvYu4Lya_9c-Qy68r8puI';
-
 const GITLAB = { id: 'vcs-gitlab', name: 'Mock GitLab', platform: 'gitlab' };
 const GITHUB = { id: 'vcs-github', name: 'Mock GitHub', platform: 'github' };
 const AUDIENCE = 'https://pixelci.mock.test';
@@ -17,10 +14,6 @@ function json(route: Route, body: unknown, status = 200) {
 async function mockApi(page: Page, opts: { authenticated?: boolean; providers?: unknown[]; integrations?: unknown[] } = {}) {
     const { authenticated = true, providers = [GITLAB, GITHUB], integrations = [GITLAB, GITHUB] } = opts;
     const requests: { method: string; path: string; body: unknown }[] = [];
-
-    if (authenticated) {
-        await page.addInitScript(jwt => window.localStorage.setItem('pixelci:jwt', jwt), JWT);
-    }
 
     await page.route(/\/api\//, route => {
         const req = route.request();
@@ -36,6 +29,7 @@ async function mockApi(page: Page, opts: { authenticated?: boolean; providers?: 
                 ? json(route, { id: 'u1', vcsId: GITHUB.id, name: 'Mock Admin', isAdmin: true })
                 : json(route, { message: 'Unauthorized' }, 401);
         }
+        if (path === '/api/session/logout') return json(route, { ok: true });
         if (path === '/api/session/providers') return json(route, providers);
         if (path === '/api/admin/vcs-integrations') {
             return method === 'POST' ? json(route, { id: 'new', ...body }) : json(route, integrations);
@@ -235,7 +229,7 @@ test.describe('GitHub UI', () => {
         await page.route(/\/api\/session\/login$/, route => {
             loggedIn = true;
             // the server maps a /login returnTo to /
-            return json(route, { jwt: JWT, returnTo: '/' });
+            return json(route, { returnTo: '/' });
         });
         await page.route(/\/api\/session\/me$/, route =>
             loggedIn ? json(route, { id: 'u1', vcsId: GITHUB.id, name: 'Mock Admin', isAdmin: true }) : json(route, { message: 'Unauthorized' }, 401)

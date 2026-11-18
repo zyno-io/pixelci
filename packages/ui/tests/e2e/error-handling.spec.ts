@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { signIn } from './fixtures/session';
+
 test.describe('Error Handling', () => {
     test('sends unauthenticated users to authentication', async ({ page }) => {
         // The seeded provider's OAuth host is unreachable in tests; stub it so the auto-redirect
@@ -18,12 +20,7 @@ test.describe('Error Handling', () => {
 
 test.describe('Error Handling (authenticated)', () => {
     test.beforeEach(async ({ page }) => {
-        await page.addInitScript(() => {
-            window.localStorage.setItem(
-                'pixelci:jwt',
-                'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcHAiLCJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDAiLCJleHAiOjI1MjQ2MDc5OTksImlhdCI6MTc0NzYzMjc2Mn0.7FmHrOWWRWmH8i8floyAE-VvYu4Lya_9c-Qy68r8puI'
-            );
-        });
+        await signIn(page);
     });
 
     test('unknown route shows Page not found', async ({ page }) => {
@@ -74,7 +71,7 @@ test.describe('Error Handling (authenticated)', () => {
         await page.getByTestId('switch-account').click();
         await expect(page.locator('#login button.btn.primary')).toHaveCount(1);
         expect(new URL(page.url()).pathname).toBe(appPath);
-        expect(await page.evaluate(() => window.localStorage.getItem('pixelci:jwt'))).toBeNull();
+        expect((await page.context().cookies()).find(c => c.name === 'pixelci_session')).toBeUndefined();
     });
 
     test('bad app id shows one inline alert and no modal', async ({ page }) => {

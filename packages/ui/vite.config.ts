@@ -23,12 +23,11 @@ export default defineConfig({
         port: 7925,
         // Same frame protection the API sends on the built SPA (packages/api/src/app.ts STATIC_FILE_HEADERS).
         headers: FRAME_HEADERS,
-        // The OAuth issuer is PUBLIC_URL (the dev UI origin); its discovery, protocol and MCP endpoints live on the API, so MCP clients
-        // can be pointed at the dev UI (http://localhost:7925/api/mcp) end to end.
+        // The session is a cookie, so the UI and the API must share an origin: the dev UI proxies the whole API. The OAuth issuer is
+        // PUBLIC_URL (the dev UI origin) too, so MCP clients can be pointed at http://localhost:7925/api/mcp end to end.
         proxy: {
             '/.well-known': 'http://localhost:7924',
-            '/api/mcp': 'http://localhost:7924',
-            '/api/oauth': 'http://localhost:7924'
+            '/api': 'http://localhost:7924'
         }
     },
     preview: {

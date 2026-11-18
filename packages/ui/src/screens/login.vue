@@ -33,7 +33,6 @@ import { handleErrorAndAlert } from '@zyno-io/vue-foundation';
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { LOCAL_STORAGE_AUTH_KEY } from '@/openapi-client';
 import { type ISessionProvider, SessionApi } from '@/openapi-client-generated';
 import { clearSetupToken, SETUP_TOKEN_STORAGE_KEY } from '@/setup-token';
 import LoaderModal from '@/shared/components/loader-modal.vue';
@@ -133,7 +132,7 @@ async function processCode(code: string) {
         } catch {
             // sessionStorage unavailable
         }
-        const { jwt, returnTo } = await dataFromAsync(
+        const { returnTo } = await dataFromAsync(
             SessionApi.postSessionLogin({
                 body: {
                     code,
@@ -145,7 +144,6 @@ async function processCode(code: string) {
         clearStoredState();
         clearSetupToken();
         targetPath.value = returnTo;
-        localStorage.setItem(LOCAL_STORAGE_AUTH_KEY, jwt);
         loadSession();
     } catch (err) {
         handleErrorAndAlert(err);

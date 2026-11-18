@@ -1,6 +1,6 @@
 import { OpenApiError } from '@zyno-io/openapi-client-codegen';
 
-import { LOCAL_STORAGE_AUTH_KEY } from '@/openapi-client';
+import { SessionApi } from '@/openapi-client-generated';
 import { useStore } from '@/store';
 
 /**
@@ -20,9 +20,13 @@ export function accessDeniedMessage(err: unknown): string | null {
  * URL is kept. The provider picker is shown even with a single provider: auto-redirecting would sign
  * the same account straight back in.
  */
-export function signOut() {
+export async function signOut() {
+    try {
+        await SessionApi.postSessionLogout();
+    } catch {
+        // the cookie is cleared server-side; if that failed, the next request will still be authenticated, but there is nothing to do here
+    }
     const store = useStore();
     store.showProviderPicker = true;
     store.sessionUser = null;
-    localStorage.removeItem(LOCAL_STORAGE_AUTH_KEY);
 }
