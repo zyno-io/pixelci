@@ -427,6 +427,20 @@ paths:
                   required:
                     - index
                     - total
+                commit:
+                  type: object
+                  properties:
+                    subject:
+                      type: string
+                    author:
+                      type: string
+                    mergeRequest:
+                      type: object
+                      properties:
+                        iid:
+                          type: string
+                        eventType:
+                          type: string
   /api/apps/{appId}/builds/{id}:
     get:
       operationId: getBuildsGet

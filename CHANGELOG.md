@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **GitLab ID tokens for CI auth.** Declare `id_tokens: PIXELCI_ID_TOKEN` (with the server's `PUBLIC_URL` as `aud`) in a
+  GitLab job and the CLI authenticates with it instead of `CI_JOB_TOKEN`. The server verifies the token's signature,
+  issuer, audience, expiry and project against your GitLab instance's public keys, with no call to GitLab. `CI_JOB_TOKEN`
+  still works. New server variables: `GITLAB_ID_TOKEN_AUDIENCES` (extra accepted audiences) and
+  `GITLAB_JOB_TOKEN_AUTH_ENABLED` (set `false` to accept only ID tokens). Needs GitLab 15.7 or later
+
 ## v0.8.0
 
 - **Approvals are remembered as changes: the screen's image before and after.** A build is approved automatically only

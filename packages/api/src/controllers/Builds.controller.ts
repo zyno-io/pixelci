@@ -30,7 +30,7 @@ import { AppAccessService } from '../services/AppAccess.service';
 import { IDecisionInput, recordDecisions } from '../services/Decisions';
 import { IBase, IBaseline, loadBaselines, referenceForBuild, validateBase } from '../services/Reference';
 import { screenManifestHash, uploadedScreenNames } from '../services/ScreenManifest';
-import { VcsService } from '../services/Vcs.service';
+import { ICiCommitHints, VcsService } from '../services/Vcs.service';
 
 interface IShardSpec {
     index: number;
@@ -74,8 +74,8 @@ export function isDeadlockError(err: unknown): boolean {
 }
 /**
  * Whether a CI job id identifies a single job. GitHub ids are `${run_id}:${check_run_id}`, but fall back to the bare run id
- * (shared by every job in the run) when the OIDC token lacks check_run_id (some GHES versions). GitLab job tokens are
- * unique per job, so the token-hash match already covers GitLab.
+ * (shared by every job in the run) when the OIDC token lacks check_run_id (some GHES versions). GitLab job tokens and ID
+ * tokens are both minted per job, so the token-hash match already covers GitLab (a re-run job gets a fresh token and job id).
  */
 function isPerJobId(ciJobId: string): boolean {
     return ciJobId.includes(':');
@@ -104,6 +104,39 @@ function validateRunId(runId: string | undefined): string | undefined {
     if (runId === undefined) return undefined;
     if (typeof runId !== 'string' || !RUN_ID_RE.test(runId)) throw new HttpBadRequestError('runId must be 1-64 characters of [A-Za-z0-9-]');
     return runId;
+}
+
+/** True for control characters other than tab, LF and CR. A NUL, for one, would fail the Postgres insert with a retried 500. */
+function hasControlChars(value: string): boolean {
+    for (let i = 0; i < value.length; i++) {
+        const code = value.charCodeAt(i);
+        if ((code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) || code === 0x7f) return true;
+    }
+    return false;
+}
+
+/** Validates the optional display-only commit hints the CLI sends with a GitLab ID token. */
+function validateCommitHints(commit: unknown): ICiCommitHints | undefined {
+    if (commit === undefined || commit === null) return undefined;
+    if (typeof commit !== 'object' || Array.isArray(commit)) throw new HttpBadRequestError('commit must be an object');
+    const { subject, author, mergeRequest } = commit as { subject?: unknown; author?: unknown; mergeRequest?: unknown };
+    const text = (value: unknown, name: string, max: number): string | undefined => {
+        if (value === undefined) return undefined;
+        if (typeof value !== 'string' || value.length > max) throw new HttpBadRequestError(`${name} must be a string of at most ${max} characters`);
+        if (hasControlChars(value)) throw new HttpBadRequestError(`${name} must not contain control characters`);
+        return value;
+    };
+    let mr: ICiCommitHints['mergeRequest'];
+    if (mergeRequest !== undefined && mergeRequest !== null) {
+        if (typeof mergeRequest !== 'object' || Array.isArray(mergeRequest)) throw new HttpBadRequestError('commit.mergeRequest must be an object');
+        const { iid, eventType } = mergeRequest as { iid?: unknown; eventType?: unknown };
+        mr = { iid: text(iid, 'commit.mergeRequest.iid', 20), eventType: text(eventType, 'commit.mergeRequest.eventType', 64) };
+    }
+    return {
+        subject: text(subject, 'commit.subject', 4096),
+        author: text(author, 'commit.author', 512),
+        ...(mr && { mergeRequest: mr })
+    };
 }
 
 /** Validates `shard`; `total = 1` means unsharded and yields undefined. */
@@ -235,6 +268,7 @@ export class BuildsController {
             screens?: { count: number; hash: string };
             runId?: string;
             shard?: { index: number; total: number };
+            commit?: { subject?: string; author?: string; mergeRequest?: { iid?: string; eventType?: string } };
         }>
     ): Promise<IBuildCreateResponse> {
         const authHeader = request.headers.authorization;
@@ -246,12 +280,13 @@ export class BuildsController {
         const manifest = validateManifest(body?.screens);
         const runId = validateRunId(body?.runId);
         const shard = validateShard(body?.shard);
+        const commitHints = validateCommitHints(body?.commit);
         if (shard && !manifest) throw new HttpBadRequestError('screens (count and hash) are required for a sharded build');
 
         const app = await AppEntity.query().filter({ id: appId, deletedAt: null }).findOneOrUndefined();
         if (!app) throw new HttpBadRequestError('invalid appId');
 
-        const ciJobData = await this.vcsSvc.validateCiToken(app, ciToken);
+        const ciJobData = await this.vcsSvc.validateCiToken(app, ciToken, commitHints);
 
         const ciTokenHash = hashCiToken(ciToken);
         // Lets the CLI know the server understands `base` (and which branch to measure the merge base against)

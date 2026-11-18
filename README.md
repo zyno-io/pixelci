@@ -36,9 +36,14 @@ Add visual regression testing to your pipeline:
 visual-regression:
     stage: test
     image: ghcr.io/zyno-io/pixelci/cli:latest
+    id_tokens:
+        PIXELCI_ID_TOKEN:
+            aud: https://pixelci.example.com # the server's PUBLIC_URL
     variables:
         PIXELCI_API_URL: https://pixelci.example.com
+        PIXELCI_APP_ID: <your-app-id>
         PIXELCI_IMAGES_PATH: ./screenshots
+        GIT_DEPTH: 0
     script:
         - pixelci
 ```

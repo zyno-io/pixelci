@@ -1,12 +1,13 @@
 import { HttpBadRequestError, HttpUnauthorizedError, ScopedLogger } from '@zyno-io/ts-server-foundation';
 
+import { AppConfig } from '../config';
 import { AppEntity } from '../entities/App.entity';
 import { IUserVcsSession, UserEntity } from '../entities/User.entity';
 import { IGitHubConfig, IGitLabConfig, VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { SecretUnreadableError } from './secrets/SecretBox';
 import { openIntegrationConfig } from './secrets/VcsSecrets';
 import { VcsGitHubService } from './VcsGitHub.service';
-import { VcsGitLabService } from './VcsGitLab.service';
+import { gitlabIdTokenAudiences, VcsGitLabService } from './VcsGitLab.service';
 import { isVcsSessionFresh, VcsSessionExpiredError } from './VcsSessionRefresh';
 
 export interface IVcsLoginSessionResponse extends IUserVcsSession {
@@ -65,6 +66,17 @@ export interface IVcsTokenUser {
     id: string;
 }
 
+/**
+ * Display-only commit details the CLI sends when the CI token (a GitLab ID token) carries none. Providers that read
+ * commit metadata themselves ignore them.
+ */
+export interface ICiCommitHints {
+    subject?: string;
+    author?: string;
+    /** From CI_MERGE_REQUEST_IID / CI_MERGE_REQUEST_EVENT_TYPE; used only for merge request pipelines, which GitLab records on a pseudo-ref. */
+    mergeRequest?: { iid?: string; eventType?: string };
+}
+
 /** A user's role on a project, coarsened across providers. Ordered: none < read < write < maintain. */
 export type IVcsProjectRole = 'none' | 'read' | 'write' | 'maintain';
 
@@ -73,7 +85,7 @@ export interface IVcsServiceImpl {
      * `expectedProjectId` is the app's bound project; providers that make further outbound calls after verifying
      * the token (e.g. GitHub commit metadata) must reject a mismatch before doing so. VcsService re-checks binding.
      */
-    validateCiToken(ciToken: string, expectedProjectId: number): Promise<ICiJobData>;
+    validateCiToken(ciToken: string, expectedProjectId: number, hints?: ICiCommitHints): Promise<ICiJobData>;
     getProviderLoginUrl(redirectUri: string, state?: string): Promise<string>;
     exchangeProviderCode(redirectUri: string, code: string): Promise<IVcsLoginSessionResponse>;
     rerunCiJob(
@@ -109,13 +121,16 @@ export interface IVcsServiceImpl {
 export type IVcsSessionCheck = 'ok' | 'reauth' | 'unavailable';
 
 export class VcsService {
-    constructor(private logger: ScopedLogger) {}
+    constructor(
+        private logger: ScopedLogger,
+        private appConfig: AppConfig
+    ) {}
 
     /**
      * Validates a CI token against the app's VCS provider and enforces that the CI job
      * belongs to the project the app is bound to.
      */
-    async validateCiToken(app: AppEntity, ciToken: string): Promise<ICiJobData> {
+    async validateCiToken(app: AppEntity, ciToken: string, hints?: ICiCommitHints): Promise<ICiJobData> {
         const integration = await VcsIntegrationEntity.query().filterField('id', app.vcsId).findOneOrUndefined();
         if (!integration || (integration.platform !== 'gitlab' && integration.platform !== 'github')) {
             this.logger.warn(`CI token validation failed: VCS integration not found or unsupported (vcsId=${app.vcsId})`);
@@ -130,7 +145,7 @@ export class VcsService {
         }
 
         const provider = this.createProvider(integration);
-        const ciJobData = await provider.validateCiToken(ciToken, expectedProjectId);
+        const ciJobData = await provider.validateCiToken(ciToken, expectedProjectId, hints);
 
         if (ciJobData.vcsProjectId !== app.vcsProjectId) {
             this.logger.warn(`Build creation failed: vcsProjectId mismatch (expected=${app.vcsProjectId}, got=${ciJobData.vcsProjectId})`);
@@ -279,7 +294,10 @@ export class VcsService {
             throw new SecretUnreadableError(`VCS integration ${provider.id}: ${fields} cannot be decrypted`);
         }
         if (provider.platform === 'gitlab') {
-            return new VcsGitLabService(config as IGitLabConfig, this.logger);
+            return new VcsGitLabService(config as IGitLabConfig, this.logger, {
+                jobTokenAuthEnabled: this.appConfig.GITLAB_JOB_TOKEN_AUTH_ENABLED,
+                idTokenAudiences: gitlabIdTokenAudiences(this.appConfig)
+            });
         }
         if (provider.platform === 'github') {
             return new VcsGitHubService(config as IGitHubConfig, this.logger);

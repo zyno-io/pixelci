@@ -319,6 +319,20 @@ describe('request retries', () => {
         mock.restoreAll();
     });
 
+    it('sends commit hints in the create body only when set', async () => {
+        const bodies: any[] = [];
+        mockFetch.mock.mockImplementation(async (_url, init) => {
+            bodies.push(JSON.parse(String((init as RequestInit).body)));
+            return ok({ id: 'b', status: 'draft' });
+        });
+        const screens = { count: 1, hash: 'a'.repeat(64) };
+        await run(api.createBuild({ screens }));
+        const withCommit = new PixelCiApi('http://localhost:7924', 'app', { projectUrl: 'p', ciToken: 't', commit: { subject: 's', author: 'a' } });
+        await run(withCommit.createBuild({ screens }));
+        assert.equal('commit' in bodies[0], false);
+        assert.deepEqual(bodies[1].commit, { subject: 's', author: 'a' });
+    });
+
     it('retries network errors', async () => {
         let n = 0;
         mockFetch.mock.mockImplementation(async () => {

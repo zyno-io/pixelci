@@ -8,6 +8,7 @@ import { JWT, r } from '@zyno-io/ts-server-foundation';
 import axios from 'axios';
 
 import type {
+    ICiCommitHints,
     ICiJobData,
     IVcsLoginSessionResponse,
     IVcsProject,
@@ -20,6 +21,7 @@ import type {
 import { AppEntity } from '../entities/App.entity';
 import { UserEntity } from '../entities/User.entity';
 import { IGitLabConfig } from '../entities/VcsIntegration.entity';
+import { extractCommitSubject, isOidcTokenRejection, verifyOidcJwt } from './oidc/RemoteJwks';
 import { vcsAccessToken } from './secrets/VcsSecrets';
 import { ensureFreshVcsSession } from './VcsSessionRefresh';
 
@@ -52,17 +54,156 @@ export function gitlabRoleFromAccessLevel(level: number): IVcsProjectRole {
     return 'read';
 }
 
+const JWT_SHAPED_RE = /^eyJ[\w-]*\.[\w-]+\.[\w-]*$/;
+
+export interface IGitLabCiAuthOptions {
+    /** Accept CI_JOB_TOKEN (validated by calling GitLab). When false, only ID tokens are accepted. */
+    jobTokenAuthEnabled: boolean;
+    /** Accepted `aud` values for ID tokens. Empty fails closed. */
+    idTokenAudiences: string[];
+}
+
+/**
+ * Accepted `aud` values for GitLab ID tokens: the PUBLIC_URL origin plus GITLAB_ID_TOKEN_AUDIENCES (comma-separated),
+ * each with and without a trailing slash. An unusable PUBLIC_URL contributes nothing.
+ */
+export function gitlabIdTokenAudiences(config: { PUBLIC_URL?: string; GITLAB_ID_TOKEN_AUDIENCES?: string }): string[] {
+    const bases: string[] = [];
+    if (config.PUBLIC_URL?.trim()) {
+        try {
+            const url = new URL(config.PUBLIC_URL.trim());
+            if (url.protocol === 'https:' || url.protocol === 'http:') bases.push(url.origin);
+        } catch {
+            // not a URL: no audience from it
+        }
+    }
+    for (const extra of (config.GITLAB_ID_TOKEN_AUDIENCES ?? '').split(',')) {
+        const value = extra.trim().replace(/\/+$/, '');
+        if (value) bases.push(value);
+    }
+    return [...new Set(bases.flatMap(b => [b, `${b}/`]))];
+}
+
+const DIGITS_RE = /^\d+$/;
+const HEX_SHA_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/** Maps the claims of a verified GitLab ID token (plus the CLI's display hints) to job data. */
+export function mapGitLabIdTokenClaims(
+    claims: Record<string, unknown>,
+    hints?: ICiCommitHints
+): { ok: true; data: ICiJobData } | { ok: false; reason: string; badRequest?: string } {
+    const str = (v: unknown) => (typeof v === 'string' ? v : '');
+
+    const projectId = str(claims.project_id);
+    const vcsProjectId = DIGITS_RE.test(projectId) ? Number(projectId) : NaN;
+    if (!Number.isSafeInteger(vcsProjectId) || vcsProjectId <= 0) return { ok: false, reason: 'missing or invalid project_id' };
+
+    const jobId = str(claims.job_id);
+    if (!DIGITS_RE.test(jobId)) return { ok: false, reason: 'missing or invalid job_id' };
+
+    let branch = str(claims.ref);
+    if (!branch) return { ok: false, reason: 'missing ref' };
+
+    // GitLab records merge request pipelines on a pseudo-ref (the job token path reads it from /api/v4/job), while the
+    // ID token's `ref` is the MR source branch. Use the same pseudo-ref so both tokens land on the same branch.
+    if (claims.pipeline_source === 'merge_request_event') {
+        const iid = hints?.mergeRequest?.iid;
+        if (typeof iid !== 'string' || !DIGITS_RE.test(iid)) {
+            return {
+                ok: false,
+                reason: 'merge request pipeline without CI_MERGE_REQUEST_IID',
+                badRequest: 'merge request pipelines need CI_MERGE_REQUEST_IID'
+            };
+        }
+        const eventType = hints?.mergeRequest?.eventType;
+        const suffix = eventType === 'merged_result' ? 'merge' : eventType === 'merge_train' ? 'train' : 'head';
+        branch = `refs/merge-requests/${iid}/${suffix}`;
+    }
+
+    const sha = str(claims.sha);
+    if (!HEX_SHA_RE.test(sha)) return { ok: false, reason: 'missing or invalid sha' };
+
+    const author = typeof hints?.author === 'string' ? hints.author.trim().slice(0, 255) : '';
+    return {
+        ok: true,
+        data: {
+            jobId,
+            branch,
+            commitHash: sha,
+            commitSubject: extractCommitSubject(hints?.subject),
+            commitAuthor: author || str(claims.user_login).slice(0, 255),
+            vcsProjectId
+        }
+    };
+}
+
 export class VcsGitLabService implements IVcsServiceImpl {
     private logger: ScopedLogger;
 
     constructor(
         private config: IGitLabConfig,
-        logger?: ScopedLogger
+        logger?: ScopedLogger,
+        private ciAuth: IGitLabCiAuthOptions = { jobTokenAuthEnabled: true, idTokenAudiences: [] }
     ) {
         this.logger = logger ?? r<ScopedLogger>(Logger);
     }
 
-    async validateCiToken(ciToken: string): Promise<ICiJobData> {
+    async validateCiToken(ciToken: string, expectedProjectId?: number, hints?: ICiCommitHints): Promise<ICiJobData> {
+        // A JWT is never replayed to GitLab and never falls back to the job-token path
+        if (JWT_SHAPED_RE.test(ciToken)) return this.validateIdToken(ciToken, expectedProjectId, hints);
+        if (!this.ciAuth.jobTokenAuthEnabled) {
+            this.logger.warn('CI token validation failed: job-token auth is disabled and the token is not an ID token');
+            throw new HttpUnauthorizedError('CI job tokens are disabled on this server; use a GitLab ID token (id_tokens: PIXELCI_ID_TOKEN)');
+        }
+        return this.validateJobToken(ciToken);
+    }
+
+    private async validateIdToken(ciToken: string, expectedProjectId: number | undefined, hints?: ICiCommitHints): Promise<ICiJobData> {
+        const audience = this.ciAuth.idTokenAudiences;
+        if (!audience.length) {
+            this.logger.warn('CI token validation failed: no accepted GitLab ID token audiences (set PUBLIC_URL or GITLAB_ID_TOKEN_AUDIENCES)');
+            throw new HttpUnauthorizedError();
+        }
+
+        const base = this.config.url.replace(/\/+$/, '');
+        let claims: Record<string, unknown>;
+        try {
+            claims = await verifyOidcJwt(ciToken, {
+                issuer: [base, `${base}/`],
+                jwksUrl: `${base}/oauth/discovery/keys`,
+                audience,
+                algorithms: ['RS256'],
+                clockTolerance: 60
+            });
+        } catch (err) {
+            const detail = err instanceof Error ? err.message : String(err);
+            if (isOidcTokenRejection(err)) {
+                this.logger.warn(`CI token validation failed: GitLab ID token verification failed (${detail})`);
+                throw new HttpUnauthorizedError();
+            }
+            this.logger.warn(`CI token validation failed: GitLab JWKS fetch failed (${detail})`);
+            throw new HttpServiceUnavailableError();
+        }
+
+        // Bind to the app's project before trusting any other claim
+        const claimedProjectId = typeof claims.project_id === 'string' ? claims.project_id : '';
+        if (expectedProjectId == null || claimedProjectId !== String(expectedProjectId)) {
+            this.logger.warn(
+                `CI token validation failed: GitLab ID token project_id mismatch (expected=${expectedProjectId}, got=${String(claims.project_id)})`
+            );
+            throw new HttpUnauthorizedError();
+        }
+
+        const mapped = mapGitLabIdTokenClaims(claims, hints);
+        if (!mapped.ok) {
+            if (mapped.badRequest) throw new HttpBadRequestError(mapped.badRequest);
+            this.logger.warn(`CI token validation failed: GitLab ID token has ${mapped.reason}`);
+            throw new HttpUnauthorizedError();
+        }
+        return mapped.data;
+    }
+
+    private async validateJobToken(ciToken: string): Promise<ICiJobData> {
         let jobResponse: Response;
         try {
             jobResponse = await fetch(`${this.config.url}/api/v4/job`, {
