@@ -19,4 +19,6 @@ export class UserEntity extends BaseEntity {
     createdAt: Date & HasDefault = new Date();
     lastLoginAt!: Date;
     vcsSession!: IUserVcsSession | null;
+    // Set on logout: browser sessions issued before this moment are no longer accepted (signs the user out everywhere).
+    sessionsValidAfter!: Date | null;
 }

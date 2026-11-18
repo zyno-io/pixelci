@@ -2,18 +2,23 @@ import {
     http,
     HttpBadRequestError,
     HttpBody,
+    HttpRequest,
+    HttpUnauthorizedError,
+    HttpResponse,
     HttpAccessDeniedError,
     HttpInternalServerError,
     HttpNotFoundError,
     HttpQueries,
+    OkResponse,
     isUniqueConstraintError,
     UuidString
 } from '@zyno-io/ts-server-foundation';
 import { ScopedLogger, uuid } from '@zyno-io/ts-server-foundation';
-import { createEntity, JWT } from '@zyno-io/ts-server-foundation';
+import { createEntity } from '@zyno-io/ts-server-foundation';
 import { createHash, timingSafeEqual } from 'crypto';
 
 import { ApiController } from '../accessories/Controller.accessory';
+import { getSessionAuth, issueSession } from '../accessories/Session.accessory';
 import { AppConfig } from '../config';
 import { Db } from '../database';
 import { AppEntity } from '../entities/App.entity';
@@ -22,6 +27,7 @@ import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { createOAuthState, deriveStateKey, sanitizeReturnTo, verifyOAuthState } from '../services/OAuthState';
 import { sealIntegrationConfig, sealVcsSession } from '../services/secrets/VcsSecrets';
+import { appendSetCookie, serializeClearedSessionCookie, sessionCookieSettings } from '../services/SessionCookie';
 import { VcsService } from '../services/Vcs.service';
 import { normalizeCreateConfig } from '../services/VcsConfig';
 import { IVcsIntegrationCreateInput } from './VcsIntegrations.controller';
@@ -39,7 +45,7 @@ interface ISessionLoginRequest {
 }
 
 interface ISessionLoginResponse {
-    jwt: string;
+    // The session itself is an HttpOnly cookie set on this response; it is never exposed to scripts.
     returnTo: string;
 }
 
@@ -211,7 +217,7 @@ export class SessionController {
     }
 
     @http.POST('login')
-    async login(body: HttpBody<ISessionLoginRequest>): Promise<ISessionLoginResponse> {
+    async login(body: HttpBody<ISessionLoginRequest>, response: HttpResponse): Promise<ISessionLoginResponse> {
         const redirectUri = this.getRedirectUri();
         const verified = verifyOAuthState(body.state, deriveStateKey(this.appConfig));
         if (!verified) throw new HttpBadRequestError('Sign-in expired or could not be verified; please try again');
@@ -272,7 +278,30 @@ export class SessionController {
             await user.save();
         }
 
-        const jwt = await JWT.generate({ subject: user.id });
-        return { jwt, returnTo: verified.returnTo };
+        await issueSession(response, this.appConfig, user.id);
+        return { returnTo: verified.returnTo };
+    }
+
+    /** Needs no session: it clears the cookie, and signs out every session of the user it is called with (safe when already signed out). */
+    @http.POST('logout')
+    async logout(request: HttpRequest, response: HttpResponse): OkResponse {
+        const settings = sessionCookieSettings(this.appConfig);
+        // A valid session (cookie or Bearer) signs the user out everywhere: sessions issued before now stop working, so a copied
+        // cookie, or a renewal racing this request, cannot bring it back.
+        let auth;
+        try {
+            auth = await getSessionAuth(request);
+        } catch (err) {
+            // getSessionAuth answers 401 for a missing-user, invalid, expired or revoked session: nothing to revoke, just clear the
+            // cookie. Anything else (e.g. a database failure) must surface as a 5xx, not as a logout that silently revoked nothing.
+            if (!(err instanceof HttpUnauthorizedError)) throw err;
+        }
+        if (auth) await UserEntity.query().filter({ id: auth.user.id }).patchMany({ sessionsValidAfter: new Date() });
+        // drop a renewal cookie this same request may already have queued
+        const queued = response.getHeader('set-cookie');
+        const kept = (queued === undefined ? [] : Array.isArray(queued) ? queued : [String(queued)]).filter(c => !c.startsWith(`${settings.name}=`));
+        response.setHeader('set-cookie', kept);
+        appendSetCookie(response, serializeClearedSessionCookie(settings));
+        return { ok: true };
     }
 }

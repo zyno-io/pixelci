@@ -14,13 +14,21 @@ import { OAUTH_PREFIX_ACCESS, OAUTH_PREFIX_ANY } from '../services/oauth/OAuthCo
 import { bearerErrorResponse, parseBearer } from '../services/oauth/OAuthErrors';
 import { OAuthServerService } from '../services/oauth/OAuthServer.service';
 import { VcsService } from '../services/Vcs.service';
+import { getSessionAuth } from './Session.accessory';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * User authentication
  */
-export class UserAuthMiddleware extends createAuthMiddleware(UserEntity) {}
+export class UserAuthMiddleware extends createAuthMiddleware(UserEntity) {
+    // Not TSF's default (which also reads its own `jwt` cookie): PixelCI's session is a Bearer header or its dedicated session cookie.
+    async getEntityIdFromRequest(request: HttpRequest) {
+        const id = (await getSessionAuth(request))?.jwt.subject;
+        if (!id) throw new HttpUnauthorizedError();
+        return id;
+    }
+}
 export class AdminAuthMiddleware extends UserAuthMiddleware {
     async validateEntity(_request: HttpRequest, entity: UserEntity) {
         if (!entity.isAdmin) throw new HttpAccessDeniedError('Insufficient permissions');

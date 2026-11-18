@@ -2,6 +2,8 @@ import { expect, Page, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { signIn } from './fixtures/session';
+
 const colorSchemes = ['light', 'dark'] as const;
 
 // The review steps below persist approve/reject decisions on the shared seeded build. Reset that
@@ -13,8 +15,6 @@ test.beforeEach(() => {
     execFileSync('node', [seedScript, '--reset-reviews'], { stdio: 'inherit' });
 });
 
-const JWT =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcHAiLCJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDAiLCJleHAiOjI1MjQ2MDc5OTksImlhdCI6MTc0NzYzMjc2Mn0.7FmHrOWWRWmH8i8floyAE-VvYu4Lya_9c-Qy68r8puI';
 // The seeded, approved feature build whose Homepage change is decision D1 (see seed-e2e.mjs).
 const APPROVED_BUILD_URL = '/apps/00000000-0000-0000-0000-000000000001/builds/00000000-0000-0000-0000-000000000005';
 
@@ -36,13 +36,7 @@ colorSchemes.forEach(colorScheme => {
         test('displays all the things', async ({ page }) => {
             // Pre-auth before the first navigation: with a single VCS provider the login screen now
             // auto-redirects to the (unreachable) OAuth host, so there's no picker to land on/screenshot.
-            await page.addInitScript(() => {
-                // jwt for zero ID valid until 2049
-                window.localStorage.setItem(
-                    'pixelci:jwt',
-                    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcHAiLCJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDAiLCJleHAiOjI1MjQ2MDc5OTksImlhdCI6MTc0NzYzMjc2Mn0.7FmHrOWWRWmH8i8floyAE-VvYu4Lya_9c-Qy68r8puI'
-                );
-            });
+            await signIn(page);
 
             await page.goto('/');
 
@@ -150,7 +144,7 @@ colorSchemes.forEach(colorScheme => {
 
         // Build 005 made the Homepage change, so it shows who approved it and lets a reviewer take that back.
         test('shows who approved a change and revokes it', async ({ page }) => {
-            await page.addInitScript(jwt => window.localStorage.setItem('pixelci:jwt', jwt), JWT);
+            await signIn(page);
             await page.goto(APPROVED_BUILD_URL);
             await page.waitForSelector('.screen');
             await page.locator('[data-testid="filter-all"]').click();

@@ -184,6 +184,7 @@ export function createDesignApi(
             return options.anonymous || options.onboarding
                 ? json({ message: 'Unauthorized' }, 401)
                 : json({ id: userId, name: 'Design Reviewer', isAdmin: options.admin !== false });
+        if (path === '/api/session/logout') return json({ ok: true });
         if (path === '/api/session/providers')
             return json([
                 { id: appId, name: 'GitLab' },

@@ -7,6 +7,16 @@
   issuer, audience, expiry and project against your GitLab instance's public keys, with no call to GitLab. `CI_JOB_TOKEN`
   still works. New server variables: `GITLAB_ID_TOKEN_AUDIENCES` (extra accepted audiences) and
   `GITLAB_JOB_TOKEN_AUTH_ENABLED` (set `false` to accept only ID tokens). Needs GitLab 15.7 or later
+- **The web UI session is now an `HttpOnly` cookie** instead of a token in `localStorage`, so a script injected into the
+  page can no longer steal it. State-changing browser requests are refused unless they come from PixelCI's own origin
+  (`Origin` / `Sec-Fetch-Site`), the cookie is renewed while in use (`AUTH_JWT_EXPIRATION_MINS`, default 60, is the idle
+  timeout) up to an absolute limit (new `SESSION_MAX_AGE_HOURS`, default 168), and `POST /api/session/logout` ends it.
+  Logging out signs that user out of all of their sessions, on every browser and device, and a copied cookie stops
+  working. (New `users.sessionsValidAfter` column; the migration is additive.)
+  `POST /api/session/login` no longer returns the token. Bearer session tokens, CI tokens, MCP and `/api/ext` work as
+  before. Everyone signs in once more after upgrading. `PUBLIC_URL` must be the `https` origin users visit, and a
+  reverse proxy must pass `Origin` and `Sec-Fetch-*` through. Local development now proxies the whole API through the
+  Vite dev server (see DEVELOPMENT.md)
 
 ## v0.8.0
 

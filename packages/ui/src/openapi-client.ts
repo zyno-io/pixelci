@@ -5,23 +5,18 @@ import { configureVfOpenApiClient, UserError } from '@zyno-io/vue-foundation';
 import { client } from './openapi-client-generated/client.gen';
 import { useStore } from './store';
 
-export const LOCAL_STORAGE_AUTH_KEY = 'pixelci:jwt';
+// Sessions used to live in localStorage; the session is now an HttpOnly cookie, so drop any leftover token (forces a fresh sign-in).
+try {
+    localStorage.removeItem('pixelci:jwt');
+} catch {
+    // storage unavailable
+}
 
 client.setConfig({
     baseUrl: import.meta.env.VITE_APP_API_URL
 });
 
 configureVfOpenApiClient(client, {
-    headers() {
-        const jwt = localStorage.getItem(LOCAL_STORAGE_AUTH_KEY);
-        const authHeader = jwt ? { Authorization: `Bearer ${jwt}` } : {};
-
-        return {
-            ...authHeader
-            // more headers here
-        };
-    },
-
     onError(err) {
         if (err instanceof OpenApiError) {
             if (
@@ -41,7 +36,6 @@ configureVfOpenApiClient(client, {
             }
 
             if (err.response?.status === 401) {
-                localStorage.removeItem(LOCAL_STORAGE_AUTH_KEY);
                 useStore().sessionUser = null;
                 return err;
             }

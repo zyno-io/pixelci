@@ -133,6 +133,19 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ISessionLoginRequest"
+  /api/session/logout:
+    post:
+      operationId: postSessionLogout
+      tags:
+        - session
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {}
+      summary: "Needs no session: it clears the cookie, and signs out every session of
+        the user it is called with (safe when already signed out)."
   /api/apps:
     get:
       operationId: getAppsIndex
@@ -1498,12 +1511,9 @@ components:
     ISessionLoginResponse:
       type: object
       properties:
-        jwt:
-          type: string
         returnTo:
           type: string
       required:
-        - jwt
         - returnTo
     IAppIndexResponse:
       type: object

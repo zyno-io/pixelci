@@ -109,8 +109,8 @@ import { dataFromAsync, OpenApiError } from '@zyno-io/openapi-client-codegen';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { LOCAL_STORAGE_AUTH_KEY } from '@/openapi-client';
 import { ConnectedAppsApi, type IConnectedAppRequest } from '@/openapi-client-generated';
+import { signOut } from '@/shared/access-error';
 import ThemeMenu from '@/shared/components/theme-menu.vue';
 import { useStore } from '@/store';
 
@@ -236,9 +236,7 @@ async function decide(kind: 'approve' | 'deny') {
 }
 
 function switchAccount() {
-    localStorage.removeItem(LOCAL_STORAGE_AUTH_KEY);
-    store.showProviderPicker = true;
-    store.sessionUser = null;
+    void signOut();
 }
 </script>
 

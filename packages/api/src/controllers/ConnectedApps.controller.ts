@@ -1,6 +1,7 @@
 import {
     EmptyResponse,
     http,
+    HttpAccessDeniedError,
     HttpBody,
     HttpError,
     HttpNotFoundError,
@@ -10,6 +11,7 @@ import {
 } from '@zyno-io/ts-server-foundation';
 
 import { ApiController } from '../accessories/Controller.accessory';
+import { getSessionAuth } from '../accessories/Session.accessory';
 import { AppConfig } from '../config';
 import { UserEntity } from '../entities/User.entity';
 import { ClientVerification, describeClientIdentity } from '../services/oauth/ClientMetadata';
@@ -59,7 +61,7 @@ export type IConnectedAppRequestRef = { request: string };
 
 /**
  * The SPA-facing side of OAuth: the consent screen's data and decisions, and the signed-in user's list of connected apps. Authenticated
- * with the user's session JWT (a bearer header; PixelCI sets no auth cookie, so a cross-site request can't act as the user).
+ * with the user's session (the HttpOnly session cookie, or a bearer header). Approve and deny additionally require a first-party request.
  */
 @ApiController('/api/connected-apps')
 export class ConnectedAppsController {
@@ -96,7 +98,7 @@ export class ConnectedAppsController {
     async approve(body: HttpBody<IConnectedAppRequestRef>, request: HttpRequest, user: UserEntity): Promise<IConnectedAppDecision> {
         const id = body.request;
         const urls = this.urls();
-        this.requireAuthorizationHeader(request);
+        await this.requireFirstParty(request, urls);
         await this.assertVcsSession(user);
         return this.decision(await this.oauth.approve(id, user.id, urls));
     }
@@ -105,7 +107,7 @@ export class ConnectedAppsController {
     async deny(body: HttpBody<IConnectedAppRequestRef>, request: HttpRequest, user: UserEntity): Promise<IConnectedAppDecision> {
         const id = body.request;
         const urls = this.urls();
-        this.requireAuthorizationHeader(request);
+        await this.requireFirstParty(request, urls);
         return this.decision(await this.oauth.deny(id, user.id, urls));
     }
 
@@ -141,9 +143,16 @@ export class ConnectedAppsController {
         if ((await this.vcsService.checkUserSession(user)) === 'reauth') throw new HttpUnauthorizedError(SIGN_IN_EXPIRED);
     }
 
-    /** Approve and deny must come from the SPA's explicit bearer header, never from an ambient credential such as a cookie. */
-    private requireAuthorizationHeader(request: HttpRequest): void {
-        if (!/^Bearer\s+\S/i.test(String(request.headers.authorization ?? ''))) throw new HttpUnauthorizedError();
+    /**
+     * Approve and deny act on the user's behalf, so they accept an explicit bearer header, or the session cookie only when the browser
+     * says the request comes from PixelCI's own page (never an ambient, cross-site or header-less request).
+     */
+    private async requireFirstParty(request: HttpRequest, urls: IOAuthUrls): Promise<void> {
+        const auth = await getSessionAuth(request);
+        if (auth?.via === 'bearer') return;
+        const site = request.headers['sec-fetch-site'];
+        if (auth?.via === 'cookie' && (site === 'same-origin' || request.headers.origin === urls.issuer)) return;
+        throw new HttpAccessDeniedError('This request must come from the PixelCI app');
     }
 
     private decision(result: DecisionResult): IConnectedAppDecision {

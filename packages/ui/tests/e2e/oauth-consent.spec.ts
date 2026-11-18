@@ -1,9 +1,7 @@
 import { APIRequestContext, expect, Page, test } from '@playwright/test';
 import { createHash, randomBytes } from 'node:crypto';
 
-// The seeded user's session (zero ID, valid until 2049), as in the other specs.
-const JWT =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcHAiLCJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDAiLCJleHAiOjI1MjQ2MDc5OTksImlhdCI6MTc0NzYzMjc2Mn0.7FmHrOWWRWmH8i8floyAE-VvYu4Lya_9c-Qy68r8puI';
+import { signIn } from './fixtures/session';
 
 const CALLBACK_PORT = 53682;
 const REDIRECT_URI = `http://127.0.0.1:${CALLBACK_PORT}/callback`;
@@ -13,7 +11,7 @@ const MCP_HEADERS = { accept: 'application/json, text/event-stream', 'content-ty
 const uniqueName = (label: string) => `E2E ${label} ${randomBytes(4).toString('hex')}`;
 
 async function useSession(page: Page) {
-    await page.addInitScript(token => window.localStorage.setItem('pixelci:jwt', token), JWT);
+    await signIn(page);
 }
 
 interface IStartedAuthorization {
