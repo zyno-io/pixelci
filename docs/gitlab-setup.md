@@ -47,6 +47,9 @@ In the PixelCI web UI, click **Add App**. Search for your GitLab project by name
 visual-regression:
     stage: test
     image: ghcr.io/zyno-io/pixelci/cli:latest
+    id_tokens:
+        PIXELCI_ID_TOKEN:
+            aud: https://pixelci.example.com # the server's PUBLIC_URL
     variables:
         PIXELCI_API_URL: https://pixelci.example.com
         PIXELCI_APP_ID: <your-app-id>
@@ -58,9 +61,11 @@ visual-regression:
 
 You can find the app ID in the PixelCI web UI on the app settings page.
 
-Authentication uses GitLab's built-in `CI_JOB_TOKEN` — no API keys needed.
+Authentication uses a [GitLab ID token](https://docs.gitlab.com/ci/secrets/id_token_authentication/) (GitLab 15.7 or later): a short-lived JWT that GitLab signs for the job. No API keys or stored secrets are needed. The `aud` must be your PixelCI `PUBLIC_URL` (or one of the extra values in `GITLAB_ID_TOKEN_AUDIENCES` on the server, e.g. when `PIXELCI_API_URL` is an internal address).
 
-Every app is bound to a single GitLab project (its numeric project ID, set automatically when you pick the project in **Add App**). PixelCI only accepts job tokens from that project. An app without a bound project rejects all CI tokens with a 401; recreate it from the web UI to bind it.
+Without `id_tokens:` the CLI falls back to GitLab's built-in `CI_JOB_TOKEN`, so existing pipelines keep working. Job tokens are validated by calling your GitLab instance, which needs the project's job-token permissions to allow it; ID tokens avoid that call entirely. Server admins can turn job-token auth off with `GITLAB_JOB_TOKEN_AUTH_ENABLED=false`, after which only ID tokens are accepted.
+
+Every app is bound to a single GitLab project (its numeric project ID, set automatically when you pick the project in **Add App**). PixelCI only accepts tokens from that project. An app without a bound project rejects all CI tokens with a 401; recreate it from the web UI to bind it.
 
 ### 3. CLI Environment Variables
 
@@ -68,6 +73,7 @@ Every app is bound to a single GitLab project (its numeric project ID, set autom
 | ------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `PIXELCI_API_URL`         | Yes      | URL to your PixelCI server                                                                                                         |
 | `PIXELCI_APP_ID`          | Yes      | App ID from the PixelCI web UI                                                                                                     |
+| `PIXELCI_ID_TOKEN`        | No       | GitLab ID token from `id_tokens:` (see above). When set, it is used instead of `CI_JOB_TOKEN`                                      |
 | `PIXELCI_IMAGES_PATH`     | No       | Path to screenshots directory (alternative to passing as argument)                                                                 |
 | `PIXELCI_TIMEOUT_MINUTES` | No       | How long to wait for the build result (default `15`, range 1-120)                                                                  |
 | `PIXELCI_SHARD`           | No       | `<index>/<total>` (1-based) when the suite is split across parallel jobs, e.g. `2/4`. Requires a server with sharded-build support |
@@ -78,13 +84,16 @@ Exit code `0` only for `no changes` and `changes approved`. Every other outcome 
 
 ### 4. How It Works
 
-The CLI uses GitLab CI's built-in `CI_JOB_TOKEN` and `CI_PROJECT_URL` environment variables to authenticate with the PixelCI API. The API validates the token directly with your GitLab instance on build creation and extracts branch/commit information from the job metadata.
+The CLI authenticates with one of two tokens, using `CI_PROJECT_URL` to locate the project:
 
-No API keys or additional secrets are needed — just set `PIXELCI_API_URL` and `PIXELCI_APP_ID`.
+- **ID token (`PIXELCI_ID_TOKEN`, preferred).** The API verifies the token's signature against your GitLab instance's public keys (`/oauth/discovery/keys`), checks the issuer, audience and expiry, and requires its `project_id` claim to match the app's project. Branch, commit hash and job ID come from the token's claims. An ID token carries no commit title or author, so the CLI sends them from `CI_COMMIT_TITLE` and `CI_COMMIT_AUTHOR`; they are used for display only. PixelCI makes no call to GitLab to validate it.
+- **Job token (`CI_JOB_TOKEN`).** The API validates the token directly with your GitLab instance on build creation (`/api/v4/job`) and extracts branch and commit information from the job metadata.
+
+If a transient problem prevents validation (GitLab unreachable, or its keys can't be fetched), the API answers 503 and the CLI retries.
 
 The CLI then:
 
-1. Creates a build via the API (validates CI token against GitLab)
+1. Creates a build via the API (validates the CI token)
 2. Uploads all PNG files as screens
 3. Triggers build processing
 4. Polls for completion (15-minute timeout by default; see `PIXELCI_TIMEOUT_MINUTES`)
@@ -126,7 +135,7 @@ When a build needs review, the CLI output includes a direct link to the build in
 
 ### 8. Running the CLI Outside GitLab
 
-You can run the CLI manually with Docker, providing the required environment variables yourself:
+You can run the CLI manually with Docker, providing the required environment variables yourself. A job token (as below) works only while the server has job-token auth enabled (`GITLAB_JOB_TOKEN_AUTH_ENABLED`, the default); otherwise pass a GitLab ID token as `PIXELCI_ID_TOKEN` instead. It must be unexpired and minted for the job's project, with the server's `PUBLIC_URL` as audience.
 
 ```bash
 docker run --rm \

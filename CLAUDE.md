@@ -150,7 +150,7 @@ Vue 3 application with:
 
 The CLI (cli/src/index.ts):
 
-1. Detects CI environment (GitLab via `ci-gitlab.ts`, GitHub Actions via `ci-github.ts` using OIDC)
+1. Detects CI environment (GitLab via `ci-gitlab.ts`, using a GitLab ID token (`PIXELCI_ID_TOKEN`) or `CI_JOB_TOKEN`; GitHub Actions via `ci-github.ts` using OIDC)
 2. Creates build via API
 3. Uploads PNG screenshots with screen names
 4. Triggers build processing
