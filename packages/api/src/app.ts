@@ -9,6 +9,7 @@ import {
 } from './accessories/AuthMiddleware.accessory';
 import { SessionMiddleware } from './accessories/Session.accessory';
 import { SetIntegrationSecretCommand } from './commands/SetIntegrationSecret.command';
+import { StorageGcCommand } from './commands/StorageGc.command';
 import { AppConfig } from './config';
 import { AppsController } from './controllers/Apps.controller';
 import { BranchesController } from './controllers/Branches.controller';
@@ -28,7 +29,9 @@ import { Db } from './database';
 import { ProcessBuildJob } from './jobs/ProcessBuild.job';
 import { PruneOAuthJob } from './jobs/PruneOAuth.job';
 import { ReapStuckBuildsJob } from './jobs/ReapStuckBuilds.job';
+import { ReclaimBuildStorageJob } from './jobs/ReclaimBuildStorage.job';
 import { RerunCiJobJob } from './jobs/RerunCiJob.job';
+import { StorageGcJob } from './jobs/StorageGc.job';
 import { AppAccessService } from './services/AppAccess.service';
 import { ExternalReadService } from './services/ExternalRead.service';
 import { ClientMetadataFetcher, SafeHttpsClientMetadataFetcher } from './services/oauth/ClientMetadataFetcher';
@@ -40,6 +43,7 @@ import { PixelMatchService } from './services/PixelMatch.service';
 import { RateLimiterService } from './services/RateLimiter.service';
 import { S3Service } from './services/S3.service';
 import { assertSecretsConfig } from './services/secrets/SecretBox';
+import { StorageGcService } from './services/storage/StorageGc.service';
 import { ThumbnailService } from './services/Thumbnail.service';
 import { VcsService } from './services/Vcs.service';
 
@@ -90,7 +94,7 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         OAuthController,
         ConnectedAppsController
     ],
-    commands: [SetIntegrationSecretCommand],
+    commands: [SetIntegrationSecretCommand, StorageGcCommand],
     providers: [
         AdminAuthMiddleware,
         BuildCiTokenMiddleware,
@@ -102,6 +106,8 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         RerunCiJobJob,
         ReapStuckBuildsJob,
         PruneOAuthJob,
+        StorageGcJob,
+        ReclaimBuildStorageJob,
         PixelMatchService,
         VcsService,
         AppAccessService,
@@ -112,6 +118,7 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         { provide: OAuthPolicy, useClass: PixelciOAuthPolicy },
         { provide: ClientMetadataFetcher, useClass: SafeHttpsClientMetadataFetcher },
         S3Service,
+        StorageGcService,
         ThumbnailService
     ]
 };

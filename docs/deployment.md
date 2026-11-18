@@ -268,6 +268,46 @@ Redis also backs the rate limits on the [MCP OAuth](#mcp-oauth) endpoints. If it
 | `S3_ACCESS_SECRET` | Yes      | —       | S3 secret key   |
 | `S3_BUCKET`        | Yes      | —       | S3 bucket name  |
 
+### Storage cleanup
+
+PixelCI used to keep every screenshot, diff and thumbnail forever. A cleaner now removes objects that nothing needs any more. It is in **dry-run** by default: it only logs what it would delete. Set `STORAGE_GC_MODE=delete` once you are happy with what the logs report.
+
+**What is deleted, and when**
+
+- Uploads of screens that matched another build's image (rows marked `pendingDeletion`), once no later build, baseline or approval decision points at them.
+- Screenshots, diffs and thumbnails left behind by a re-run, a takeover of an abandoned build, a failed upload, or a replaced upload.
+- Everything belonging to an app that was deleted at least `APP_PURGE_AFTER_DAYS` days ago (objects, then its builds, screens, branches, decisions and the app row). Deleting an app stops its CI uploads immediately.
+- With `STORAGE_GC_DELETE_UNKNOWN_APPS=true`, objects under `screens/<id>/` where no app has that id.
+
+An hourly job sweeps one app at a time and remembers where it stopped, so a large bucket is covered over several runs. A build that has just been processed also queues its own cleanup after the grace period.
+
+**Safety rules**
+
+- An object is kept if anything references it: the build's own stored row, another row that matched it or uses it as its baseline (deleted-screen markers included), or any approval decision (revoked ones too). When in doubt it is kept and counted.
+- Only builds that have finished (no changes, needs review, changes approved, changes rejected) are touched. Draft, processing, canceled and failed builds, and objects whose build is not in the database, are skipped.
+- Nothing is deleted until it is older than the grace period. In the sweep, keys PixelCI did not write are never deleted (an app purge and the unknown-app option remove everything under the app's prefix).
+- Do not point two deployments at the same bucket with delete mode on: each would treat the other's objects as unknown. Use a bucket (or at least separate prefixes and `STORAGE_GC_DELETE_UNKNOWN_APPS=false`) per deployment.
+
+| Variable                          | Required | Default   | Description                                                                                    |
+| --------------------------------- | -------- | --------- | ---------------------------------------------------------------------------------------------- |
+| `STORAGE_GC_MODE`                 | No       | `dry-run` | `off`, `dry-run` (log only) or `delete`. An unrecognised value is treated as `dry-run`         |
+| `STORAGE_GC_GRACE_HOURS`          | No       | `24`      | Objects younger than this are never deleted. Minimum `6`                                       |
+| `STORAGE_GC_SWEEP_INTERVAL_HOURS` | No       | `24`      | How often each app's bucket prefix is swept again                                              |
+| `STORAGE_GC_MAX_RUN_MINUTES`      | No       | `10`      | Time budget of one hourly run; the next run continues where it stopped                         |
+| `STORAGE_GC_DELETE_UNKNOWN_APPS`  | No       | `false`   | Also delete objects of app ids that have no app row. Otherwise they are only reported          |
+| `APP_PURGE_AFTER_DAYS`            | No       | `30`      | Days after an app is deleted before its data is purged for good. `0` purges it on the next run |
+
+Dry-run records no progress, so every run starts from the first app: use the command below to look at a large installation app by app.
+
+The jobs run on the `storage` queue, so a worker must be running (`ENABLE_JOB_RUNNER=true`, or a separate worker). Each run logs one summary line with the counts: scanned, deleted or would-delete (with bytes), skipped because young or still referenced, unrecognized, and errors.
+
+To run one pass by hand and print the stats as JSON (defaults to `dry-run`, whatever `STORAGE_GC_MODE` says; the optional app id limits it to one app):
+
+```bash
+docker exec pixelci node . storage:gc dry-run
+docker exec pixelci node . storage:gc delete <appId>
+```
+
 ### Workers
 
 | Variable            | Required | Default | Description                                 |
