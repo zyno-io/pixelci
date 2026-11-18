@@ -26,7 +26,7 @@ spec:
       {{- end }}
       containers:
         - name: migrate
-          image: {{ .Values.image }}
+          image: {{ required "image is required" .Values.image }}
           imagePullPolicy: IfNotPresent
           command: ["node", ".", "migrate:run"]
           envFrom:
@@ -43,4 +43,4 @@ spec:
                 {{- toYaml $v | nindent 16 }}
             {{- end }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml .Values.migration.resources | nindent 12 }}

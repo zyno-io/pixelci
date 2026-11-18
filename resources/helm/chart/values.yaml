@@ -1,68 +1,83 @@
-# Container image, e.g. gcr.s24.dev/signal24/products/pixelci:26.615.1432-abc123.
-# Typically passed at deploy time via `--set image=...`.
+# Container image, e.g. ghcr.io/zyno-io/pixelci:0.8.0. Required.
 image: ''
 
 # Application version label, surfaced on Pod metadata for observability.
-# Typically passed at deploy time via `--set version=...`.
 version: ''
 
+# imagePullSecrets:
+#   - name: my-registry
+
+# API server (UI + API on port 7924).
 replicas: 1
+
+# Sized from production peaks (~250 MiB working set, < 0.1 CPU).
+resources:
+  requests:
+    cpu: 50m
+    memory: 256Mi
+  limits:
+    memory: 768Mi
 
 worker:
   replicas: 1
+  # Lets an in-flight comparison finish before the pod is killed.
   terminationGracePeriodSeconds: 600
+  # Comparisons decode full screenshots, so the worker needs the most memory
+  # (production peaks ~750 MiB). Raise the limit for very large screenshots.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 768Mi
+    limits:
+      memory: 2Gi
+
+# Pre-install/pre-upgrade migration job.
+migration:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
 
 ingress:
   enabled: true
-  host: pixelci.s24.dev
+  # Required when the ingress is enabled; must match the host in PUBLIC_URL.
+  host: ''
   annotations:
-    nginx.ingress.kubernetes.io/cors-allow-methods: GET, POST
-    nginx.ingress.kubernetes.io/cors-allow-origin: http://localhost:5173
-    nginx.ingress.kubernetes.io/cors-allow-credentials: 'true'
-    nginx.ingress.kubernetes.io/enable-cors: 'true'
+    # Screenshot uploads are up to 16 MB.
     nginx.ingress.kubernetes.io/proxy-body-size: 16m
   tls:
-    enabled: true
-    secretName: s24dev-wildcard-tls
+    enabled: false
+    secretName: ''
 
+# Plain environment variables. See docs/deployment.md for the full reference.
 env:
   APP_ENV: production
-  USE_REAL_IP_HEADER: 'true'
-  # Public origin of the web app; the OAuth redirect URI is always ${PUBLIC_URL}/login
-  PUBLIC_URL: https://pixelci.s24.dev
-
-  REDIS_SENTINEL_HOST: redis.redis.svc.cluster.local
-  REDIS_SENTINEL_NAME: redis
-  REDIS_PREFIX: pixelci
-
-  # CNPG pg-production via its PgBouncer pooler (transaction mode). The CNPG CA
-  # isn't in Node's trust store, so TLS is on without certificate verification.
-  PG_HOST: pg-production-pooler.db.svc.cluster.local
-  PG_PORT: '5432'
-  PG_USER: pixelci
-  PG_DATABASE: pixelci
-  PG_SSL: 'true'
-  PG_SSL_REJECT_UNAUTHORIZED: 'false'
-
-  S3_ENDPOINT: https://s3.us-east-va.io.cloud.ovh.us
-  S3_REGION: us-east-va
-  S3_BUCKET: s24-pixelci
+  # Public origin of the web app, e.g. https://pixelci.example.com. Required;
+  # the OAuth redirect URI is always ${PUBLIC_URL}/login.
+  PUBLIC_URL: ''
+  # REDIS_HOST: redis
+  # REDIS_PREFIX: pixelci
+  # PG_HOST: postgres
+  # PG_USER: pixelci
+  # PG_DATABASE: pixelci
+  # S3_ENDPOINT: https://s3.amazonaws.com
+  # S3_REGION: us-east-1
+  # S3_BUCKET: pixelci
 
 # Environment variables sourced from Secret or ConfigMap keys, e.g.
-#   REDIS_PASSWORD_SECRET:
-#     secretKeyRef: { name: pixelci-redis-auth, key: password }
-envValueFrom:
-  # Hemlig-imported CNPG role credential (workloads/trusted/database/pixelci-postgres-role).
-  PG_PASSWORD_SECRET:
-    secretKeyRef: { name: pixelci-postgres-role, key: password }
+#   PG_PASSWORD_SECRET:
+#     secretKeyRef: { name: pixelci-postgres, key: password }
+envValueFrom: {}
 
 secret:
-  # Name of the Kubernetes Secret to mount into the containers as env vars.
-  # Defaults to the release name when unset; here it matches the Hemlig secret import.
-  name: pixelci-envsecrets
+  # Name of the Kubernetes Secret mounted into every container as env vars
+  # (CRYPTO_SECRET, AUTH_JWT_SECRET, SETUP_TOKEN, S3 keys, passwords).
+  # Defaults to the release name.
+  name: ''
 
-  # Set `values` to have the chart create the Secret for you.
-  # Leave commented to mount an existing Secret with `name` above.
+  # Set `values` to have the chart create the Secret. Leave unset to mount an
+  # existing Secret named above.
   # values:
-
-resources: {}
+  #   CRYPTO_SECRET: ...

@@ -24,7 +24,7 @@ spec:
       {{- end }}
       containers:
         - name: {{ .Release.Name }}
-          image: {{ .Values.image }}
+          image: {{ required "image is required" .Values.image }}
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 7924
@@ -51,6 +51,13 @@ spec:
             timeoutSeconds: 3
             periodSeconds: 5
             failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            timeoutSeconds: 3
+            periodSeconds: 5
+            failureThreshold: 2
           startupProbe:
             httpGet:
               path: /healthz

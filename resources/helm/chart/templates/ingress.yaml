@@ -9,7 +9,7 @@ metadata:
   {{- end }}
 spec:
   rules:
-    - host: {{ .Values.ingress.host }}
+    - host: {{ required "ingress.host is required when the ingress is enabled" .Values.ingress.host }}
       http:
         paths:
           - path: /

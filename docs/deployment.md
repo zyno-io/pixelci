@@ -135,6 +135,39 @@ docker compose exec pixelci node . migrate:run
 
 Then visit `http://localhost:7924`. The onboarding wizard (which asks for `SETUP_TOKEN`) will guide you through initial setup.
 
+## Kubernetes (Helm)
+
+The chart in [`resources/helm/chart`](https://github.com/zyno-io/pixelci/tree/main/resources/helm/chart) runs the API server and a worker as separate Deployments, and runs migrations in a pre-upgrade job. Its defaults point at nothing, so supply your own values:
+
+```yaml
+image: ghcr.io/zyno-io/pixelci:<version>
+ingress:
+    host: pixelci.example.com
+    tls:
+        enabled: true
+        secretName: pixelci-tls
+env:
+    PUBLIC_URL: https://pixelci.example.com
+    REDIS_HOST: redis
+    REDIS_PREFIX: pixelci
+    PG_HOST: postgres
+    PG_USER: pixelci
+    PG_DATABASE: pixelci
+    S3_ENDPOINT: https://s3.amazonaws.com
+    S3_REGION: us-east-1
+    S3_BUCKET: pixelci
+secret:
+    # Existing Secret holding CRYPTO_SECRET, AUTH_JWT_SECRET, SETUP_TOKEN,
+    # PG_PASSWORD_SECRET, S3_ACCESS_KEY_ID and S3_ACCESS_SECRET.
+    name: pixelci-secrets
+```
+
+```bash
+helm upgrade --install pixelci resources/helm/chart -f my-values.yaml
+```
+
+Resource requests and limits default to sizes measured on a production instance. The worker gets the most memory because it decodes full screenshots; raise `worker.resources.limits.memory` if yours are very large.
+
 ## Running Migrations
 
 Migrations must be run whenever you deploy a new version:
