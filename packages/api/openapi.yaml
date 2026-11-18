@@ -2021,20 +2021,10 @@ components:
           type: array
           items:
             type: string
-        source:
-          $ref: "#/components/schemas/IBaseSource"
+        source: {}
       required:
         - commits
         - source
-    IBaseSource:
-      enum:
-        - first-parent
-        - merge-base
-        - merge-request-diff-base
-        - merge-request-target
-        - override
-        - pull-request-base
-      type: string
     IBuildApprovalResponse:
       type: object
       properties:
