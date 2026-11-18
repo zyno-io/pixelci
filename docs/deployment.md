@@ -166,7 +166,7 @@ secret:
 helm upgrade --install pixelci resources/helm/chart -f my-values.yaml
 ```
 
-Resource requests and limits default to sizes measured on a production instance. The worker gets the most memory because it decodes full screenshots; raise `worker.resources.limits.memory` if yours are very large.
+Resource requests and limits default to sizes measured on a production instance. Both the server (review previews, thumbnails) and the worker (comparisons) decode full screenshots, so if yours are near the 25 MP cap, raise `resources.limits.memory` and `worker.resources.limits.memory`.
 
 ## Running Migrations
 
@@ -179,8 +179,8 @@ docker exec pixelci node . migrate:run
 # Docker Compose
 docker compose exec pixelci node . migrate:run
 
-# Kubernetes
-kubectl exec deploy/pixelci-server -- node . migrate:run
+# Kubernetes without the Helm chart (the chart runs them for you)
+kubectl exec deploy/<server deployment> -- node . migrate:run
 ```
 
 Some upgrades migrate data the new version depends on (for example, encrypting stored VCS secrets). To avoid errors between starting the new version and migrating, run the migrations with the new image before starting it, with the same environment as the server:
@@ -381,17 +381,6 @@ docker run -d \
 
 When using a separate worker, do **not** set `ENABLE_JOB_RUNNER` on the server.
 
-## Kubernetes
+### On Kubernetes
 
-For Kubernetes deployments, you can either:
-
-- **Single-process**: One Deployment with `ENABLE_JOB_RUNNER=true`, exposed via a Service/Ingress on port 7924
-- **Separate worker**: Two Deployments sharing the same image — the server (default command) and a worker (override command to `node . worker:start`)
-
-Run migrations via `kubectl exec` against the server deployment after each upgrade:
-
-```bash
-kubectl exec deploy/pixelci-server -- node . migrate:run
-```
-
-All deployments share the same environment variables. Use Kubernetes Secrets for sensitive values (`AUTH_JWT_SECRET`, `PG_PASSWORD_SECRET`, S3 credentials, `CRYPTO_SECRET`).
+The [Helm chart](#kubernetes-helm) uses the separate-worker layout: Deployments `<release>` (server) and `<release>-worker`, sharing one environment, with migrations in a pre-upgrade job. With your own manifests, either run one Deployment with `ENABLE_JOB_RUNNER=true`, or two Deployments of the same image with the worker's command set to `node . worker:start`. Keep sensitive values (`AUTH_JWT_SECRET`, `PG_PASSWORD_SECRET`, S3 credentials, `CRYPTO_SECRET`) in Kubernetes Secrets.

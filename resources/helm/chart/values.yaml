@@ -10,20 +10,22 @@ version: ''
 # API server (UI + API on port 7924).
 replicas: 1
 
-# Sized from production peaks (~250 MiB working set, < 0.1 CPU).
+# Production idles around 250 MiB, but the server also decodes full
+# screenshots (review previews, thumbnails): a 25 MP preview peaks near
+# 600 MiB on top of that.
 resources:
   requests:
     cpu: 50m
     memory: 256Mi
   limits:
-    memory: 768Mi
+    memory: 1536Mi
 
 worker:
   replicas: 1
   # Lets an in-flight comparison finish before the pod is killed.
   terminationGracePeriodSeconds: 600
-  # Comparisons decode full screenshots, so the worker needs the most memory
-  # (production peaks ~750 MiB). Raise the limit for very large screenshots.
+  # Comparisons decode full screenshots (production peaks ~750 MiB; a 25 MP
+  # comparison adds ~600 MiB). One job runs at a time per worker.
   resources:
     requests:
       cpu: 250m
