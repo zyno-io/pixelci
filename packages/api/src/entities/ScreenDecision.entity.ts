@@ -8,6 +8,9 @@ import { BaseEntity, DatabaseField, HasDefault, UuidString } from '@zyno-io/ts-s
 @entity.name('screen_decisions')
 @entity.index(['appId', 'screenId', 'id'])
 @entity.index(['buildScreenId'], { unique: true }) // one decision per reviewed row: idempotency guard
+// The storage cleaner looks up the decisions that still use a build's upload.
+@entity.index(['fromImageBuildId', 'screenId'])
+@entity.index(['toImageBuildId', 'screenId'])
 export class ScreenDecisionEntity extends BaseEntity {
     id!: UuidString & PrimaryKey; // uuid7 minted at decision time: ordering + epoch comparisons
     appId!: UuidString;

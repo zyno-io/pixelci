@@ -1,5 +1,5 @@
 import { ScopedLogger } from '@zyno-io/ts-server-foundation';
-import { AnyResponse, BaseJob, WorkerJob } from '@zyno-io/ts-server-foundation';
+import { AnyResponse, BaseJob, WorkerJob, WorkerService } from '@zyno-io/ts-server-foundation';
 import { createHash } from 'crypto';
 import { keyBy } from 'lodash';
 
@@ -17,6 +17,7 @@ import { PixelMatchService } from '../services/PixelMatch.service';
 import { IBaseline, loadBaselines, resolveReference } from '../services/Reference';
 import { computeRemovals } from '../services/RemovedScreens';
 import { S3Service } from '../services/S3.service';
+import { queueBuildReclaims } from '../services/storage/ReclaimQueue';
 import { ThumbnailService } from '../services/Thumbnail.service';
 import { ITolerances, resolveTolerances } from '../services/Tolerance';
 
@@ -43,7 +44,8 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
         private db: Db,
         private s3Svc: S3Service,
         private pixelMatch: PixelMatchService,
-        private thumbnails: ThumbnailService
+        private thumbnails: ThumbnailService,
+        private workerSvc: WorkerService
     ) {
         super();
     }
@@ -267,7 +269,9 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
 
         if (lease.lost) throw new LeaseLostError();
 
+        let pendingDeletionRows = 0;
         await this.db.transaction(async txn => {
+            pendingDeletionRows = 0; // the callback can run again (deadlock retry)
             // Write the result through the locked row only, and only while this attempt still owns the build.
             const locked = await lease.assertHeld(txn);
             locked.status = currentBuild.status;
@@ -283,17 +287,21 @@ export class ProcessBuildJob extends BaseJob<IProcessBuildJobData> {
             txn.add(...tombstones);
             await txn.flush();
             // Only rows that equal their baseline hold nothing of their own: auto-approved rows keep (and show) their upload.
-            // A future storage cleaner must never delete a matchedBuildId target, or the from/to image of a decision.
-            await txn
+            // The storage cleaner (services/storage) deletes these uploads after a grace period, but never one that a matchedBuildId,
+            // baseImageBuildId or decision still points at.
+            const pending = await txn
                 .query(BuildScreenEntity)
                 .filter({ buildId: currentBuild.id, status: 'no changes', matchedBuildId: { $ne: null } })
                 .patchMany({
                     storageStatus: 'pendingDeletion'
                 });
+            pendingDeletionRows = pending.affectedRows;
             for (const [rowId, hash] of hashPatches) {
                 await txn.query(BuildScreenEntity).filter({ id: rowId, contentHash: null }).patchMany({ contentHash: hash });
             }
         });
+
+        if (pendingDeletionRows) await queueBuildReclaims(this.workerSvc, this.appConfig, this.logger, currentBuild.appId, [currentBuild.id]);
 
         return uploads.filter(row => row.status !== 'no changes');
     }

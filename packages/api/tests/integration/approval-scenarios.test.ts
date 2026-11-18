@@ -28,6 +28,7 @@ import { backfillLegacyReferences } from '../../src/migrations/20261117_120000_s
 import { PixelMatchService } from '../../src/services/PixelMatch.service';
 import { S3Service } from '../../src/services/S3.service';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
+import { createGcContext, StorageGcService } from '../../src/services/storage/StorageGc.service';
 import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 
 process.env.CI = 'true';
@@ -44,11 +45,12 @@ const X = 'finder-2.png';
 
 type Fixture = string | Buffer;
 type BuildStatus = BuildEntity['status'];
+const FINAL_STATUSES: BuildStatus[] = ['no changes', 'needs review', 'changes approved', 'changes rejected'];
 type Verdict = 'approved' | 'rejected';
 
 interface IExpect {
-    /** The build's status once processed. */
-    build: BuildStatus;
+    /** The build's status once processed ('any-final': any status after processing; the build is not required to need review). */
+    build: BuildStatus | 'any-final';
     /** Per uploaded screen name: its status, or [status, review pre-mark]. Screens not listed are not checked. */
     screens?: Record<string, string | [string, string]>;
     /** Per removed screen name (tombstone): its status. */
@@ -284,9 +286,89 @@ class Harness {
         return result;
     }
 
+    /**
+     * Every S3 object this app's data still points at: what each row displays, each reference's baseline sources, each row's
+     * baseImageBuildId (tombstones included) and the from/to image of every decision (revoked ones too), plus the stored diffs.
+     */
+    async referencedObjects(): Promise<Map<string, string>> {
+        const s3 = this.s3();
+        const required = new Map<string, string>();
+        const need = (buildId: string | null, screenId: string, why: string) => {
+            if (buildId) required.set(s3.getPathForScreen(this.appId, buildId, screenId), why);
+        };
+        const builds = await BuildEntity.query().filter({ appId: this.appId }).find();
+        const rows = await BuildScreenEntity.query().filter({ appId: this.appId }).find();
+        const decisions = await ScreenDecisionEntity.query().filter({ appId: this.appId }).find();
+        const rowsByBuild = new Map<string, BuildScreenEntity[]>();
+        for (const row of rows) rowsByBuild.set(row.buildId, [...(rowsByBuild.get(row.buildId) ?? []), row]);
+
+        for (const row of rows) {
+            // what the UI and the external API show for the row
+            if (!row.isRemoved && row.status !== null)
+                need(row.status === 'no changes' ? (row.matchedBuildId ?? row.buildId) : row.buildId, row.screenId, 'display image');
+            need(row.baseImageBuildId, row.screenId, 'baseImageBuildId');
+        }
+        for (const build of builds) {
+            for (const ref of rowsByBuild.get(build.referenceBuildId ?? '') ?? []) {
+                if (!ref.isRemoved) need(ref.matchedBuildId ?? ref.buildId, ref.screenId, 'reference source');
+            }
+        }
+        for (const d of decisions) {
+            need(d.fromImageBuildId, d.screenId, 'decision from');
+            need(d.toImageBuildId, d.screenId, 'decision to');
+        }
+        for (const row of rows) {
+            if (!row.isRemoved && row.status !== null && row.status !== 'no changes' && row.baseImageBuildId) {
+                required.set(s3.getPathForDiff(this.appId, row.buildId, row.screenId), 'diff');
+            }
+        }
+        return required;
+    }
+
+    /**
+     * The storage cleaner's safety test: sweeps the whole app (delete mode, no grace period) and checks that every object the data
+     * still points at, and that existed before, survived. Then processes one more build to prove baselines are still usable.
+     */
+    async sweepAndVerify(): Promise<{ deleted: number; checked: number }> {
+        const s3 = this.s3();
+        const where = `${this.set}/sweep`;
+        const before = await this.referencedObjects();
+        const existed: [string, string][] = [];
+        for (const [key, why] of before) if (await s3.exists(key)) existed.push([key, why]);
+
+        const gc = this.facade.get<StorageGcService>(StorageGcService);
+        const ctx = createGcContext(gc.getSettings(), { mode: 'delete', graceMs: 0, now: new Date(Date.now() + 120_000), deadlineAt: Infinity });
+        assertTrue(await gc.sweepApp(this.appId, ctx), `${where}: the sweep reached the end of the app`);
+        assertEq(ctx.stats.deleteErrors, 0, `${where}: no delete errors`);
+        assertEq(ctx.stats.unknownBuild, 0, `${where}: every object belongs to a known build`);
+
+        for (const [key, why] of existed) assertTrue(await s3.exists(key), `${where}: ${why} survived the sweep: ${key}`);
+        console.log(`  sweep: deleted ${ctx.stats.deleted.count}, kept ${ctx.stats.skippedLive} (${existed.length} referenced objects verified)`);
+
+        // processing still works against whatever the sweep left
+        // (existing screen names too, so processing downloads baselines the sweep has left, not just a new screen)
+        const existing = (await ScreenEntity.query().filter({ appId: this.appId }).find()).slice(0, 3);
+        await this.run({
+            label: 'Zsweep',
+            branch: 'post-sweep',
+            base: null,
+            screens: { 'after-sweep': A, ...Object.fromEntries(existing.map(screen => [screen.name, A])) },
+            expect: { build: 'any-final' }
+        });
+        for (const [key, why] of await this.referencedObjects()) {
+            if (before.has(key) && !existed.some(([k]) => k === key)) continue; // missing before the sweep: not the sweep's doing
+            assertTrue(await s3.exists(key), `${where}: ${why} exists after processing a build: ${key}`);
+        }
+        return { deleted: ctx.stats.deleted.count, checked: existed.length };
+    }
+
     private async check(where: string, step: ISetStep, result: IStepResult) {
         const { expect } = step;
-        assertEq(result.status, expect.build, `${where}: build status`);
+        if (expect.build === 'any-final') {
+            assertTrue(FINAL_STATUSES.includes(result.status), `${where}: build finished processing (got ${result.status})`);
+        } else {
+            assertEq(result.status, expect.build, `${where}: build status`);
+        }
         for (const [name, want] of Object.entries(expect.screens ?? {})) {
             const row = result.rows[name];
             assertTrue(row && !row.isRemoved, `${where}: expected an uploaded row for ${name}`);
@@ -360,12 +442,21 @@ async function run() {
     const jwt = await JWT.generate({ subject: ZERO_ID });
 
     const only = process.env.SET;
+    let totalDeleted = 0;
+    let totalChecked = 0;
     for (const [name, fn] of Object.entries(SETS)) {
         if (only && only !== name) continue;
         console.log(`\nSet: ${name}`);
         const h = await Harness.create(facade, name, jwt);
         await fn(h, facade);
+        const swept = await h.sweepAndVerify();
+        totalDeleted += swept.deleted;
+        totalChecked += swept.checked;
         console.log('  PASS');
+    }
+    if (!only) {
+        assertTrue(totalChecked > 0, 'the sweep checks run against real referenced objects');
+        assertTrue(totalDeleted > 0, 'the sweeps deleted garbage somewhere (so the checks above were not vacuous)');
     }
 
     mockServer.close();
@@ -873,7 +964,12 @@ const SETS: Record<string, SetFn> = {
         const s3 = h.s3();
         const pending = await BuildScreenEntity.query().filter({ appId: h.appId, storageStatus: 'pendingDeletion' }).find();
         assertTrue(pending.length >= 2, 'M1 rows are pendingDeletion');
-        for (const row of pending) await s3.deleteFile(s3.getPathForScreen(h.appId, row.buildId, row.screenId));
+        // the storage cleaner removes them: nothing points at those uploads any more
+        const doomed = pending.map(row => s3.getPathForScreen(h.appId, row.buildId, row.screenId));
+        const gc = h.facade.get<StorageGcService>(StorageGcService);
+        const gcCtx = createGcContext(gc.getSettings(), { mode: 'delete', graceMs: 0, now: new Date(Date.now() + 120_000), deadlineAt: Infinity });
+        for (const buildId of new Set(pending.map(row => row.buildId))) await gc.reclaimBuild(h.appId, buildId, undefined, gcCtx);
+        for (const key of doomed) assertTrue(!(await s3.exists(key)), `the cleaner deleted ${key}`);
         assertTrue(!(await s3.exists(s3.getPathForScreen(h.appId, m1.buildId, m1.screenIds.s1))), 'the unchanged row upload is gone');
 
         const f1 = await h.run({

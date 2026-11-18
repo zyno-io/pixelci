@@ -119,12 +119,15 @@ export class ThumbnailService {
      * Makes sure a screen's thumbnail is in storage, generating it from the full screenshot the first
      * time it is asked for, and returns its storage path. Rejects if the screenshot itself is missing.
      * `buildScreenId` identifies the upload, so a screenshot replaced in place gets a fresh thumbnail.
+     * `sourceBuildId` names the build whose upload to scale when it is not `buildId` itself (a row whose own upload was cleaned up).
      */
-    async ensure(appId: string, buildId: string, screenId: string, buildScreenId: string): Promise<string> {
+    async ensure(appId: string, buildId: string, screenId: string, buildScreenId: string, sourceBuildId: string = buildId): Promise<string> {
         const path = this.s3Svc.getPathForThumbnail(appId, buildId, screenId, buildScreenId);
         let pending = this.inFlight.get(path);
         if (!pending) {
-            pending = this.generateIfMissing(path, this.s3Svc.getPathForScreen(appId, buildId, screenId)).finally(() => this.inFlight.delete(path));
+            pending = this.generateIfMissing(path, this.s3Svc.getPathForScreen(appId, sourceBuildId, screenId)).finally(() =>
+                this.inFlight.delete(path)
+            );
             this.inFlight.set(path, pending);
         }
         await pending;

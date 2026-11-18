@@ -11,6 +11,7 @@ import { OAuthGrantEntity } from './entities/OAuthGrant.entity';
 import { OAuthTokenEntity } from './entities/OAuthToken.entity';
 import { ScreenEntity } from './entities/Screen.entity';
 import { ScreenDecisionEntity } from './entities/ScreenDecision.entity';
+import { StorageSweepEntity } from './entities/StorageSweep.entity';
 import { UserEntity } from './entities/User.entity';
 import { VcsIntegrationEntity } from './entities/VcsIntegration.entity';
 
@@ -26,6 +27,7 @@ export class Db extends createPostgresDatabase({}, [
     OAuthTokenEntity,
     ScreenDecisionEntity,
     ScreenEntity,
+    StorageSweepEntity,
     UserEntity,
     VcsIntegrationEntity
 ]) {}

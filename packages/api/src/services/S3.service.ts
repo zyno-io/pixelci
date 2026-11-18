@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import assert from 'assert';
 import { readFile } from 'fs/promises';
@@ -15,6 +15,41 @@ export function isNotFound(err: unknown): boolean {
     // by name, not status: a missing bucket is also a 404 and must not pass for a missing object
     const name = (err as { name?: string } | undefined)?.name;
     return name === 'NotFound' || name === 'NoSuchKey';
+}
+
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+// Strict on purpose: anything that does not match exactly is "unrecognized" to the storage cleaner, and is never deleted.
+const SCREENS_KEY_RE = new RegExp(`^screens/(${UUID})/(${UUID})/(${UUID})(?:\\.(${UUID})\\.thumb|\\.diff)?\\.png$`);
+
+export interface IParsedScreensKey {
+    appId: string;
+    buildId: string;
+    screenId: string;
+    kind: 'upload' | 'diff' | 'thumb';
+    /** Thumbnails only: the upload (build screen) the thumbnail was generated for. */
+    buildScreenId?: string;
+}
+
+/** Inverse of the getPathFor* helpers below. Returns null for any key that is not exactly one of their shapes. */
+export function parseScreensKey(key: string): IParsedScreensKey | null {
+    const m = SCREENS_KEY_RE.exec(key);
+    if (!m) return null;
+    const [, appId, buildId, screenId, buildScreenId] = m;
+    if (buildScreenId) return { appId, buildId, screenId, kind: 'thumb', buildScreenId };
+    return { appId, buildId, screenId, kind: key.endsWith('.diff.png') ? 'diff' : 'upload' };
+}
+
+export interface IS3Object {
+    key: string;
+    lastModified?: Date;
+    size?: number;
+}
+
+export interface IListObjectsOptions {
+    /** Lists keys after this one (lexicographically). Preferred over a token: it stays valid while the listed keys are deleted. */
+    startAfter?: string;
+    continuationToken?: string;
+    maxKeys?: number;
 }
 
 export class S3Service {
@@ -58,8 +93,58 @@ export class S3Service {
             new DeleteObjectCommand({
                 Bucket: this.appConfig.S3_BUCKET,
                 Key: path
-            })
+            }),
+            { abortSignal: AbortSignal.timeout(S3_CALL_TIMEOUT_MS) }
         );
+    }
+
+    /**
+     * Deletes keys one request each (not the bulk DeleteObjects call, which some S3-compatible stores lack), `concurrency` at a time.
+     * Never throws for a single key: failures are returned so the caller can count them and carry on.
+     */
+    async deleteFiles(keys: string[], concurrency = 8): Promise<{ deleted: string[]; failed: { key: string; error: unknown }[] }> {
+        const deleted: string[] = [];
+        const failed: { key: string; error: unknown }[] = [];
+        let next = 0;
+        const worker = async () => {
+            while (next < keys.length) {
+                const key = keys[next++];
+                try {
+                    await this.deleteFile(key);
+                    deleted.push(key);
+                } catch (error) {
+                    failed.push({ key, error });
+                }
+            }
+        };
+        await Promise.all(Array.from({ length: Math.min(concurrency, keys.length) }, worker));
+        return { deleted, failed };
+    }
+
+    /** One page (up to 1000 keys, sorted) of the objects under a prefix. `nextToken` is set while more remain. */
+    async listObjects(prefix: string, options: IListObjectsOptions = {}): Promise<{ objects: IS3Object[]; nextToken?: string }> {
+        const res = await this.s3Client.send(
+            new ListObjectsV2Command({
+                Bucket: this.appConfig.S3_BUCKET,
+                Prefix: prefix,
+                StartAfter: options.startAfter,
+                ContinuationToken: options.continuationToken,
+                MaxKeys: options.maxKeys
+            }),
+            { abortSignal: AbortSignal.timeout(S3_CALL_TIMEOUT_MS) }
+        );
+        const objects = (res.Contents ?? []).flatMap(o => (o.Key ? [{ key: o.Key, lastModified: o.LastModified, size: o.Size }] : []));
+        return { objects, nextToken: res.IsTruncated ? res.NextContinuationToken : undefined };
+    }
+
+    /** One page of the "directories" directly under a prefix (each result ends in a slash). */
+    async listCommonPrefixes(prefix: string, token?: string): Promise<{ prefixes: string[]; nextToken?: string }> {
+        const res = await this.s3Client.send(
+            new ListObjectsV2Command({ Bucket: this.appConfig.S3_BUCKET, Prefix: prefix, Delimiter: '/', ContinuationToken: token }),
+            { abortSignal: AbortSignal.timeout(S3_CALL_TIMEOUT_MS) }
+        );
+        const prefixes = (res.CommonPrefixes ?? []).flatMap(p => (p.Prefix ? [p.Prefix] : []));
+        return { prefixes, nextToken: res.IsTruncated ? res.NextContinuationToken : undefined };
     }
 
     /** Whether an object is in the bucket. Only "not found" answers false; any other failure throws. */

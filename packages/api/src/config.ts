@@ -56,4 +56,15 @@ export class AppConfig extends BaseAppConfig {
     OAUTH_CIMD_MAX_FETCHES_PER_HOST_PER_10_MIN = 30;
     OAUTH_CIMD_MAX_FETCHES_PER_HOUR = 300;
     OAUTH_CIMD_MAX_FETCHES_PER_IP_PER_10_MIN = 20;
+
+    // Storage cleanup (see docs/deployment.md). Mode: 'off' | 'dry-run' (default: logs what it would delete) | 'delete'.
+    // Parsed and clamped by resolveStorageGcSettings, so a bad value warns instead of failing startup.
+    STORAGE_GC_MODE: string = 'dry-run';
+    STORAGE_GC_GRACE_HOURS = 24;
+    STORAGE_GC_SWEEP_INTERVAL_HOURS = 24;
+    STORAGE_GC_MAX_RUN_MINUTES = 10;
+    // Also delete screens/<id>/ prefixes that belong to no app row. Off by default: a shared bucket makes this destructive.
+    STORAGE_GC_DELETE_UNKNOWN_APPS: boolean = false;
+    // Soft-deleted apps are purged (objects and rows) this many days after deletion. 0 = on the next run.
+    APP_PURGE_AFTER_DAYS = 30;
 }

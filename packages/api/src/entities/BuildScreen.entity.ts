@@ -6,6 +6,9 @@ import { IMaskRect } from '../services/Mask';
 @entity.name('builds_screens')
 @entity.index(['buildId', 'screenId'], { unique: true })
 @entity.index(['screenId', 'id'])
+// The storage cleaner looks up the rows that still point at a build's upload.
+@entity.index(['matchedBuildId', 'screenId'])
+@entity.index(['baseImageBuildId', 'screenId'])
 export class BuildScreenEntity extends BaseEntity {
     id!: UuidString & PrimaryKey;
     appId!: UuidString;

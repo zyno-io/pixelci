@@ -126,6 +126,15 @@ function pickRemovedBuildScreen(
     };
 }
 
+/**
+ * The build whose upload holds this row's pixels. A row pending deletion has (or soon will have) no upload of its own: it equals
+ * the image of the build it matched, which the storage cleaner never deletes.
+ */
+function imageSourceBuildId(row: Pick<BuildScreenEntity, 'buildId' | 'matchedBuildId' | 'storageStatus' | 'status'>): string {
+    // the same shape the cleaner treats as unchanged (older versions also marked approved rows, which keep their upload)
+    return row.storageStatus === 'pendingDeletion' && row.status === 'no changes' && row.matchedBuildId ? row.matchedBuildId : row.buildId;
+}
+
 @ApiController('/api/apps/:appId/builds/:id')
 export class BuildScreensController {
     constructor(
@@ -308,13 +317,18 @@ export class BuildScreensController {
         };
     }
 
-    /** A build screen's own upload, falling back to the build it matched if its own copy is gone. */
+    /**
+     * A build screen's own upload. A screen that equalled its baseline keeps no copy of its own once cleaned up; its matched image
+     * is the reference side's, so comparing the two would always pass. That is refused rather than answered wrongly.
+     */
     private async getOwnScreenImage(appId: string, buildScreen: BuildScreenEntity) {
         try {
             return await this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, buildScreen.buildId, buildScreen.screenId));
         } catch (err) {
-            if (!buildScreen.matchedBuildId) throw err;
-            return this.s3Svc.getBuffer(this.s3Svc.getPathForScreen(appId, buildScreen.matchedBuildId, buildScreen.screenId));
+            if (!buildScreen.matchedBuildId || !isNotFound(err)) throw err;
+            throw new HttpBadRequestError(
+                'This screen matched its baseline, and its own copy of the image has been cleaned up, so there is nothing to compare'
+            );
         }
     }
 
@@ -428,7 +442,7 @@ export class BuildScreensController {
     async getScreenImage(appId: UuidString, id: UuidString, screenId: UuidString, user: UserEntity): AnyResponse {
         await this.appAccessSvc.assertCanAccessAppId({ kind: 'user', user }, appId);
         const row = await this.findStoredImage(appId, id, screenId);
-        const url = await this.s3Svc.getSignedUrl(this.s3Svc.getPathForScreen(row.appId, row.buildId, row.screenId));
+        const url = await this.s3Svc.getSignedUrl(this.s3Svc.getPathForScreen(row.appId, imageSourceBuildId(row), row.screenId));
         return Redirect.toUrl(url);
     }
 
@@ -440,7 +454,7 @@ export class BuildScreensController {
         const buildScreen = await this.findStoredImage(appId, id, screenId);
         let path: string;
         try {
-            path = await this.thumbnails.ensure(appId, id, screenId, buildScreen.id);
+            path = await this.thumbnails.ensure(appId, id, screenId, buildScreen.id, imageSourceBuildId(buildScreen));
         } catch (err) {
             if (isNotFound(err)) throw new HttpNotFoundError();
             throw err;

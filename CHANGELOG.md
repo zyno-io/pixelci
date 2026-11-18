@@ -17,6 +17,14 @@
   before. Everyone signs in once more after upgrading. `PUBLIC_URL` must be the `https` origin users visit, and a
   reverse proxy must pass `Origin` and `Sec-Fetch-*` through. Local development now proxies the whole API through the
   Vite dev server (see DEVELOPMENT.md)
+- **Storage cleanup.** Screenshots, diffs and thumbnails that nothing needs any more are now removed from S3: uploads of
+  unchanged screens once no later build, baseline or approval decision points at them, leftovers from re-runs, takeovers and
+  failed uploads, and the data of apps deleted more than `APP_PURGE_AFTER_DAYS` (30) days ago. It starts in **dry-run**
+  (logs what it would delete); set `STORAGE_GC_MODE=delete` to enable it. Never share a bucket between deployments with delete
+  mode on. Run one pass by hand with `node . storage:gc [dry-run|delete] [appId]`. See "Storage cleanup" in the deployment guide
+- Deleting an app now stops its CI uploads at once, and a screen whose own upload was cleaned up shows the image it matched
+- **Upgrade notes:** the migration adds a `storage_sweeps` table and four indexes (on `builds_screens` and `screen_decisions`);
+  creating the indexes briefly blocks writes on large `builds_screens` and `screen_decisions` tables. Workers now also consume a `storage` queue
 
 ## v0.8.0
 

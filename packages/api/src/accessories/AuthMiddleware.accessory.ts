@@ -4,6 +4,7 @@ import { createAuthMiddleware, HttpAccessDeniedError, HttpMiddleware } from '@zy
 import { createHash } from 'crypto';
 
 import { AppConfig } from '../config';
+import { AppEntity } from '../entities/App.entity';
 import { BuildEntity } from '../entities/Build.entity';
 import { BuildShardEntity } from '../entities/BuildShard.entity';
 import { UserEntity } from '../entities/User.entity';
@@ -90,6 +91,12 @@ export class BuildCiTokenMiddleware extends HttpMiddleware {
         const expired = !expiresAt || expiresAt.getTime() <= Date.now();
         if (!build || !allowed || expired) {
             this.logger.warn(`CI token auth failed: build not found or token hash mismatch for buildId=${buildId}`);
+            throw new HttpUnauthorizedError();
+        }
+        // A deleted app takes no more uploads: its objects are purged later, and nothing may be written behind the purge.
+        const app = await AppEntity.query().filter({ id: build.appId }).select('id', 'deletedAt').findOneOrUndefined();
+        if (!app || app.deletedAt) {
+            this.logger.warn(`CI token auth failed: app of buildId=${buildId} is deleted`);
             throw new HttpUnauthorizedError();
         }
     }

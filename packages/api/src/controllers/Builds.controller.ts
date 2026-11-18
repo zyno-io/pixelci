@@ -16,6 +16,7 @@ import { keyBy, uniq } from 'lodash';
 
 import { BuildCiTokenMiddleware, CI_TOKEN_TTL_MS, hashCiToken, UserAuthMiddleware } from '../accessories/AuthMiddleware.accessory';
 import { ApiController } from '../accessories/Controller.accessory';
+import { AppConfig } from '../config';
 import { Db } from '../database';
 import { AppEntity } from '../entities/App.entity';
 import { BranchEntity } from '../entities/Branch.entity';
@@ -31,6 +32,7 @@ import { IDecisionInput, recordDecisions } from '../services/Decisions';
 import { IBase, IBaseline, loadBaselines, referenceForBuild, validateBase } from '../services/Reference';
 import { screenManifestHash, uploadedScreenNames } from '../services/ScreenManifest';
 import { ICiCommitHints, VcsService } from '../services/Vcs.service';
+import { queueBuildReclaims } from '../services/storage/ReclaimQueue';
 
 interface IShardSpec {
     index: number;
@@ -170,7 +172,8 @@ export class BuildsController {
         private vcsSvc: VcsService,
         private db: Db,
         private logger: ScopedLogger,
-        private appAccessSvc: AppAccessService
+        private appAccessSvc: AppAccessService,
+        private appConfig: AppConfig
     ) {}
 
     @http.GET()
@@ -297,6 +300,8 @@ export class BuildsController {
 
         // Creation is serialized per (app, branch) by an advisory lock, but retry the whole transaction on a deadlock anyway
         for (let attempt = 1; ; attempt++) {
+            // Builds whose rows a takeover or clean slate dropped; their uploads are left for the storage cleaner
+            const dropped = new Set<string>();
             try {
                 const result = shard
                     ? await this.createShardedInTransaction(
@@ -309,7 +314,8 @@ export class BuildsController {
                           ciTokenHash,
                           manifest!,
                           runId,
-                          shard
+                          shard,
+                          dropped
                       )
                     : await this.createInTransaction(
                           appId,
@@ -320,9 +326,11 @@ export class BuildsController {
                           ciJobId,
                           ciTokenHash,
                           manifest,
-                          runId
+                          runId,
+                          dropped
                       );
                 if (result instanceof HttpError) throw result;
+                await queueBuildReclaims(this.workerSvc, this.appConfig, this.logger, appId, dropped);
                 return { ...result, defaultBranch };
             } catch (err) {
                 if (attempt >= MAX_DEADLOCK_ATTEMPTS || !isDeadlockError(err)) throw err;
@@ -341,9 +349,11 @@ export class BuildsController {
         ciJobId: string,
         ciTokenHash: string,
         manifest: IScreenManifest | undefined,
-        runId: string | undefined
+        runId: string | undefined,
+        dropped: Set<string>
     ): Promise<IBuildResponse | HttpError> {
         return this.db.transaction(async txn => {
+            dropped.clear(); // the callback can run again (deadlock retry)
             // Serialize concurrent creates for the same branch. Locking the branch row alone is not enough: under READ COMMITTED,
             // SELECT ... FOR UPDATE on a branch that does not exist yet locks nothing, so two first builds would both insert it.
             await txn.acquireSessionLock(['pixelci:build-create', appId, branchName]);
@@ -376,6 +386,7 @@ export class BuildsController {
                         existingBuild.shardTotal = 1;
                     }
                     await txn.query(BuildScreenEntity).filter({ buildId: existingBuild.id }).deleteMany();
+                    dropped.add(existingBuild.id);
                     existingBuild.ciTokensExpireAt = expireAt;
                     existingBuild.ciRunId = runId ?? null;
                     existingBuild.status = 'draft';
@@ -401,6 +412,7 @@ export class BuildsController {
                     // duplicate of a create the CLI timed out on) must not wipe uploads that have since started.
                     if (!runId || existingBuild.ciRunId !== runId) {
                         await txn.query(BuildScreenEntity).filter({ buildId: existingBuild.id }).deleteMany();
+                        dropped.add(existingBuild.id);
                     }
                     existingBuild.ciRunId = runId ?? null;
                     existingBuild.manifestCount = manifest?.count ?? null;
@@ -466,9 +478,11 @@ export class BuildsController {
         ciTokenHash: string,
         manifest: IScreenManifest,
         runId: string | undefined,
-        shard: IShardSpec
+        shard: IShardSpec,
+        dropped: Set<string>
     ): Promise<IBuildResponse | HttpError> {
         return this.db.transaction(async txn => {
+            dropped.clear(); // the callback can run again (deadlock retry)
             // Same serialisation and branch upsert as createInTransaction. Lock order everywhere: build row, shard row, screens.
             await txn.acquireSessionLock(['pixelci:build-create', appId, branchName]);
             let branch = await txn.query(BranchEntity).filter({ appId, name: branchName }).forUpdate().findOneOrUndefined();
@@ -534,6 +548,7 @@ export class BuildsController {
                 // Whole-build takeover: abandoned/canceled/failed. Every shard starts over with the caller's shard count.
                 await txn.query(BuildShardEntity).filter({ buildId: existingBuild.id }).deleteMany();
                 await txn.query(BuildScreenEntity).filter({ buildId: existingBuild.id }).deleteMany();
+                dropped.add(existingBuild.id);
                 existingBuild.ciTokensExpireAt = expireAt;
                 existingBuild.status = 'draft';
                 existingBuild.shardTotal = shard.total;
@@ -592,6 +607,7 @@ export class BuildsController {
                             row.manifestHash = manifest.hash;
                             row.runId = runId ?? null;
                             await txn.query(BuildScreenEntity).filter({ buildId: existingBuild.id, shardIndex: shard.index }).deleteMany();
+                            dropped.add(existingBuild.id);
                         }
                         txn.add(row);
                         existingBuild.draftActiveAt = now;

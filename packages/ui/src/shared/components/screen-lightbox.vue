@@ -151,6 +151,9 @@
                                     </span>
                                 </template>
                                 <template v-else-if="!previewValid">Correct the highlighted value to preview it.</template>
+                                <template v-else-if="previewUnavailable">
+                                    This screen matched its baseline and its own image has been cleaned up, so there is nothing to preview.
+                                </template>
                                 <template v-else-if="previewFailed">The comparison couldn't be run with these values.</template>
                                 <template v-else>Comparing with these values…</template>
                             </div>
@@ -892,6 +895,8 @@ async function saveAppMasks() {
 const canCompare = computed(() => !!item.value.compare && !!item.value.current && !!item.value.reference);
 const preview = ref<IBuildScreenCompareResponse>();
 const previewFailed = ref(false);
+// the server refuses to compare a screen whose own image was cleaned up after it matched its baseline (a 400): expected, not an error
+const previewUnavailable = ref(false);
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
 let disposed = false;
 let previewRun = 0;
@@ -951,10 +956,12 @@ async function runPreview() {
         if (run === previewRun) {
             preview.value = result;
             previewFailed.value = false;
+            previewUnavailable.value = false;
         }
     } catch (err) {
         if (run === previewRun) {
-            handleError(err);
+            previewUnavailable.value = err instanceof OpenApiError && err.response?.status === 400;
+            if (!previewUnavailable.value) handleError(err);
             preview.value = undefined;
             previewFailed.value = true;
             // fall back to the diff stored when the build was processed

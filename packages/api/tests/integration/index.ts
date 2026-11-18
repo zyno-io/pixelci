@@ -15,6 +15,7 @@ import { UserEntity } from '../../src/entities/User.entity';
 import { VcsIntegrationEntity } from '../../src/entities/VcsIntegration.entity';
 import { S3Service } from '../../src/services/S3.service';
 import { sealIntegrationConfig, sealVcsSession } from '../../src/services/secrets/VcsSecrets';
+import { createGcContext, StorageGcService } from '../../src/services/storage/StorageGc.service';
 import { configureTestDatabase, ensureTestBucket, useIsolatedRedisPrefix } from './db-defaults';
 import { IScenario, TestScenarios } from './scenarios';
 
@@ -193,7 +194,9 @@ async function run() {
 
     const facade = TestingHelpers.createTestingFacade(CoreAppOptions, {
         enableDatabase: true,
-        databasePrefix: 'pixelci_test'
+        databasePrefix: 'pixelci_test',
+        // real transactions: in savepoint mode commit is a no-op, so a status poll sees the processing transaction's first writes early
+        useSavepoints: false
     });
     await ensureTestBucket();
     await facade.start();
@@ -338,10 +341,14 @@ async function testCleanupRegression(facade: TestingFacade) {
     const s3 = facade.get<S3Service>(S3Service);
     const doomed = await BuildScreenEntity.query().filter({ appId: APP_ID, storageStatus: 'pendingDeletion' }).find();
     if (!doomed.length) throw new Error('Expected the scenarios to leave pendingDeletion rows');
-    for (const row of doomed) await s3.deleteFile(s3.getPathForScreen(APP_ID, row.buildId, row.screenId));
+    // the storage cleaner removes them (nothing here still points at those uploads)
+    const gc = facade.get<StorageGcService>(StorageGcService);
+    const gcCtx = createGcContext(gc.getSettings(), { mode: 'delete', graceMs: 0, now: new Date(Date.now() + 120_000), deadlineAt: Infinity });
+    for (const buildId of new Set(doomed.map(row => row.buildId))) await gc.reclaimBuild(APP_ID, buildId, undefined, gcCtx);
     for (const row of doomed) {
         if (await s3.exists(s3.getPathForScreen(APP_ID, row.buildId, row.screenId))) throw new Error('pendingDeletion object was not deleted');
     }
+    if (gcCtx.stats.deleteErrors) throw new Error('the cleaner could not delete some objects');
 
     // a branch build whose screen equals the reference's: the reference row is a matched row whose own upload is gone
     const scenario: IScenario = {
