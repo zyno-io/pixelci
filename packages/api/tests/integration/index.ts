@@ -194,7 +194,9 @@ async function run() {
 
     const facade = TestingHelpers.createTestingFacade(CoreAppOptions, {
         enableDatabase: true,
-        databasePrefix: 'pixelci_test'
+        databasePrefix: 'pixelci_test',
+        // real transactions: in savepoint mode commit is a no-op, so a status poll sees the processing transaction's first writes early
+        useSavepoints: false
     });
     await ensureTestBucket();
     await facade.start();
@@ -822,10 +824,6 @@ async function runScenario(facade: TestingFacade, scenarioId: string, scenario: 
             break;
         }
     }
-
-    // This suite shares one database connection with the worker (savepoint mode), so the build's new status is visible as soon as
-    // the processing transaction has written it, while the rest of that transaction (the screens) is still being written.
-    await sleepSecs(0.3);
 
     if (buildStatus !== scenario.expectedStatus) {
         throw new Error(`Expected build status ${scenario.expectedStatus}, but got ${buildStatus}`);

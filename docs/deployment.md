@@ -297,6 +297,8 @@ An hourly job sweeps one app at a time and remembers where it stopped, so a larg
 | `STORAGE_GC_DELETE_UNKNOWN_APPS`  | No       | `false`   | Also delete objects of app ids that have no app row. Otherwise they are only reported          |
 | `APP_PURGE_AFTER_DAYS`            | No       | `30`      | Days after an app is deleted before its data is purged for good. `0` purges it on the next run |
 
+App purges get at most half of `STORAGE_GC_MAX_RUN_MINUTES` in each run, so a large purge cannot starve the sweeps. A dry-run purge re-lists the app's whole prefix every run, so it can use that half every time.
+
 Dry-run records no progress, so every run starts from the first app: use the command below to look at a large installation app by app.
 
 The jobs run on the `storage` queue, so a worker must be running (`ENABLE_JOB_RUNNER=true`, or a separate worker). Each run logs one summary line with the counts: scanned, deleted or would-delete (with bytes), skipped because young or still referenced, unrecognized, and errors.

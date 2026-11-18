@@ -18,6 +18,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const APP_PREFIX_RE = /^screens\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/$/;
 const DAY_MS = 86_400_000;
 const PURGE_BUILD_CHUNK = 200;
+type ITxn = Parameters<Parameters<Db['transaction']>[0]>[0];
 export const STORAGE_GC_MUTEX_KEY = 'pixelci:storage-gc';
 
 export interface IGcStats {
@@ -123,13 +124,25 @@ export class StorageGcService {
      * Reclaims, sweeps and purges all share it, so two of them never classify the same objects at once.
      */
     async withLock(fn: () => Promise<void>): Promise<boolean> {
+        let started = false;
         try {
             // redis, not the default in-process lock: workers and the command run in different processes
-            await withMutex({ key: STORAGE_GC_MUTEX_KEY, retryCount: 0, mode: 'redis', fn });
+            await withMutex({
+                key: STORAGE_GC_MUTEX_KEY,
+                retryCount: 0,
+                mode: 'redis',
+                fn: async () => {
+                    started = true;
+                    await fn();
+                }
+            });
             return true;
         } catch (err) {
-            if (err instanceof MutexAcquisitionError) return false;
-            throw err;
+            if (!(err instanceof MutexAcquisitionError)) throw err;
+            // The framework can also raise this after fn ran (the lock could not be renewed or released): the pass happened.
+            if (!started) return false;
+            this.logger.warn('Storage cleanup finished, but its lock was lost or could not be released', { error: err.message });
+            return true;
         }
     }
 
@@ -317,12 +330,21 @@ export class StorageGcService {
         }
         if (failures) return false;
 
+        // Rows go inside transactions that first lock the app row and re-confirm it is still due: a purge never deletes rows of
+        // an app that is not (or is no longer) past its purge date.
+        const stillDue = async (txn: ITxn) =>
+            !!(await txn
+                .query(AppEntity)
+                .filter({ id: appId, deletedAt: { $lte: cutoff } })
+                .forUpdate()
+                .findOneOrUndefined());
         for (;;) {
             if (outOfTime(ctx)) return false;
             const builds = await BuildEntity.query().filter({ appId }).select('id').limit(PURGE_BUILD_CHUNK).find();
             if (!builds.length) break;
             const ids = builds.map(b => b.id);
-            await this.db.transaction(async txn => {
+            const ok = await this.db.transaction(async txn => {
+                if (!(await stillDue(txn))) return false;
                 await txn
                     .query(BuildScreenEntity)
                     .filter({ buildId: { $in: ids } })
@@ -335,15 +357,20 @@ export class StorageGcService {
                     .query(BuildEntity)
                     .filter({ id: { $in: ids } })
                     .deleteMany();
+                return true;
             });
+            if (!ok) return false;
         }
-        await this.db.transaction(async txn => {
+        const done = await this.db.transaction(async txn => {
+            if (!(await stillDue(txn))) return false;
             await txn.query(ScreenDecisionEntity).filter({ appId }).deleteMany();
             await txn.query(BranchEntity).filter({ appId }).deleteMany();
             await txn.query(ScreenEntity).filter({ appId }).deleteMany();
             await txn.query(StorageSweepEntity).filter({ appId }).deleteMany();
             await txn.query(AppEntity).filter({ id: appId }).deleteMany();
+            return true;
         });
+        if (!done) return false;
         ctx.stats.appsPurged++;
         return true;
     }
@@ -405,6 +432,11 @@ export class StorageGcService {
         const filtered = opts.appIdFilter ? apps.filter(a => a.id === opts.appIdFilter) : apps;
         const purgeCutoff = ctx.now.getTime() - ctx.purgeAfterDays * DAY_MS;
 
+        // Purges get at most half of the time budget, so a big purge (above all a dry-run one, which re-lists the whole prefix every
+        // run) cannot leave the sweeps no time.
+        const fullDeadline = ctx.deadlineAt;
+        const timedOutBefore = ctx.stats.outOfTime;
+        if (Number.isFinite(fullDeadline)) ctx.deadlineAt = Date.now() + (fullDeadline - Date.now()) / 2;
         for (const app of filtered) {
             if (!app.deletedAt || app.deletedAt.getTime() > purgeCutoff) continue;
             if (outOfTime(ctx)) break;
@@ -414,6 +446,8 @@ export class StorageGcService {
                 this.logger.error('Storage cleanup failed to purge an app', err as Error, { appId: app.id });
             }
         }
+        ctx.deadlineAt = fullDeadline;
+        if (!outOfTime(ctx)) ctx.stats.outOfTime = timedOutBefore;
 
         const sweeps = new Map((await StorageSweepEntity.query().find()).map(s => [s.appId, s]));
         const interval = ctx.sweepIntervalMs;

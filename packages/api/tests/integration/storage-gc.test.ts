@@ -58,6 +58,8 @@ const ctx = (overrides: Partial<IGcContext> = {}): IGcContext =>
         graceMs: 0,
         now: new Date(Date.now() + 120_000),
         deadlineAt: Infinity,
+        // the bucket is shared with other suites: never touch prefixes that are not this suite's
+        deleteUnknownApps: false,
         ...overrides
     });
 
@@ -471,7 +473,7 @@ async function testPurge() {
     await BuildScreenEntity.query().filter({ appId: old.app.id }).deleteMany();
 
     const real = ctx({ purgeAfterDays: 30 });
-    await gc.run(real);
+    await gc.run(real, { appIdFilter: old.app.id });
     assert(real.stats.appsPurged >= 1, 'run() purged the old app');
     await expectGone(old.keys, 'purged app');
     const gone = await rowCounts(old.app.id);

@@ -346,7 +346,15 @@ class Harness {
         console.log(`  sweep: deleted ${ctx.stats.deleted.count}, kept ${ctx.stats.skippedLive} (${existed.length} referenced objects verified)`);
 
         // processing still works against whatever the sweep left
-        await this.run({ label: 'Zsweep', branch: 'post-sweep', base: null, screens: { 'after-sweep': A }, expect: { build: 'any-final' } });
+        // (existing screen names too, so processing downloads baselines the sweep has left, not just a new screen)
+        const existing = (await ScreenEntity.query().filter({ appId: this.appId }).find()).slice(0, 3);
+        await this.run({
+            label: 'Zsweep',
+            branch: 'post-sweep',
+            base: null,
+            screens: { 'after-sweep': A, ...Object.fromEntries(existing.map(screen => [screen.name, A])) },
+            expect: { build: 'any-final' }
+        });
         for (const [key, why] of await this.referencedObjects()) {
             if (before.has(key) && !existed.some(([k]) => k === key)) continue; // missing before the sweep: not the sweep's doing
             assertTrue(await s3.exists(key), `${where}: ${why} exists after processing a build: ${key}`);

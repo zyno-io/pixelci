@@ -24,7 +24,7 @@
   mode on. Run one pass by hand with `node . storage:gc [dry-run|delete] [appId]`. See "Storage cleanup" in the deployment guide
 - Deleting an app now stops its CI uploads at once, and a screen whose own upload was cleaned up shows the image it matched
 - **Upgrade notes:** the migration adds a `storage_sweeps` table and four indexes (on `builds_screens` and `screen_decisions`);
-  large tables take a moment to index. Workers now also consume a `storage` queue
+  creating the indexes briefly blocks writes on large `builds_screens` and `screen_decisions` tables. Workers now also consume a `storage` queue
 
 ## v0.8.0
 
