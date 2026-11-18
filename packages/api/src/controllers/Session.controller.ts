@@ -2,6 +2,7 @@ import {
     http,
     HttpBadRequestError,
     HttpBody,
+    HttpRequest,
     HttpResponse,
     HttpAccessDeniedError,
     HttpInternalServerError,
@@ -16,7 +17,7 @@ import { createEntity } from '@zyno-io/ts-server-foundation';
 import { createHash, timingSafeEqual } from 'crypto';
 
 import { ApiController } from '../accessories/Controller.accessory';
-import { issueSession } from '../accessories/Session.accessory';
+import { getSessionAuth, issueSession } from '../accessories/Session.accessory';
 import { AppConfig } from '../config';
 import { Db } from '../database';
 import { AppEntity } from '../entities/App.entity';
@@ -280,10 +281,24 @@ export class SessionController {
         return { returnTo: verified.returnTo };
     }
 
-    /** Needs no session: it only clears the cookie (and is safe to call when already signed out). */
+    /** Needs no session: it clears the cookie, and signs out every session of the user it is called with (safe when already signed out). */
     @http.POST('logout')
-    async logout(response: HttpResponse): OkResponse {
-        appendSetCookie(response, serializeClearedSessionCookie(sessionCookieSettings(this.appConfig)));
+    async logout(request: HttpRequest, response: HttpResponse): OkResponse {
+        const settings = sessionCookieSettings(this.appConfig);
+        // A valid session (cookie or Bearer) signs the user out everywhere: sessions issued before now stop working, so a copied
+        // cookie, or a renewal racing this request, cannot bring it back.
+        let auth;
+        try {
+            auth = await getSessionAuth(request);
+        } catch {
+            // no usable session: just clear the cookie
+        }
+        if (auth) await UserEntity.query().filter({ id: auth.user.id }).patchMany({ sessionsValidAfter: new Date() });
+        // drop a renewal cookie this same request may already have queued
+        const queued = response.getHeader('set-cookie');
+        const kept = (queued === undefined ? [] : Array.isArray(queued) ? queued : [String(queued)]).filter(c => !c.startsWith(`${settings.name}=`));
+        response.setHeader('set-cookie', kept);
+        appendSetCookie(response, serializeClearedSessionCookie(settings));
         return { ok: true };
     }
 }

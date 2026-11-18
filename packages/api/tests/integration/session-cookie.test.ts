@@ -138,7 +138,7 @@ async function run() {
     const user = await UserEntity.query().filter({ vcsId: VCS_ID, vcsUserId: GL_USER }).findOne();
     const claims = decodePayload(session);
     check(claims.sub === user.id, 'cookie subject is the user');
-    check(typeof claims.authTime === 'number' && Math.abs(claims.authTime - Date.now() / 1000) < 30, 'cookie carries authTime');
+    check(typeof claims.authTime === 'number' && Math.abs(claims.authTime - Date.now()) < 30_000, 'cookie carries authTime');
     console.log('  PASS');
 
     console.log('\nTest: authentication sources');
@@ -157,21 +157,34 @@ async function run() {
     status(await f.request(withCookie(HttpRequest.GET('/api/apps/e1234567-aaaa-bbbb-cccc-0000000000aa/screens'), 'x')), 401, 'auth middleware: junk');
     console.log('  PASS');
 
+    // Logout revokes the user's sessions, so the logout-heavy sections below use a user of their own.
+    const nowSec = Math.floor(Date.now() / 1000);
+    const csrfUser = await createPersistedEntity(UserEntity, {
+        id: 'a1234567-aaaa-bbbb-cccc-0000000000c1',
+        name: 'Logout user',
+        createdAt: new Date(),
+        lastLoginAt: new Date(),
+        isAdmin: false,
+        vcsId: VCS_ID,
+        vcsUserId: 'csrf'
+    });
+    const csrfSession = signSession({ sub: csrfUser.id, iat: nowSec, exp: nowSec + HOUR, authTime: Date.now() });
+
     console.log('\nTest: CSRF matrix on an unsafe route');
     const logout = (headers: Record<string, string>, cookie?: string) =>
         f.request(
             withHeaders(cookie ? withCookie(HttpRequest.POST('/api/session/logout'), cookie) : HttpRequest.POST('/api/session/logout'), headers)
         );
-    status(await logout({ origin: EVIL }, session), 403, 'cookie + evil Origin');
-    status(await logout({ 'sec-fetch-site': 'cross-site' }, session), 403, 'cookie + cross-site, no Origin');
-    status(await logout({ 'sec-fetch-site': 'same-site' }, session), 403, 'cookie + same-site');
+    status(await logout({ origin: EVIL }, csrfSession), 403, 'cookie + evil Origin');
+    status(await logout({ 'sec-fetch-site': 'cross-site' }, csrfSession), 403, 'cookie + cross-site, no Origin');
+    status(await logout({ 'sec-fetch-site': 'same-site' }, csrfSession), 403, 'cookie + same-site');
     status(await logout({ origin: EVIL }), 403, 'evil Origin without a cookie');
-    status(await logout({ origin: ORIGIN }, session), 200, 'Origin = PUBLIC_URL');
-    status(await logout({ 'sec-fetch-site': 'same-origin' }, session), 200, 'same-origin');
-    status(await logout({ 'sec-fetch-site': 'same-origin', origin: EVIL }, session), 200, 'same-origin wins (browser-set, unforgeable)');
-    status(await logout({ 'sec-fetch-site': 'none' }, session), 200, 'user-initiated navigation');
-    status(await logout({}, session), 200, 'no headers (non-browser client)');
-    status(await logout({ origin: EVIL, authorization: `Bearer ${session}` }, session), 200, 'bearer is exempt');
+    status(await logout({ origin: ORIGIN }, csrfSession), 200, 'Origin = PUBLIC_URL');
+    status(await logout({ 'sec-fetch-site': 'same-origin' }, csrfSession), 200, 'same-origin');
+    status(await logout({ 'sec-fetch-site': 'same-origin', origin: EVIL }, csrfSession), 200, 'same-origin wins (browser-set, unforgeable)');
+    status(await logout({ 'sec-fetch-site': 'none' }, csrfSession), 200, 'user-initiated navigation');
+    status(await logout({}, csrfSession), 200, 'no headers (non-browser client)');
+    status(await logout({ origin: EVIL, authorization: `Bearer ${csrfSession}` }, csrfSession), 200, 'bearer is exempt');
     console.log('  PASS');
 
     console.log('\nTest: login CSRF');
@@ -182,7 +195,7 @@ async function run() {
     console.log('  PASS');
 
     console.log('\nTest: logout clears the cookie, even with no session');
-    for (const res of [await logout({}), await logout({}, session)]) {
+    for (const res of [await logout({}), await logout({}, csrfSession)]) {
         status(res, 200, 'logout');
         const cleared = sessionSetCookie(res);
         check(cleared, 'logout sets the cookie');
@@ -195,13 +208,13 @@ async function run() {
 
     console.log('\nTest: renewal');
     const now = Math.floor(Date.now() / 1000);
-    const aged = signSession({ sub: user.id, iat: now - 50 * 60, exp: now + 10 * 60, authTime: now - 2 * HOUR });
+    const aged = signSession({ sub: user.id, iat: now - 50 * 60, exp: now + 10 * 60, authTime: (now - 2 * HOUR) * 1000 });
     const renewedRes = await f.request(withCookie(HttpRequest.GET('/api/session/me'), aged));
     status(renewedRes, 200, 'aged cookie');
     const renewed = sessionSetCookie(renewedRes);
     check(renewed, 'a cookie past half its life is renewed');
     const renewedClaims = decodePayload(cookieValue(renewed));
-    check(renewedClaims.authTime === now - 2 * HOUR, 'authTime is preserved across renewal');
+    check(renewedClaims.authTime === (now - 2 * HOUR) * 1000, 'authTime is preserved across renewal');
     check(renewedClaims.exp > now + 55 * 60, 'renewal extends the expiry');
     check(renewed.includes('Max-Age=3600'), 'renewal sets Max-Age');
 
@@ -209,7 +222,7 @@ async function run() {
     status(freshRes, 200, 'fresh cookie');
     check(!sessionSetCookie(freshRes), 'a fresh cookie is not renewed');
 
-    const capped = signSession({ sub: user.id, iat: now - 50 * 60, exp: now + 10 * 60, authTime: now - 169 * HOUR });
+    const capped = signSession({ sub: user.id, iat: now - 50 * 60, exp: now + 10 * 60, authTime: (now - 169 * HOUR) * 1000 });
     const cappedRes = await f.request(withCookie(HttpRequest.GET('/api/session/me'), capped));
     status(cappedRes, 200, 'cookie past the absolute cap is still valid until it expires');
     check(!sessionSetCookie(cappedRes), 'a session past SESSION_MAX_AGE_HOURS is not renewed');
@@ -230,7 +243,7 @@ async function run() {
     const staleRes = await f.request(
         withCookie(
             HttpRequest.GET('/api/session/providers'),
-            signSession({ sub: staleVcs.id, iat: now - 50 * 60, exp: now + 10 * 60, authTime: now })
+            signSession({ sub: staleVcs.id, iat: now - 50 * 60, exp: now + 10 * 60, authTime: now * 1000 })
         )
     );
     status(staleRes, 200, 'public route with a user whose VCS session is gone');
@@ -239,6 +252,65 @@ async function run() {
     for (const bad of ['garbage', signSession({ sub: user.id, iat: now - 7200, exp: now - 3600 }), `${session.slice(0, -4)}AAAA`]) {
         status(await f.request(withCookie(HttpRequest.GET('/api/session/providers'), bad)), 200, 'public route with an invalid cookie');
         status(await f.request(withCookie(HttpRequest.GET('/api/session/onboarding-status'), bad)), 200, 'onboarding-status with an invalid cookie');
+    }
+    console.log('  PASS');
+
+    console.log("\nTest: logout revokes the user's sessions server-side");
+    {
+        const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+        const nowS = () => Math.floor(Date.now() / 1000);
+        const cookieOf = async () => cookieValue(sessionSetCookie(await login(f))!);
+        const old = await cookieOf();
+        // an old, past-half-life token (as in a request that is in flight while the user signs out)
+        const oldAged = signSession({ sub: user.id, iat: nowS() - 50 * 60, exp: nowS() + 10 * 60, authTime: Date.now() });
+        status(await f.request(withCookie(HttpRequest.GET('/api/session/me'), old)), 200, 'session works before logout');
+        const meBody = String((await f.request(withCookie(HttpRequest.GET('/api/session/me'), old))).body);
+        check(!String(meBody).includes('sessionsValidAfter'), 'sessionsValidAfter must not leak from /me');
+
+        const out = await f.request(withCookie(HttpRequest.POST('/api/session/logout'), old));
+        status(out, 200, 'logout');
+        const cookiesOnLogout = setCookies(out).filter(c => c.startsWith(`${COOKIE}=`));
+        check(
+            cookiesOnLogout.length === 1 && cookiesOnLogout[0].startsWith(`${COOKIE}=;`),
+            `only the cleared cookie: ${JSON.stringify(cookiesOnLogout)}`
+        );
+
+        status(await f.request(withCookie(HttpRequest.GET('/api/session/me'), old)), 401, 'old cookie after logout');
+        status(await f.request(HttpRequest.GET('/api/session/me').header('authorization', `Bearer ${old}`)), 401, 'old token as Bearer after logout');
+        status(
+            await f.request(HttpRequest.GET('/api/admin/users').header('authorization', `Bearer ${old}`)),
+            401,
+            'old token on an auth-middleware route'
+        );
+        const renewRace = await f.request(withCookie(HttpRequest.GET('/api/session/me'), oldAged));
+        status(renewRace, 401, 'a past-half-life token from before logout');
+        check(!sessionSetCookie(renewRace), 'a revoked session is never renewed');
+        const raceOnPublic = await f.request(withCookie(HttpRequest.GET('/api/session/providers'), oldAged));
+        status(raceOnPublic, 200, 'revoked cookie on a public route');
+        check(!sessionSetCookie(raceOnPublic), 'a revoked session is not renewed on public routes either');
+
+        // a login right after logout (same second, even same-ish millisecond) works; the pre-logout session still does not
+        const fresh = await cookieOf();
+        status(await f.request(withCookie(HttpRequest.GET('/api/session/me'), fresh)), 200, 'login right after logout');
+        status(await f.request(withCookie(HttpRequest.GET('/api/session/me'), old)), 401, 'old session still revoked after a new login');
+
+        // same-second edge: a token issued in the second of the logout, before it, is refused; one issued after it is accepted
+        const before = signSession({ sub: user.id, iat: nowS(), exp: nowS() + HOUR, authTime: Date.now() - 1 });
+        await sleep(5);
+        status(await f.request(HttpRequest.POST('/api/session/logout').header('authorization', `Bearer ${fresh}`)), 200, 'logout via Bearer');
+        status(
+            await f.request(HttpRequest.GET('/api/session/me').header('authorization', `Bearer ${before}`)),
+            401,
+            'same-second token before logout'
+        );
+        await sleep(5);
+        const after = await cookieOf();
+        status(await f.request(HttpRequest.GET('/api/session/me').header('authorization', `Bearer ${after}`)), 200, 'same-second login after logout');
+        // logout with no or a revoked session still clears the cookie and revokes nothing
+        const nothing = await logout({}, old);
+        status(nothing, 200, 'logout with a revoked session');
+        check(sessionSetCookie(nothing)?.startsWith(`${COOKIE}=;`), 'cleared');
+        status(await f.request(withCookie(HttpRequest.GET('/api/session/me'), after)), 200, 'a revoked-session logout does not sign out others');
     }
     console.log('  PASS');
 

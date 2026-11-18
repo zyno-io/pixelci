@@ -29,7 +29,7 @@ so the cookie is the plain `pixelci_session`. To skip the OAuth login in dev, se
 console (the cookie is `HttpOnly` when the API sets it, but a hand-set one works):
 
 ```js
-document.cookie = 'pixelci_session=<e2e jwt>; path=/'; // the token in packages/ui/tests/e2e/fixtures/session.ts
+document.cookie = 'pixelci_session=<jwt>; path=/'; // mint one for the seeded user with mintSessionJwt() in packages/ui/tests/e2e/fixtures/session.ts
 ```
 
 To stop local services:

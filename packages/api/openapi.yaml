@@ -144,8 +144,8 @@ paths:
           content:
             application/json:
               schema: {}
-      summary: "Needs no session: it only clears the cookie (and is safe to call when
-        already signed out)."
+      summary: "Needs no session: it clears the cookie, and signs out every session of
+        the user it is called with (safe when already signed out)."
   /api/apps:
     get:
       operationId: getAppsIndex
@@ -2021,10 +2021,20 @@ components:
           type: array
           items:
             type: string
-        source: {}
+        source:
+          $ref: "#/components/schemas/IBaseSource"
       required:
         - commits
         - source
+    IBaseSource:
+      enum:
+        - first-parent
+        - merge-base
+        - merge-request-diff-base
+        - merge-request-target
+        - override
+        - pull-request-base
+      type: string
     IBuildApprovalResponse:
       type: object
       properties:

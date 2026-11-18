@@ -1,5 +1,6 @@
 import {
     getAppConfig,
+    getEntityOrUndefined,
     getOrCacheValue,
     HttpAccessDeniedError,
     HttpMiddleware,
@@ -19,6 +20,19 @@ import { VcsService } from '../services/Vcs.service';
 export interface ISessionAuth {
     jwt: ParsedJwt;
     via: 'bearer' | 'cookie';
+    user: UserEntity;
+}
+
+/** When the user signed in, in ms: `authTime` (ms; seconds from earlier builds are converted), else the token's issue time. */
+export function sessionAuthTimeMs(jwt: ParsedJwt): number {
+    const claimed = (jwt.payload as { authTime?: unknown }).authTime;
+    if (typeof claimed !== 'number') return jwt.issuedAtMs;
+    return claimed < 1e11 ? claimed * 1000 : claimed;
+}
+
+/** Whether the user signed out (everywhere) after this session was issued. */
+export function isSessionRevoked(jwt: ParsedJwt, user: Pick<UserEntity, 'sessionsValidAfter'>): boolean {
+    return !!user.sessionsValidAfter && sessionAuthTimeMs(jwt) < user.sessionsValidAfter.getTime();
 }
 
 const BEARER_RE = /^bearer\s+(\S+)$/i;
@@ -40,16 +54,19 @@ export async function getSessionAuth(request: HttpRequest): Promise<ISessionAuth
         if (!token) return undefined;
         const jwt = await JWT.process(token);
         if (!jwt.isValid) throw new HttpUnauthorizedError();
-        return { jwt, via: bearer ? 'bearer' : 'cookie' };
+        // The user is loaded here so that every place that resolves a session also honours logout (revocation).
+        const user = await getEntityOrUndefined(UserEntity, jwt.subject);
+        if (!user || isSessionRevoked(jwt, user)) throw new HttpUnauthorizedError();
+        return { jwt, via: bearer ? 'bearer' : 'cookie', user };
     });
 }
 
-/** Writes a fresh session cookie for the user. `authTime` is when the user actually signed in (kept across renewals). */
+/** Writes a fresh session cookie for the user. `authTime` (ms) is when the user actually signed in (kept across renewals). */
 export async function issueSession(
     response: HttpResponse,
     config: Pick<AppConfig, 'PUBLIC_URL' | 'AUTH_JWT_EXPIRATION_MINS'>,
     userId: string,
-    authTime = Math.floor(Date.now() / 1000)
+    authTime = Date.now()
 ): Promise<void> {
     const jwt = await JWT.generate({ subject: userId, payload: { authTime } });
     appendSetCookie(response, serializeSessionCookie(sessionCookieSettings(config), jwt));
@@ -102,12 +119,11 @@ export class SessionMiddleware extends HttpMiddleware {
         const nowMs = Date.now();
         if (jwt.expiresAtMs - nowMs >= (jwt.expiresAtMs - jwt.issuedAtMs) / 2) return;
 
-        const claimed = (jwt.payload as { authTime?: unknown }).authTime;
-        const authTime = typeof claimed === 'number' ? claimed : Math.floor(jwt.issuedAtMs / 1000);
-        if (nowMs / 1000 - authTime > this.appConfig.SESSION_MAX_AGE_HOURS * 3600) return;
+        const authTime = sessionAuthTimeMs(jwt);
+        if (nowMs - authTime > this.appConfig.SESSION_MAX_AGE_HOURS * 3600_000) return;
 
-        const user = await UserEntity.query().filter({ id: jwt.subject }).findOneOrUndefined();
-        if (!user) return;
+        // getSessionAuth already refused a revoked session (renewal never revives one)
+        const { user } = auth;
         if (this.appConfig.ENFORCE_VCS_PROJECT_ACCESS && (await this.vcsService.checkUserSession(user)) !== 'ok') return;
 
         await issueSession(response, this.appConfig, user.id, authTime);

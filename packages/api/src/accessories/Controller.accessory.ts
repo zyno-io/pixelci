@@ -1,4 +1,4 @@
-import { getEntityOrUndefined, http, HttpUnauthorizedError } from '@zyno-io/ts-server-foundation';
+import { http, HttpUnauthorizedError } from '@zyno-io/ts-server-foundation';
 import { createCachingParameterResolver } from '@zyno-io/ts-server-foundation';
 
 import { UserEntity } from '../entities/User.entity';
@@ -9,9 +9,8 @@ import { getSessionAuth, SessionMiddleware } from './Session.accessory';
  */
 export const UserResolver = createCachingParameterResolver(UserEntity, async context => {
     const auth = await getSessionAuth(context.request);
-    const user = auth && (await getEntityOrUndefined(UserEntity, auth.jwt.subject));
-    if (!user) throw new HttpUnauthorizedError();
-    return user;
+    if (!auth) throw new HttpUnauthorizedError();
+    return auth.user;
 });
 
 /**
