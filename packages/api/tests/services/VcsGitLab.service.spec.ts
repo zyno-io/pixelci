@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { IGitLabConfig } from '../../src/entities/VcsIntegration.entity';
-import { VcsGitLabService } from '../../src/services/VcsGitLab.service';
+import { gitlabIdTokenAudiences, mapGitLabIdTokenClaims, VcsGitLabService } from '../../src/services/VcsGitLab.service';
 
 const make = (config: Partial<IGitLabConfig>) =>
     new VcsGitLabService({ url: 'https://gitlab.example.com', clientId: 'cid', clientSecret: 's', ...config } as IGitLabConfig, {} as never);
@@ -31,5 +31,97 @@ describe('rerunTargets', () => {
     it('retries each distinct job', () => {
         assert.deepEqual(svc.rerunTargets(['11', '12', '13']), ['11', '12', '13']);
         assert.deepEqual(svc.rerunTargets(['11', '12', '11']), ['11', '12']);
+    });
+});
+
+describe('gitlabIdTokenAudiences', () => {
+    it('uses the PUBLIC_URL origin with and without a trailing slash', () => {
+        assert.deepEqual(gitlabIdTokenAudiences({ PUBLIC_URL: 'https://p.example.com' }), ['https://p.example.com', 'https://p.example.com/']);
+    });
+
+    it('drops a PUBLIC_URL path', () => {
+        assert.deepEqual(gitlabIdTokenAudiences({ PUBLIC_URL: 'https://p.example.com/app/' }), ['https://p.example.com', 'https://p.example.com/']);
+    });
+
+    it('yields nothing for an unset or invalid PUBLIC_URL', () => {
+        assert.deepEqual(gitlabIdTokenAudiences({}), []);
+        assert.deepEqual(gitlabIdTokenAudiences({ PUBLIC_URL: 'not a url' }), []);
+        assert.deepEqual(gitlabIdTokenAudiences({ PUBLIC_URL: 'ftp://p.example.com' }), []);
+    });
+
+    it('adds comma-separated extras, normalised and de-duplicated', () => {
+        assert.deepEqual(
+            gitlabIdTokenAudiences({
+                PUBLIC_URL: 'https://p.example.com',
+                GITLAB_ID_TOKEN_AUDIENCES: ' https://a.example.com/ , ,https://p.example.com,https://b.example.com//'
+            }),
+            [
+                'https://p.example.com',
+                'https://p.example.com/',
+                'https://a.example.com',
+                'https://a.example.com/',
+                'https://b.example.com',
+                'https://b.example.com/'
+            ]
+        );
+    });
+
+    it('works with extras only', () => {
+        assert.deepEqual(gitlabIdTokenAudiences({ GITLAB_ID_TOKEN_AUDIENCES: 'https://a.example.com' }), [
+            'https://a.example.com',
+            'https://a.example.com/'
+        ]);
+    });
+});
+
+describe('mapGitLabIdTokenClaims', () => {
+    const good = { project_id: '42', job_id: '7', ref: 'main', sha: 'a'.repeat(40), user_login: 'ann' };
+
+    it('maps the claims and hints', () => {
+        const r = mapGitLabIdTokenClaims(good, { subject: 'Fix it\nbody', author: ' Ann Dev ' });
+        assert.deepEqual(r, {
+            ok: true,
+            data: { jobId: '7', branch: 'main', commitHash: 'a'.repeat(40), commitSubject: 'Fix it', commitAuthor: 'Ann Dev', vcsProjectId: 42 }
+        });
+    });
+
+    it('falls back to user_login for the author and accepts SHA-256 shas', () => {
+        const r = mapGitLabIdTokenClaims({ ...good, sha: 'b'.repeat(64) }, { subject: 'x' });
+        assert.ok(r.ok);
+        assert.equal(r.data.commitAuthor, 'ann');
+        assert.equal(r.data.commitHash, 'b'.repeat(64));
+        assert.equal(mapGitLabIdTokenClaims(good).ok && (mapGitLabIdTokenClaims(good) as { data: { commitSubject: string } }).data.commitSubject, '');
+    });
+
+    it('caps subject and author at 255 characters', () => {
+        const r = mapGitLabIdTokenClaims(good, { subject: 's'.repeat(400), author: 'a'.repeat(400) });
+        assert.ok(r.ok);
+        assert.equal(r.data.commitSubject.length, 255);
+        assert.equal(r.data.commitAuthor.length, 255);
+    });
+
+    it('rejects bad claims', () => {
+        const bad: Record<string, unknown>[] = [
+            { project_id: undefined },
+            { project_id: '' },
+            { project_id: '0' },
+            { project_id: '-1' },
+            { project_id: '1.5' },
+            { project_id: '99999999999999999999' },
+            { project_id: 42 },
+            { job_id: undefined },
+            { job_id: 'abc' },
+            { job_id: 7 },
+            { ref: '' },
+            { ref: undefined },
+            { sha: undefined },
+            { sha: 'A'.repeat(40) },
+            { sha: 'a'.repeat(39) },
+            { sha: 'g'.repeat(40) }
+        ];
+        for (const override of bad) {
+            const r = mapGitLabIdTokenClaims({ ...good, ...override });
+            assert.equal(r.ok, false, JSON.stringify(override));
+        }
     });
 });

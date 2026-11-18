@@ -33,6 +33,13 @@ export class AppConfig extends BaseAppConfig {
     // `${PUBLIC_URL}/login`, so it must exactly match what is registered with the provider.
     PUBLIC_URL?: string;
 
+    // GitLab CI auth. Job tokens (CI_JOB_TOKEN) are validated by calling GitLab's /api/v4/job, which needs the job-token
+    // allowlist/scope to permit PixelCI. Set this to false to accept only GitLab ID tokens (id_tokens: PIXELCI_ID_TOKEN).
+    GITLAB_JOB_TOKEN_AUTH_ENABLED: boolean = true;
+    // Extra accepted `aud` values for GitLab ID tokens, comma-separated. The PUBLIC_URL origin is always accepted; add
+    // others if the CLI's PIXELCI_API_URL differs from it (e.g. an internal URL). Each is accepted with or without a trailing slash.
+    GITLAB_ID_TOKEN_AUDIENCES?: string;
+
     // OAuth 2.1 authorization server for MCP clients (claude.ai, Claude Desktop, Claude Code). The issuer is the PUBLIC_URL origin, which
     // must be https (http only on a loopback host); otherwise OAuth stays off whatever this is set to.
     MCP_OAUTH_ENABLED: boolean = true;

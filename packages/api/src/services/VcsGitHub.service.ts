@@ -8,7 +8,6 @@ import {
     ScopedLogger
 } from '@zyno-io/ts-server-foundation';
 import axios from 'axios';
-import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 import type {
     ICiJobData,
@@ -27,6 +26,7 @@ import { IGitHubConfig } from '../entities/VcsIntegration.entity';
 import { BoundedTtlCache } from '../helpers/BoundedTtlCache';
 import { withInstallationToken, appJwtGet } from './github/GitHubAppAuth';
 import { createGitHubClient, describeGitHubError, encodeRepoPath, githubUrls, GITHUB_REQUEST_TIMEOUT_MS } from './github/GitHubHttp';
+import { extractCommitSubject, verifyOidcJwt } from './oidc/RemoteJwks';
 import { vcsAccessToken } from './secrets/VcsSecrets';
 import { ensureFreshVcsSession } from './VcsSessionRefresh';
 
@@ -44,17 +44,6 @@ const SEARCH_CACHE_TTL_MS = 60_000;
 const SEARCH_MAX_RESULTS = 20;
 const SEARCH_MAX_REPO_PAGES = 10;
 const NO_EXPIRY = Number.MAX_SAFE_INTEGER;
-
-const jwksCache = new BoundedTtlCache<ReturnType<typeof createRemoteJWKSet>>(32, 24 * 60 * 60_000);
-
-function getJwks(jwksUrl: string) {
-    let jwks = jwksCache.get(jwksUrl);
-    if (!jwks) {
-        jwks = createRemoteJWKSet(new URL(jwksUrl));
-        jwksCache.set(jwksUrl, jwks);
-    }
-    return jwks;
-}
 
 // --- pure helpers (exported for unit tests) ---
 
@@ -91,11 +80,7 @@ export function githubRoleFromPermissions(permissions: unknown): IVcsProjectRole
     return 'read';
 }
 
-/** First line of a commit message, at most 255 characters (the builds.commitSubject column). */
-export function extractCommitSubject(message: unknown): string {
-    if (typeof message !== 'string') return '';
-    return message.split(/\r?\n/, 1)[0].trim().slice(0, 255);
-}
+export { extractCommitSubject };
 
 /** N from `refs/pull/N/merge`. */
 export function parsePullNumber(ref: string): number | null {
@@ -193,14 +178,12 @@ export class VcsGitHubService implements IVcsServiceImpl {
         let claims: Record<string, unknown>;
         try {
             const issuer = this.getIssuer();
-            const jwks = getJwks(`${issuer.replace(/\/+$/, '')}/.well-known/jwks`);
-            const result = await jwtVerify(ciToken, jwks, {
+            claims = await verifyOidcJwt(ciToken, {
                 issuer,
-                audience,
-                algorithms: ['RS256'],
-                requiredClaims: ['exp']
+                jwksUrl: `${issuer.replace(/\/+$/, '')}/.well-known/jwks`,
+                audience: [audience],
+                algorithms: ['RS256']
             });
-            claims = result.payload;
         } catch (err) {
             return this.fail(`GitHub OIDC token verification failed (${err instanceof Error ? err.message : String(err)})`);
         }
