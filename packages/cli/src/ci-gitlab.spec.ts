@@ -103,6 +103,7 @@ describe('getGitLabCiInfo with an ID token', () => {
         const token = jwt({ aud: ['https://other.example.com'], exp: future });
         getGitLabCiInfo({ ...base, PIXELCI_ID_TOKEN: token }, 'https://pixelci.example.com');
         assert.equal((console.warn as any).mock.callCount(), 1);
+        assert.match((console.warn as any).mock.calls[0].arguments[0], /GITLAB_ID_TOKEN_AUDIENCES/);
     });
 
     it('does not warn when aud matches', () => {
@@ -117,6 +118,13 @@ describe('getGitLabCiInfo with an ID token', () => {
 });
 
 describe('gitlab commitHints', () => {
+    it('adds merge request details when present', () => {
+        assert.deepEqual(commitHints({ CI_MERGE_REQUEST_IID: '12', CI_MERGE_REQUEST_EVENT_TYPE: 'merged_result' }), {
+            mergeRequest: { iid: '12', eventType: 'merged_result' }
+        });
+        assert.deepEqual(commitHints({ CI_MERGE_REQUEST_IID: '12' }), { mergeRequest: { iid: '12' } });
+    });
+
     it('parses the author name from "Name <email>" or keeps a bare value', () => {
         assert.deepEqual(commitHints({ CI_COMMIT_TITLE: ' T ', CI_COMMIT_AUTHOR: 'A B <a@b.c>' }), { subject: 'T', author: 'A B' });
         assert.deepEqual(commitHints({ CI_COMMIT_AUTHOR: 'Just Name' }), { author: 'Just Name' });

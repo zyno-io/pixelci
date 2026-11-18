@@ -15,11 +15,17 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 }
 
 /** Commit title and author name from GitLab's predefined variables; empty values are left out. */
-export function commitHints(env: NodeJS.ProcessEnv): { subject?: string; author?: string } {
+export function commitHints(env: NodeJS.ProcessEnv): NonNullable<ICIJobInfo['commit']> {
     const subject = env.CI_COMMIT_TITLE?.trim();
     const rawAuthor = env.CI_COMMIT_AUTHOR?.trim();
     const author = rawAuthor ? (/^(.*?)\s*<[^>]*>\s*$/.exec(rawAuthor)?.[1] ?? rawAuthor).trim() : '';
-    return { ...(subject && { subject }), ...(author && { author }) };
+    const iid = env.CI_MERGE_REQUEST_IID?.trim();
+    const eventType = env.CI_MERGE_REQUEST_EVENT_TYPE?.trim();
+    return {
+        ...(subject && { subject }),
+        ...(author && { author }),
+        ...((iid || eventType) && { mergeRequest: { ...(iid && { iid }), ...(eventType && { eventType }) } })
+    };
 }
 
 /**
@@ -48,7 +54,7 @@ export function getGitLabCiInfo(env: NodeJS.ProcessEnv = process.env, apiUrl?: s
             const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
             if (!aud.some(a => typeof a === 'string' && a.replace(/\/+$/, '') === expected)) {
                 console.warn(
-                    `Warning: PIXELCI_ID_TOKEN audience (${JSON.stringify(claims.aud)}) does not include PIXELCI_API_URL (${expected}); the server will likely reject it.`
+                    "Warning: PIXELCI_ID_TOKEN's aud does not include PIXELCI_API_URL; make sure it is the server's PUBLIC_URL or listed in its GITLAB_ID_TOKEN_AUDIENCES."
                 );
             }
         }

@@ -6,7 +6,7 @@ export interface ICIJobInfo {
     projectUrl: string;
     ciToken: string;
     /** Display-only commit details, sent when the token (a GitLab ID token) carries none. */
-    commit?: { subject?: string; author?: string };
+    commit?: { subject?: string; author?: string; mergeRequest?: { iid?: string; eventType?: string } };
 }
 
 export async function getJobInfo(): Promise<ICIJobInfo | null> {

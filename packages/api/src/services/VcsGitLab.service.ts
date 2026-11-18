@@ -91,7 +91,7 @@ const HEX_SHA_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 export function mapGitLabIdTokenClaims(
     claims: Record<string, unknown>,
     hints?: ICiCommitHints
-): { ok: true; data: ICiJobData } | { ok: false; reason: string } {
+): { ok: true; data: ICiJobData } | { ok: false; reason: string; badRequest?: string } {
     const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
     const projectId = str(claims.project_id);
@@ -101,8 +101,24 @@ export function mapGitLabIdTokenClaims(
     const jobId = str(claims.job_id);
     if (!DIGITS_RE.test(jobId)) return { ok: false, reason: 'missing or invalid job_id' };
 
-    const branch = str(claims.ref);
+    let branch = str(claims.ref);
     if (!branch) return { ok: false, reason: 'missing ref' };
+
+    // GitLab records merge request pipelines on a pseudo-ref (the job token path reads it from /api/v4/job), while the
+    // ID token's `ref` is the MR source branch. Use the same pseudo-ref so both tokens land on the same branch.
+    if (claims.pipeline_source === 'merge_request_event') {
+        const iid = hints?.mergeRequest?.iid;
+        if (typeof iid !== 'string' || !DIGITS_RE.test(iid)) {
+            return {
+                ok: false,
+                reason: 'merge request pipeline without CI_MERGE_REQUEST_IID',
+                badRequest: 'merge request pipelines need CI_MERGE_REQUEST_IID'
+            };
+        }
+        const eventType = hints?.mergeRequest?.eventType;
+        const suffix = eventType === 'merged_result' ? 'merge' : eventType === 'merge_train' ? 'train' : 'head';
+        branch = `refs/merge-requests/${iid}/${suffix}`;
+    }
 
     const sha = str(claims.sha);
     if (!HEX_SHA_RE.test(sha)) return { ok: false, reason: 'missing or invalid sha' };
@@ -180,6 +196,7 @@ export class VcsGitLabService implements IVcsServiceImpl {
 
         const mapped = mapGitLabIdTokenClaims(claims, hints);
         if (!mapped.ok) {
+            if (mapped.badRequest) throw new HttpBadRequestError(mapped.badRequest);
             this.logger.warn(`CI token validation failed: GitLab ID token has ${mapped.reason}`);
             throw new HttpUnauthorizedError();
         }

@@ -180,7 +180,7 @@ async function seed(prefix: string): Promise<Facade> {
             clientId: 'client-id',
             clientSecret: 'client-secret',
             oidcAudience: AUDIENCE,
-            oidcIssuer: 'https://token.actions.githubusercontent.com'
+            oidcIssuer: base
         } satisfies IGitHubConfig)
     });
     await createPersistedEntity(AppEntity, {
@@ -269,6 +269,39 @@ async function run() {
     await expectStatus(facade, 'GitLab token sent to a GitHub app', await mintToken(), 401, {}, GH_APP_ID);
     await expectStatus(facade, 'malformed commit hints', await mintToken(), 400, { commit: { subject: 5 } });
     await expectStatus(facade, 'oversized commit author', await mintToken(), 400, { commit: { author: 'x'.repeat(513) } });
+
+    await expectStatus(facade, 'control character in a hint', await mintToken(), 400, { commit: { subject: 'a\u0000b' } });
+
+    // Merge request pipelines land on GitLab's pseudo-ref, like the job-token path
+    for (const [eventType, suffix] of [
+        ['merged_result', 'merge'],
+        ['merge_train', 'train'],
+        ['detached', 'head'],
+        [undefined, 'head']
+    ] as const) {
+        const res = await expectStatus(
+            facade,
+            `MR pipeline (${eventType ?? 'no event type'}) → refs/merge-requests/12/${suffix}`,
+            await mintToken({ claims: { pipeline_source: 'merge_request_event', ref: 'main' } }),
+            200,
+            { commit: { mergeRequest: { iid: '12', ...(eventType && { eventType }) } } }
+        );
+        assert(res.json.branchName === `refs/merge-requests/12/${suffix}`, `Unexpected branch ${res.json.branchName}`);
+    }
+    await expectStatus(facade, 'MR pipeline without an iid', await mintToken({ claims: { pipeline_source: 'merge_request_event' } }), 400);
+    await expectStatus(facade, 'MR pipeline with a non-numeric iid', await mintToken({ claims: { pipeline_source: 'merge_request_event' } }), 400, {
+        commit: { mergeRequest: { iid: '1/../2' } }
+    });
+    const pushRes = await expectStatus(
+        facade,
+        'non-MR pipeline ignores an MR hint',
+        await mintToken({ claims: { pipeline_source: 'push', ref: 'main' } }),
+        200,
+        {
+            commit: { mergeRequest: { iid: '12', eventType: 'merged_result' } }
+        }
+    );
+    assert(pushRes.json.branchName === 'main', `Unexpected branch ${pushRes.json.branchName}`);
 
     // Job tokens still work by default
     await expectStatus(facade, 'job token (switch on by default)', JOB_TOKEN, 200);

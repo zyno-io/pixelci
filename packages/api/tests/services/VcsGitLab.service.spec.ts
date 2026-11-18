@@ -125,3 +125,32 @@ describe('mapGitLabIdTokenClaims', () => {
         }
     });
 });
+
+describe('mapGitLabIdTokenClaims merge request pipelines', () => {
+    const mr = { project_id: '42', job_id: '7', ref: 'feature', sha: 'a'.repeat(40), pipeline_source: 'merge_request_event' };
+    const branchOf = (eventType?: string) => {
+        const r = mapGitLabIdTokenClaims(mr, { mergeRequest: { iid: '9', eventType } });
+        assert.ok(r.ok);
+        return r.data.branch;
+    };
+
+    it('maps the event type to the pseudo-ref suffix', () => {
+        assert.equal(branchOf('merged_result'), 'refs/merge-requests/9/merge');
+        assert.equal(branchOf('merge_train'), 'refs/merge-requests/9/train');
+        assert.equal(branchOf('detached'), 'refs/merge-requests/9/head');
+        assert.equal(branchOf(undefined), 'refs/merge-requests/9/head');
+    });
+
+    it('needs a numeric iid', () => {
+        for (const hints of [undefined, {}, { mergeRequest: {} }, { mergeRequest: { iid: 'x' } }, { mergeRequest: { iid: '1/2' } }]) {
+            const r = mapGitLabIdTokenClaims(mr, hints);
+            assert.ok(!r.ok && r.badRequest);
+        }
+    });
+
+    it('ignores the hint for other pipeline sources', () => {
+        const r = mapGitLabIdTokenClaims({ ...mr, pipeline_source: 'push' }, { mergeRequest: { iid: '9', eventType: 'merged_result' } });
+        assert.ok(r.ok);
+        assert.equal(r.data.branch, 'feature');
+    });
+});

@@ -73,6 +73,8 @@ export interface IVcsTokenUser {
 export interface ICiCommitHints {
     subject?: string;
     author?: string;
+    /** From CI_MERGE_REQUEST_IID / CI_MERGE_REQUEST_EVENT_TYPE; used only for merge request pipelines, which GitLab records on a pseudo-ref. */
+    mergeRequest?: { iid?: string; eventType?: string };
 }
 
 /** A user's role on a project, coarsened across providers. Ordered: none < read < write < maintain. */

@@ -107,17 +107,30 @@ function validateRunId(runId: string | undefined): string | undefined {
 }
 
 /** Validates the optional display-only commit hints the CLI sends with a GitLab ID token. */
+// Control characters other than tab, LF and CR: a NUL, for one, would fail the Postgres insert with a retried 500
+const CONTROL_CHARS_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+
 function validateCommitHints(commit: unknown): ICiCommitHints | undefined {
     if (commit === undefined || commit === null) return undefined;
     if (typeof commit !== 'object' || Array.isArray(commit)) throw new HttpBadRequestError('commit must be an object');
-    const { subject, author } = commit as { subject?: unknown; author?: unknown };
-    if (subject !== undefined && (typeof subject !== 'string' || subject.length > 4096)) {
-        throw new HttpBadRequestError('commit.subject must be a string of at most 4096 characters');
+    const { subject, author, mergeRequest } = commit as { subject?: unknown; author?: unknown; mergeRequest?: unknown };
+    const text = (value: unknown, name: string, max: number): string | undefined => {
+        if (value === undefined) return undefined;
+        if (typeof value !== 'string' || value.length > max) throw new HttpBadRequestError(`${name} must be a string of at most ${max} characters`);
+        if (CONTROL_CHARS_RE.test(value)) throw new HttpBadRequestError(`${name} must not contain control characters`);
+        return value;
+    };
+    let mr: ICiCommitHints['mergeRequest'];
+    if (mergeRequest !== undefined && mergeRequest !== null) {
+        if (typeof mergeRequest !== 'object' || Array.isArray(mergeRequest)) throw new HttpBadRequestError('commit.mergeRequest must be an object');
+        const { iid, eventType } = mergeRequest as { iid?: unknown; eventType?: unknown };
+        mr = { iid: text(iid, 'commit.mergeRequest.iid', 20), eventType: text(eventType, 'commit.mergeRequest.eventType', 64) };
     }
-    if (author !== undefined && (typeof author !== 'string' || author.length > 512)) {
-        throw new HttpBadRequestError('commit.author must be a string of at most 512 characters');
-    }
-    return { subject: subject as string | undefined, author: author as string | undefined };
+    return {
+        subject: text(subject, 'commit.subject', 4096),
+        author: text(author, 'commit.author', 512),
+        ...(mr && { mergeRequest: mr })
+    };
 }
 
 /** Validates `shard`; `total = 1` means unsharded and yields undefined. */
@@ -249,7 +262,7 @@ export class BuildsController {
             screens?: { count: number; hash: string };
             runId?: string;
             shard?: { index: number; total: number };
-            commit?: { subject?: string; author?: string };
+            commit?: { subject?: string; author?: string; mergeRequest?: { iid?: string; eventType?: string } };
         }>
     ): Promise<IBuildCreateResponse> {
         const authHeader = request.headers.authorization;

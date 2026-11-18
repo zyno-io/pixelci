@@ -89,6 +89,13 @@ The CLI authenticates with one of two tokens, using `CI_PROJECT_URL` to locate t
 - **ID token (`PIXELCI_ID_TOKEN`, preferred).** The API verifies the token's signature against your GitLab instance's public keys (`/oauth/discovery/keys`), checks the issuer, audience and expiry, and requires its `project_id` claim to match the app's project. Branch, commit hash and job ID come from the token's claims. An ID token carries no commit title or author, so the CLI sends them from `CI_COMMIT_TITLE` and `CI_COMMIT_AUTHOR`; they are used for display only. PixelCI makes no call to GitLab to validate it.
 - **Job token (`CI_JOB_TOKEN`).** The API validates the token directly with your GitLab instance on build creation (`/api/v4/job`) and extracts branch and commit information from the job metadata.
 
+Merge request pipelines record their builds on the `refs/merge-requests/<iid>/head` (`/merge` for merged-results pipelines, `/train` for merge trains) pseudo-branch, the same as with job tokens. For ID tokens the CLI sends `CI_MERGE_REQUEST_IID` and `CI_MERGE_REQUEST_EVENT_TYPE` so the server can name it.
+
+ID-token limitations:
+
+- **Fork merge requests.** For a merge request from a fork that runs in the parent project, GitLab sets the token's `project_id` to the fork, so PixelCI rejects it with a 401 (it fails closed). Job tokens authenticate as the parent project; to support fork MR pipelines, leave `GITLAB_JOB_TOKEN_AUTH_ENABLED` on and don't declare `id_tokens:` for those jobs.
+- **Custom issuer.** A self-managed GitLab with a custom `ci_id_tokens.issuer_url` isn't supported: the token's `iss` must equal the integration's URL. Such instances should use job tokens.
+
 If a transient problem prevents validation (GitLab unreachable, or its keys can't be fetched), the API answers 503 and the CLI retries.
 
 The CLI then:
