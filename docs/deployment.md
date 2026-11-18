@@ -135,6 +135,39 @@ docker compose exec pixelci node . migrate:run
 
 Then visit `http://localhost:7924`. The onboarding wizard (which asks for `SETUP_TOKEN`) will guide you through initial setup.
 
+## Kubernetes (Helm)
+
+The chart in [`resources/helm/chart`](https://github.com/zyno-io/pixelci/tree/main/resources/helm/chart) runs the API server and a worker as separate Deployments, and runs migrations in a pre-upgrade job. Its defaults point at nothing, so supply your own values:
+
+```yaml
+image: ghcr.io/zyno-io/pixelci:<version>
+ingress:
+    host: pixelci.example.com
+    tls:
+        enabled: true
+        secretName: pixelci-tls
+env:
+    PUBLIC_URL: https://pixelci.example.com
+    REDIS_HOST: redis
+    REDIS_PREFIX: pixelci
+    PG_HOST: postgres
+    PG_USER: pixelci
+    PG_DATABASE: pixelci
+    S3_ENDPOINT: https://s3.amazonaws.com
+    S3_REGION: us-east-1
+    S3_BUCKET: pixelci
+secret:
+    # Existing Secret holding CRYPTO_SECRET, AUTH_JWT_SECRET, SETUP_TOKEN,
+    # PG_PASSWORD_SECRET, S3_ACCESS_KEY_ID and S3_ACCESS_SECRET.
+    name: pixelci-secrets
+```
+
+```bash
+helm upgrade --install pixelci resources/helm/chart -f my-values.yaml
+```
+
+Resource requests and limits default to sizes measured on a production instance. Both the server (review previews, thumbnails) and the worker (comparisons) decode full screenshots, so if yours are near the 25 MP cap, raise `resources.limits.memory` and `worker.resources.limits.memory`.
+
 ## Running Migrations
 
 Migrations must be run whenever you deploy a new version:
@@ -146,8 +179,8 @@ docker exec pixelci node . migrate:run
 # Docker Compose
 docker compose exec pixelci node . migrate:run
 
-# Kubernetes
-kubectl exec deploy/pixelci-server -- node . migrate:run
+# Kubernetes without the Helm chart (the chart runs them for you)
+kubectl exec deploy/<server deployment> -- node . migrate:run
 ```
 
 Some upgrades migrate data the new version depends on (for example, encrypting stored VCS secrets). To avoid errors between starting the new version and migrating, run the migrations with the new image before starting it, with the same environment as the server:
@@ -348,17 +381,6 @@ docker run -d \
 
 When using a separate worker, do **not** set `ENABLE_JOB_RUNNER` on the server.
 
-## Kubernetes
+### On Kubernetes
 
-For Kubernetes deployments, you can either:
-
-- **Single-process**: One Deployment with `ENABLE_JOB_RUNNER=true`, exposed via a Service/Ingress on port 7924
-- **Separate worker**: Two Deployments sharing the same image — the server (default command) and a worker (override command to `node . worker:start`)
-
-Run migrations via `kubectl exec` against the server deployment after each upgrade:
-
-```bash
-kubectl exec deploy/pixelci-server -- node . migrate:run
-```
-
-All deployments share the same environment variables. Use Kubernetes Secrets for sensitive values (`AUTH_JWT_SECRET`, `PG_PASSWORD_SECRET`, S3 credentials, `CRYPTO_SECRET`).
+The [Helm chart](#kubernetes-helm) uses the separate-worker layout: Deployments `<release>` (server) and `<release>-worker`, sharing one environment, with migrations in a pre-upgrade job. With your own manifests, either run one Deployment with `ENABLE_JOB_RUNNER=true`, or two Deployments of the same image with the worker's command set to `node . worker:start`. Keep sensitive values (`AUTH_JWT_SECRET`, `PG_PASSWORD_SECRET`, S3 credentials, `CRYPTO_SECRET`) in Kubernetes Secrets.

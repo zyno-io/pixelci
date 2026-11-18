@@ -25,7 +25,7 @@ spec:
       {{- end }}
       containers:
         - name: {{ .Release.Name }}-worker
-          image: {{ .Values.image }}
+          image: {{ required "image is required" .Values.image }}
           imagePullPolicy: IfNotPresent
           args: ["node", ".", "worker:start"]
           envFrom:
@@ -42,7 +42,7 @@ spec:
                 {{- toYaml $v | nindent 16 }}
             {{- end }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml .Values.worker.resources | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /healthz
