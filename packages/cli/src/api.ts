@@ -71,6 +71,7 @@ export class PixelCiApi {
     private appId: string;
     private ciToken: string;
     private projectUrl: string;
+    private commit?: ICIJobInfo['commit'];
     // one per CLI run; reused by create retries so the server can tell a retry from a new run
     private runId = randomUUID();
 
@@ -79,6 +80,7 @@ export class PixelCiApi {
         this.appId = appId;
         this.ciToken = jobInfo.ciToken;
         this.projectUrl = jobInfo.projectUrl;
+        this.commit = jobInfo.commit;
     }
 
     private async request<T>(
@@ -163,7 +165,13 @@ export class PixelCiApi {
         }>(
             'POST',
             `apps/${this.appId}/builds`,
-            () => ({ projectUrl: this.projectUrl, runId: this.runId, screens: opts.screens, ...(opts.shard && { shard: opts.shard }) }),
+            () => ({
+                projectUrl: this.projectUrl,
+                runId: this.runId,
+                screens: opts.screens,
+                ...(opts.shard && { shard: opts.shard }),
+                ...(this.commit && { commit: this.commit })
+            }),
             JSON_TIMEOUT_MS
         );
 
