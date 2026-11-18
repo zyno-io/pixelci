@@ -248,6 +248,7 @@ function buildCases(): Record<string, ICase> {
                     integration: { name: 'x', platform: 'gitlab', config: { url: 'http://x', clientId: 'a', clientSecret: 'b' } }
                 })
         },
+        'POST /api/session/logout': { status: 200, build: () => HttpRequest.POST('/api/session/logout') },
         'POST /api/session/login': {
             status: [400, 401],
             build: () => HttpRequest.POST('/api/session/login').json({ providerId: GL_ID, redirectUri: 'http://localhost/cb', code: 'bad' })

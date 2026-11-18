@@ -212,6 +212,21 @@ The Helm chart does this for you: it runs the migrations in a pre-upgrade job.
 | `GITLAB_JOB_TOKEN_AUTH_ENABLED` | No       | `true`  | Accept GitLab `CI_JOB_TOKEN`s (validated by calling GitLab's `/api/v4/job`). Set `false` to accept only [GitLab ID tokens](gitlab-setup.md) (`id_tokens: PIXELCI_ID_TOKEN`); job tokens then get a 401 and are never sent to GitLab                                                                                                |
 | `GITLAB_ID_TOKEN_AUDIENCES`     | No       | —       | Extra accepted `aud` values for GitLab ID tokens, comma-separated. The `PUBLIC_URL` origin is always accepted; add others when the CLI's `PIXELCI_API_URL` differs from it. Each is accepted with or without a trailing slash                                                                                                      |
 
+### Browser Sessions
+
+The web UI signs in with an `HttpOnly` cookie, so scripts on the page can never read the session. The cookie is `__Host-pixelci_session` (`Secure`, `SameSite=Lax`, `Path=/`, no `Domain`) when `PUBLIC_URL` is `https`, and `pixelci_session` (not `Secure`) when it is `http`, which browsers require for local development. The CLI, MCP and `/api/ext` do not use it.
+
+- `PUBLIC_URL` must be the `https` origin users actually visit. Browsers drop `Secure` cookies set for any other origin, and PixelCI treats requests whose `Origin` differs from `PUBLIC_URL` as cross-site.
+- PixelCI rejects cross-site state-changing browser requests (`POST`, `PUT`, `PATCH`, `DELETE`) by checking `Origin` and `Sec-Fetch-Site`. A reverse proxy or CDN must pass both headers through unchanged.
+- `AUTH_JWT_EXPIRATION_MINS` (default `60`) is the idle timeout: the cookie is re-issued whenever less than half of it remains, as long as the user's VCS sign-in is still valid (when `ENFORCE_VCS_PROJECT_ACCESS` is on).
+- `SESSION_MAX_AGE_HOURS` (default `168`, seven days) is the absolute limit: a session is never renewed beyond it, so the user signs in again.
+- **Upgrading:** sessions stored by earlier versions in the browser are discarded, so everyone signs in once more.
+
+| Variable                   | Required | Default | Description                                                                   |
+| -------------------------- | -------- | ------- | ----------------------------------------------------------------------------- |
+| `AUTH_JWT_EXPIRATION_MINS` | No       | `60`    | Idle timeout of a browser session, in minutes                                 |
+| `SESSION_MAX_AGE_HOURS`    | No       | `168`   | Absolute lifetime of a browser session, in hours, however often it is renewed |
+
 ### PostgreSQL
 
 | Variable                     | Required | Default | Description                                            |

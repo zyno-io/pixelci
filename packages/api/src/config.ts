@@ -39,6 +39,9 @@ export class AppConfig extends BaseAppConfig {
     // Extra accepted `aud` values for GitLab ID tokens, comma-separated. The PUBLIC_URL origin is always accepted; add
     // others if the CLI's PIXELCI_API_URL differs from it (e.g. an internal URL). Each is accepted with or without a trailing slash.
     GITLAB_ID_TOKEN_AUDIENCES?: string;
+    // Absolute lifetime of a browser session, in hours, however often it is renewed. AUTH_JWT_EXPIRATION_MINS is the idle timeout
+    // (the session cookie is re-issued once less than half of it remains).
+    SESSION_MAX_AGE_HOURS = 168;
 
     // OAuth 2.1 authorization server for MCP clients (claude.ai, Claude Desktop, Claude Code). The issuer is the PUBLIC_URL origin, which
     // must be https (http only on a loopback host); otherwise OAuth stays off whatever this is set to.

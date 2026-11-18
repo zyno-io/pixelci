@@ -752,12 +752,21 @@ async function testConsent(ctx: Ctx) {
     console.log('\nTest: consent - requires a session; view shows who is asking and where the user goes back to');
     const id = await startConsent(f, client, { state: 'consent-state' });
     status(await f.request(HttpRequest.GET(`/api/connected-apps/requests?request=${id}`)), 401, 'no session');
-    // PixelCI sets no auth cookie, but TSF would accept one: it must not be enough to decide.
+    // The session cookie authenticates, but approving needs the browser to say the request comes from PixelCI's own page.
+    const cookie = `__Host-pixelci_session=${ctx.jwt[USER_ID]}`;
+    const approveWithCookie = (headers: Record<string, string>) => {
+        const req = HttpRequest.POST('/api/connected-apps/requests/approve').json({ request: id }).header('cookie', cookie);
+        for (const [name, value] of Object.entries(headers)) req.header(name, value);
+        return f.request(req);
+    };
     status(
         await f.request(HttpRequest.POST('/api/connected-apps/requests/approve').json({ request: id }).header('cookie', `jwt=${ctx.jwt[USER_ID]}`)),
         401,
-        'approve with only a cookie'
+        'approve with only the TSF jwt cookie'
     );
+    status(await approveWithCookie({}), 403, 'approve with the cookie and no Origin');
+    status(await approveWithCookie({ origin: 'https://evil.example' }), 403, 'approve with the cookie and a foreign Origin');
+    status(await approveWithCookie({ 'sec-fetch-site': 'cross-site' }), 403, 'approve with the cookie, cross-site');
     const view = await f.request(userReq(ctx, USER_ID, HttpRequest.GET(`/api/connected-apps/requests?request=${id}`)));
     status(view, 200, 'view');
     const viewBody = view.json as Record<string, unknown> & { scopes: { name: string }[] };
@@ -779,6 +788,14 @@ async function testConsent(ctx: Ctx) {
     const loopView = await f.request(userReq(ctx, USER_ID, HttpRequest.GET(`/api/connected-apps/requests?request=${loopId}`)));
     eq((loopView.json as { redirectKind: string }).redirectKind, 'loopback', 'loopback kind');
     eq((loopView.json as { redirectDisplay: string }).redirectDisplay, 'an app on this computer (127.0.0.1:4321)', 'loopback display');
+    // a first-party browser request (the cookie plus the issuer as Origin) is accepted; this consumes the loopback request
+    status(
+        await f.request(
+            HttpRequest.POST('/api/connected-apps/requests/approve').json({ request: loopId }).header('cookie', cookie).header('origin', ISSUER)
+        ),
+        200,
+        'approve with the cookie and the issuer Origin'
+    );
     console.log('  PASS');
 
     console.log('\nTest: consent - approve is single-use and returns the code with state and iss');

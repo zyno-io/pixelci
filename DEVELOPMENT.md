@@ -23,6 +23,15 @@ yarn dev:api    # http://localhost:7924
 yarn dev:ui     # http://localhost:7925
 ```
 
+The dev UI proxies `/api` and `/.well-known` to the API, so the browser sees one origin (`http://localhost:7925`) and the
+session cookie works. Open the UI at :7925, not :7924 (the API only serves a built UI). `PUBLIC_URL` is `http://localhost:7925`,
+so the cookie is the plain `pixelci_session`. To skip the OAuth login in dev, set the seeded e2e user's session in the browser
+console (the cookie is `HttpOnly` when the API sets it, but a hand-set one works):
+
+```js
+document.cookie = 'pixelci_session=<e2e jwt>; path=/'; // the token in packages/ui/tests/e2e/fixtures/session.ts
+```
+
 To stop local services:
 
 ```bash

@@ -15,7 +15,7 @@
         "migrate:reset": "tsf-dev migrate:reset",
         "test": "tsf-dev test",
         "test:debug": "tsf-dev test --debug",
-        "test:all": "yarn build && yarn test && yarn test:int && yarn test:int:approvals && yarn test:int:auth && yarn test:int:concurrent && yarn test:int:constraints && yarn test:int:onboarding && yarn test:int:ext && yarn test:int:oauth && yarn test:int:cimd && yarn test:int:github && yarn test:int:gitlab-id && yarn test:int:github-api && yarn test:int:canary && yarn test:int:shards && yarn test:int:jobs && yarn test:int:secrets && yarn test:int:tolerances && yarn test:int:masks",
+        "test:all": "yarn build && yarn test && yarn test:int && yarn test:int:approvals && yarn test:int:auth && yarn test:int:concurrent && yarn test:int:constraints && yarn test:int:onboarding && yarn test:int:ext && yarn test:int:oauth && yarn test:int:cimd && yarn test:int:github && yarn test:int:gitlab-id && yarn test:int:github-api && yarn test:int:canary && yarn test:int:shards && yarn test:int:jobs && yarn test:int:secrets && yarn test:int:tolerances && yarn test:int:masks && yarn test:int:session",
         "test:int": "APP_ENV=development ttsx tests/integration/index.ts",
         "test:int:approvals": "APP_ENV=development ttsx tests/integration/approval-scenarios.test.ts",
         "test:int:auth": "APP_ENV=development ttsx tests/integration/ci-token-auth.test.ts",
@@ -34,6 +34,7 @@
         "test:int:canary": "APP_ENV=development ttsx tests/integration/response-canary.test.ts",
         "test:int:jobs": "APP_ENV=development ttsx tests/integration/job-robustness.test.ts",
         "test:int:secrets": "APP_ENV=development ttsx tests/integration/secrets-at-rest.test.ts",
+        "test:int:session": "APP_ENV=development ttsx tests/integration/session-cookie.test.ts",
         "format": "npx oxlint --fix --fix-suggestions --fix-dangerously && oxfmt",
         "postinstall": "tsf-install"
     },

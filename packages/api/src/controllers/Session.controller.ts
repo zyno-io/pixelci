@@ -2,18 +2,21 @@ import {
     http,
     HttpBadRequestError,
     HttpBody,
+    HttpResponse,
     HttpAccessDeniedError,
     HttpInternalServerError,
     HttpNotFoundError,
     HttpQueries,
+    OkResponse,
     isUniqueConstraintError,
     UuidString
 } from '@zyno-io/ts-server-foundation';
 import { ScopedLogger, uuid } from '@zyno-io/ts-server-foundation';
-import { createEntity, JWT } from '@zyno-io/ts-server-foundation';
+import { createEntity } from '@zyno-io/ts-server-foundation';
 import { createHash, timingSafeEqual } from 'crypto';
 
 import { ApiController } from '../accessories/Controller.accessory';
+import { issueSession } from '../accessories/Session.accessory';
 import { AppConfig } from '../config';
 import { Db } from '../database';
 import { AppEntity } from '../entities/App.entity';
@@ -22,6 +25,7 @@ import { UserEntity } from '../entities/User.entity';
 import { VcsIntegrationEntity } from '../entities/VcsIntegration.entity';
 import { createOAuthState, deriveStateKey, sanitizeReturnTo, verifyOAuthState } from '../services/OAuthState';
 import { sealIntegrationConfig, sealVcsSession } from '../services/secrets/VcsSecrets';
+import { appendSetCookie, serializeClearedSessionCookie, sessionCookieSettings } from '../services/SessionCookie';
 import { VcsService } from '../services/Vcs.service';
 import { normalizeCreateConfig } from '../services/VcsConfig';
 import { IVcsIntegrationCreateInput } from './VcsIntegrations.controller';
@@ -39,7 +43,7 @@ interface ISessionLoginRequest {
 }
 
 interface ISessionLoginResponse {
-    jwt: string;
+    // The session itself is an HttpOnly cookie set on this response; it is never exposed to scripts.
     returnTo: string;
 }
 
@@ -211,7 +215,7 @@ export class SessionController {
     }
 
     @http.POST('login')
-    async login(body: HttpBody<ISessionLoginRequest>): Promise<ISessionLoginResponse> {
+    async login(body: HttpBody<ISessionLoginRequest>, response: HttpResponse): Promise<ISessionLoginResponse> {
         const redirectUri = this.getRedirectUri();
         const verified = verifyOAuthState(body.state, deriveStateKey(this.appConfig));
         if (!verified) throw new HttpBadRequestError('Sign-in expired or could not be verified; please try again');
@@ -272,7 +276,14 @@ export class SessionController {
             await user.save();
         }
 
-        const jwt = await JWT.generate({ subject: user.id });
-        return { jwt, returnTo: verified.returnTo };
+        await issueSession(response, this.appConfig, user.id);
+        return { returnTo: verified.returnTo };
+    }
+
+    /** Needs no session: it only clears the cookie (and is safe to call when already signed out). */
+    @http.POST('logout')
+    async logout(response: HttpResponse): OkResponse {
+        appendSetCookie(response, serializeClearedSessionCookie(sessionCookieSettings(this.appConfig)));
+        return { ok: true };
     }
 }

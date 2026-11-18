@@ -1,5 +1,4 @@
 import { createApp, CreateAppOptions, DEFAULT_REDACTED_QUERY_KEYS } from '@zyno-io/ts-server-foundation';
-import { compact } from 'lodash';
 
 import {
     AdminAuthMiddleware,
@@ -8,6 +7,7 @@ import {
     UserAuthMiddleware,
     VcsTokenAuthMiddleware
 } from './accessories/AuthMiddleware.accessory';
+import { SessionMiddleware } from './accessories/Session.accessory';
 import { SetIntegrationSecretCommand } from './commands/SetIntegrationSecret.command';
 import { AppConfig } from './config';
 import { AppsController } from './controllers/Apps.controller';
@@ -53,10 +53,6 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
     config: AppConfig,
     db: Db,
     cors: _appConfig => [
-        {
-            hosts: compact(['http://localhost:7925', 'http://localhost:4173']),
-            credentials: true
-        },
         // Browser-based MCP clients (e.g. the MCP Inspector) reach the discovery, token and MCP endpoints cross-origin. Any origin, but never
         // credentials. The authorize endpoint (a top-level navigation) and the SPA-facing /api/connected-apps routes are deliberately excluded.
         {
@@ -101,6 +97,7 @@ export const CoreAppOptions: CreateAppOptions<AppConfig> = {
         UserAuthMiddleware,
         VcsTokenAuthMiddleware,
         McpAuthMiddleware,
+        SessionMiddleware,
         ProcessBuildJob,
         RerunCiJobJob,
         ReapStuckBuildsJob,

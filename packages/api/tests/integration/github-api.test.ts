@@ -374,7 +374,7 @@ let oidcPublicKey: CryptoKey;
 // ------------------------------------------------------------------ test helpers
 
 type Facade = ReturnType<typeof TestingHelpers.createTestingFacade>;
-type Res = { statusCode: number; body: Buffer | string; json: any }; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Res = { statusCode: number; body: Buffer | string; json: any; headers: Record<string, string | string[] | undefined> }; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 function assert(cond: unknown, msg: string): asserts cond {
     if (!cond) throw new Error(msg);
@@ -628,13 +628,16 @@ async function run() {
         await UserEntity.query().filter({ id: '00000000-0000-0000-0000-0000000000e1' }).deleteMany();
     }
 
-    test('login with a good code + setup token → JWT, user created as admin, name falls back to login');
+    test('login with a good code + setup token → session cookie, user created as admin, name falls back to login');
     let userId: string;
     let userJwt: string;
     {
         const res = await login('good', SETUP_TOKEN);
         status(res, 200, 'login');
-        userJwt = res.json.jwt;
+        const setCookie = ([] as (string | undefined)[]).concat(res.headers['set-cookie']).find(c => c?.startsWith('__Host-pixelci_session='));
+        assert(setCookie, `login should set the session cookie, got ${JSON.stringify(res.headers['set-cookie'])}`);
+        assert(res.json.jwt === undefined, 'the session must not be in the response body');
+        userJwt = setCookie.slice('__Host-pixelci_session='.length).split(';')[0];
         const user = await UserEntity.query().filter({ vcsId: GH_VCS_ID, vcsUserId: '4242' }).findOne();
         userId = user.id;
         assert(user.name === 'octo', `name should be login, got ${user.name}`);
