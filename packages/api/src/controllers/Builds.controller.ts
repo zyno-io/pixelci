@@ -106,10 +106,16 @@ function validateRunId(runId: string | undefined): string | undefined {
     return runId;
 }
 
-/** Validates the optional display-only commit hints the CLI sends with a GitLab ID token. */
-// Control characters other than tab, LF and CR: a NUL, for one, would fail the Postgres insert with a retried 500
-const CONTROL_CHARS_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+/** True for control characters other than tab, LF and CR. A NUL, for one, would fail the Postgres insert with a retried 500. */
+function hasControlChars(value: string): boolean {
+    for (let i = 0; i < value.length; i++) {
+        const code = value.charCodeAt(i);
+        if ((code < 0x20 && code !== 0x09 && code !== 0x0a && code !== 0x0d) || code === 0x7f) return true;
+    }
+    return false;
+}
 
+/** Validates the optional display-only commit hints the CLI sends with a GitLab ID token. */
 function validateCommitHints(commit: unknown): ICiCommitHints | undefined {
     if (commit === undefined || commit === null) return undefined;
     if (typeof commit !== 'object' || Array.isArray(commit)) throw new HttpBadRequestError('commit must be an object');
@@ -117,7 +123,7 @@ function validateCommitHints(commit: unknown): ICiCommitHints | undefined {
     const text = (value: unknown, name: string, max: number): string | undefined => {
         if (value === undefined) return undefined;
         if (typeof value !== 'string' || value.length > max) throw new HttpBadRequestError(`${name} must be a string of at most ${max} characters`);
-        if (CONTROL_CHARS_RE.test(value)) throw new HttpBadRequestError(`${name} must not contain control characters`);
+        if (hasControlChars(value)) throw new HttpBadRequestError(`${name} must not contain control characters`);
         return value;
     };
     let mr: ICiCommitHints['mergeRequest'];
