@@ -140,6 +140,9 @@ visual regression test:
     - when: on_success
   stage: test
   image: ${CI_REGISTRY_IMAGE}/cli:canary
+  id_tokens:
+    PIXELCI_ID_TOKEN:
+      aud: https://pixelci.s24.dev # the server's PUBLIC_URL
   variables:
     PIXELCI_IMAGES_PATH: packages/ui/screenshots
     GIT_DEPTH: '0' # full history: PixelCI compares the branch with the default branch where it forked
@@ -161,6 +164,9 @@ visual regression test (deferred):
     - if: $CI_COMMIT_MESSAGE =~ /\[defer vrt\]/
   stage: post-deploy
   image: ${CI_REGISTRY_IMAGE}/cli:canary
+  id_tokens:
+    PIXELCI_ID_TOKEN:
+      aud: https://pixelci.s24.dev # the server's PUBLIC_URL
   variables:
     PIXELCI_IMAGES_PATH: packages/ui/screenshots
     GIT_DEPTH: '0' # full history: PixelCI compares the branch with the default branch where it forked
