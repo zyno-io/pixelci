@@ -53,6 +53,8 @@ const needsSetupToken = ref(false);
 const setupTokenInput = ref('');
 // set when arriving with an error or a failed callback, so we show the picker instead of redirecting again
 const suppressAutoLogin = ref(false);
+// set once the server accepted the sign-in: if /me still answers 401 the browser did not keep the session cookie
+let signedInAwaitingSession = false;
 
 function providerIcon(provider: ISessionProvider) {
     return provider.platform === 'github' ? 'fa-brands fa-github' : 'fa-brands fa-gitlab';
@@ -144,6 +146,9 @@ async function processCode(code: string) {
         clearStoredState();
         clearSetupToken();
         targetPath.value = returnTo;
+        // never redirect to the provider again until /me confirms the session: a browser that drops the cookie would loop forever
+        suppressAutoLogin.value = true;
+        signedInAwaitingSession = true;
         loadSession();
     } catch (err) {
         handleErrorAndAlert(err);
@@ -199,6 +204,11 @@ async function loadSession() {
         if (!(err instanceof OpenApiError && err.response?.status === 401)) {
             return handleErrorAndAlert(err);
         }
+        if (signedInAwaitingSession) {
+            errorMessage.value = "Signed in, but the session cookie wasn't saved. Allow cookies for this site and try again.";
+        }
+    } finally {
+        signedInAwaitingSession = false;
     }
 
     try {

@@ -1,10 +1,25 @@
 import type { Page } from '@playwright/test';
 
-// The seeded user's session JWT (zero ID, valid until 2049).
-export const E2E_JWT =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJhcHAiLCJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDAiLCJleHAiOjI1MjQ2MDc5OTksImlhdCI6MTc0NzYzMjc2Mn0.7FmHrOWWRWmH8i8floyAE-VvYu4Lya_9c-Qy68r8puI';
+import { createHmac } from 'node:crypto';
+
+const ZERO_USER_ID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * A session JWT for the seeded user, signed with the dev AUTH_JWT_SECRET. It is minted per call, with `authTime` now: logging out
+ * revokes every session issued before it, so a token fixed in advance would stop working once any test signs out.
+ */
+export function mintSessionJwt(): string {
+    const b64 = (v: object) => Buffer.from(JSON.stringify(v)).toString('base64url');
+    const now = Date.now();
+    const body = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ iss: 'app', sub: ZERO_USER_ID, iat: Math.floor(now / 1000), exp: Math.floor(now / 1000) + 3600, authTime: now })}`;
+    return `${body}.${createHmac('sha256', process.env.AUTH_JWT_SECRET ?? 'secret')
+        .update(body)
+        .digest('base64url')}`;
+}
 
 /** Signs the page's browser context in with the session cookie (the e2e API runs with an http PUBLIC_URL, so the cookie is not `__Host-`). */
 export async function signIn(page: Page) {
-    await page.context().addCookies([{ name: 'pixelci_session', value: E2E_JWT, domain: 'localhost', path: '/', httpOnly: true, sameSite: 'Lax' }]);
+    await page
+        .context()
+        .addCookies([{ name: 'pixelci_session', value: mintSessionJwt(), domain: 'localhost', path: '/', httpOnly: true, sameSite: 'Lax' }]);
 }
